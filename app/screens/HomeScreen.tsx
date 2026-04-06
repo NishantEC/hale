@@ -1,4 +1,4 @@
-import { FC, useCallback, useEffect, useMemo, useState } from "react"
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
@@ -16,10 +16,14 @@ import {
 } from "react-native"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
-import Animated, { FadeIn, FadeOut } from "react-native-reanimated"
+import Animated, { FadeIn, FadeOut, useSharedValue, withTiming, Easing } from "react-native-reanimated"
 
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
+import { CircularProgress } from "@/components/reactx/circular-progress"
+import { RollingCounter } from "@/components/reactx/rolling-counter"
+import { Shimmer } from "@/components/reactx/Shimmer"
+import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
@@ -87,12 +91,23 @@ export const HomeScreen: FC = () => {
   } = useDashboard()
   const [isHorizontalDaySwipeActive, setIsHorizontalDaySwipeActive] = useState(false)
   const [journalEntries, setJournalEntries] = useState<JournalEntryResponse[]>([])
+  const lastShownError = useRef<string | null>(null)
 
   useEffect(() => {
     fetchJournalEntries(selectedDate)
       .then((res) => setJournalEntries(res.entries))
       .catch(() => setJournalEntries([]))
   }, [selectedDate])
+
+  useEffect(() => {
+    if (error && error !== lastShownError.current) {
+      lastShownError.current = error
+      Toast.show(error, { type: "error", position: "top", duration: 4000 })
+      clearError()
+    } else if (!error) {
+      lastShownError.current = null
+    }
+  }, [error, clearError])
 
   const batteryLabel =
     liveDeviceState.connectionState === "ready"
@@ -220,17 +235,6 @@ export const HomeScreen: FC = () => {
             scrollEnabled: !isHorizontalDaySwipeActive,
           }}
         >
-          {error ? (
-            <View style={themed($errorCard)}>
-              <View style={themed($rowBetween)}>
-                <Text text={error} size="xs" style={themed($errorText)} />
-                <TouchableOpacity onPress={clearError}>
-                  <Text text="Dismiss" size="xs" style={themed($dismissText)} />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : null}
-
           <View style={themed($topStrip)}>
             <DateSwitcher
               title={selectedDateTitle}
@@ -382,7 +386,14 @@ function DevicePill({
 function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
   const { themed } = useAppTheme()
 
-  return <View style={[themed($skeletonBlock), style]} />
+  return (
+    <Shimmer
+      isLoading
+      preset="dark"
+      duration={1200}
+      style={StyleSheet.flatten([themed($skeletonBlock), style]) as ViewStyle}
+    />
+  )
 }
 
 function HomeDaySkeleton() {
@@ -476,8 +487,12 @@ function PrimaryMetricsList({
   const recovery = items.find((i) => i.id === "recovery")
   const pills = items.filter((i) => i.id !== "recovery")
 
-  const ringProgress = Math.max(0, Math.min(1, recovery?.progress ?? 0))
-  const ringPercent = Math.round(ringProgress * 100)
+  const ringPercent = Math.round(Math.max(0, Math.min(1, recovery?.progress ?? 0)) * 100)
+  const ringProgressSV = useSharedValue(0)
+
+  useEffect(() => {
+    ringProgressSV.value = withTiming(ringPercent, { duration: 800, easing: Easing.out(Easing.ease) })
+  }, [ringPercent, ringProgressSV])
 
   const pillColor = (id: string) => {
     if (id === "sleep") return RING_COLOR_SLEEP
@@ -503,26 +518,35 @@ function PrimaryMetricsList({
         onPress={recovery?.onPress}
         style={$ringContainer}
       >
-        <ArcRing
-          progress={ringProgress}
+        <CircularProgress
+          progress={ringProgressSV}
           size={148}
           strokeWidth={12}
-          color={RING_COLOR_RECOVERY}
+          progressCircleColor={RING_COLOR_RECOVERY}
+          outerCircleColor="rgba(255,255,255,0.08)"
+          backgroundColor="transparent"
+          gap={0}
+          renderIcon={() => (
+            <View style={$ringCenterContent}>
+              <View style={$ringValueRow}>
+                <RollingCounter
+                  value={ringPercent}
+                  height={36}
+                  width={22}
+                  fontSize={32}
+                  color="#fff"
+                />
+                <Text text="%" size="lg" weight="bold" style={$ringPercentSign} />
+              </View>
+              <Text
+                text="Recovery"
+                size="xxs"
+                weight="medium"
+                style={$ringLabel}
+              />
+            </View>
+          )}
         />
-        <View style={$ringCenterContent}>
-          <Text
-            text={`${ringPercent}%`}
-            size="xxl"
-            weight="bold"
-            style={$ringValue}
-          />
-          <Text
-            text="Recovery"
-            size="xxs"
-            weight="medium"
-            style={$ringLabel}
-          />
-        </View>
       </TouchableOpacity>
 
       {/* Right: stacked glass cards */}
@@ -624,6 +648,15 @@ function CompactInsightStrip({
   )
 }
 
+function chipDetail(factor: (typeof JOURNAL_FACTORS)[number] | undefined, intensity: number): string | null {
+  if (!factor) return `${intensity}`
+  const { input } = factor
+  if (input.kind === "toggle") return null
+  if (input.kind === "quantity") return `${intensity} ${input.unit}`
+  if (input.kind === "scale") return input.labels[intensity - 1] ?? `${intensity}`
+  return `${intensity}`
+}
+
 function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
   if (entries.length === 0) return null
 
@@ -637,6 +670,7 @@ function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
       {entries.map((entry) => {
         const factor = JOURNAL_FACTORS.find((f) => f.tag === entry.factorTag)
         const color = factor?.color ?? "#60A5FA"
+        const detail = chipDetail(factor, entry.intensity)
         return (
           <View key={entry.id} style={[$chip, { borderLeftColor: color, borderLeftWidth: 3 }]}>
             <Ionicons
@@ -650,11 +684,13 @@ function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
               weight="medium"
               style={{ color: "#fff" }}
             />
-            <Text
-              text={`${entry.intensity}`}
-              size="xxs"
-              style={{ color: "rgba(255,255,255,0.5)" }}
-            />
+            {detail && (
+              <Text
+                text={detail}
+                size="xxs"
+                style={{ color: "rgba(255,255,255,0.5)" }}
+              />
+            )}
           </View>
         )
       })}
@@ -725,23 +761,6 @@ const $glowSecondarySvg: ViewStyle = {
   width: 540,
 }
 
-const $errorCard: ThemedStyle<ViewStyle> = () => ({
-  backgroundColor: "rgba(110,18,18,0.55)",
-  borderColor: "rgba(255,255,255,0.06)",
-  borderRadius: 18,
-  borderWidth: 1,
-  paddingHorizontal: 14,
-  paddingVertical: 12,
-})
-
-const $errorText: ThemedStyle<TextStyle> = () => ({
-  color: "#FFD0D0",
-  flex: 1,
-})
-
-const $dismissText: ThemedStyle<TextStyle> = () => ({
-  color: ACCENT,
-})
 
 const $topStrip: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
@@ -869,16 +888,18 @@ const $ringContainer: ViewStyle = {
 }
 
 const $ringCenterContent: ViewStyle = {
-  ...StyleSheet.absoluteFillObject,
   alignItems: "center",
   justifyContent: "center",
 }
 
-const $ringValue: TextStyle = {
+const $ringValueRow: ViewStyle = {
+  alignItems: "baseline",
+  flexDirection: "row",
+}
+
+const $ringPercentSign: TextStyle = {
   color: "#fff",
-  fontVariant: ["tabular-nums"],
-  fontSize: 32,
-  lineHeight: 36,
+  marginLeft: 1,
 }
 
 const $ringLabel: TextStyle = {

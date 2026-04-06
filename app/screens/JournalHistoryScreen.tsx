@@ -85,8 +85,18 @@ export function JournalHistoryScreen() {
     const iconName: keyof typeof Ionicons.glyphMap = factor?.icon ?? "ellipse-outline"
     const color = factor?.color ?? "#888888"
     const label = factor?.label ?? item.factorTag
-    const filledDots = Math.max(0, Math.min(5, item.intensity))
-    const emptyDots = 5 - filledDots
+
+    // Build contextual detail string
+    let detail: string | null = null
+    if (factor) {
+      const { input } = factor
+      if (input.kind === "quantity") {
+        detail = `${item.intensity} ${input.unit}`
+      } else if (input.kind === "scale") {
+        detail = input.labels[item.intensity - 1] ?? null
+      }
+      // toggle: no detail needed
+    }
 
     return (
       <View style={styles.entryRow}>
@@ -101,16 +111,11 @@ export function JournalHistoryScreen() {
             {label}
           </Text>
           <View style={styles.dotNoteRow}>
-            {/* Intensity dots */}
-            <View style={styles.dotsRow}>
-              {Array.from({ length: filledDots }).map((_, i) => (
-                <View key={`f-${i}`} style={[styles.dot, styles.dotFilled, { backgroundColor: color }]} />
-              ))}
-              {Array.from({ length: emptyDots }).map((_, i) => (
-                <View key={`e-${i}`} style={[styles.dot, styles.dotEmpty, { borderColor: color }]} />
-              ))}
-            </View>
-            {/* Note preview */}
+            {detail && (
+              <Text size="xxs" weight="medium" style={{ color }}>
+                {detail}
+              </Text>
+            )}
             {!!item.note && (
               <Text
                 size="xxs"
