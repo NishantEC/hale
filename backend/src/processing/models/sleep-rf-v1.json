@@ -1,0 +1,47 @@
+{
+  "nEstimators": 3,
+  "nFeatures": 21,
+  "featureNames": [
+    "hrMean", "hrStd", "hrMin", "hrMax", "hrDeltaFromBaseline",
+    "motionMagnitude", "motionStd", "motionCount", "stillFraction",
+    "rmssd", "sdnn", "rrMean",
+    "respiratoryRate", "respiratoryStd",
+    "spo2", "skinTemp", "skinTempDelta",
+    "clockSin", "clockCos", "skinContact", "signalCompleteness"
+  ],
+  "trees": [
+    {
+      "nodes": [
+        { "featureIndex": 5, "threshold": 0.02, "left": 1, "right": 6 },
+        { "featureIndex": 4, "threshold": -0.05, "left": 2, "right": 3 },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.02, 0.08, 0.85, 0.05] },
+        { "featureIndex": 4, "threshold": 0.03, "left": 4, "right": 5 },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.05, 0.80, 0.08, 0.07] },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.05, 0.15, 0.05, 0.75] },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.85, 0.08, 0.02, 0.05] }
+      ]
+    },
+    {
+      "nodes": [
+        { "featureIndex": 8, "threshold": 0.7, "left": 5, "right": 1 },
+        { "featureIndex": 0, "threshold": 62, "left": 2, "right": 3 },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.03, 0.10, 0.80, 0.07] },
+        { "featureIndex": 10, "threshold": 60, "left": 4, "right": 6 },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.05, 0.75, 0.10, 0.10] },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.80, 0.10, 0.03, 0.07] },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.07, 0.18, 0.05, 0.70] }
+      ]
+    },
+    {
+      "nodes": [
+        { "featureIndex": 19, "threshold": 0.5, "left": 5, "right": 1 },
+        { "featureIndex": 5, "threshold": 0.015, "left": 2, "right": 6 },
+        { "featureIndex": 4, "threshold": -0.03, "left": 3, "right": 4 },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.03, 0.12, 0.78, 0.07] },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.05, 0.55, 0.10, 0.30] },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.90, 0.05, 0.02, 0.03] },
+        { "featureIndex": -1, "threshold": 0, "left": -1, "right": -1, "value": [0.82, 0.10, 0.03, 0.05] }
+      ]
+    }
+  ]
+}
