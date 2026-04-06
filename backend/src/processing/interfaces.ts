@@ -123,3 +123,35 @@ export interface DailyWellnessScore {
   recommendation: DailyRecommendation;
   detail: string;
 }
+
+export interface EpochFeature {
+  timestamp: Date;
+  hrMean: number;
+  hrStd: number;
+  hrMin: number;
+  hrMax: number;
+  hrDeltaFromBaseline: number;
+  motionMagnitude: number;
+  motionStd: number;
+  motionCount: number;
+  stillFraction: number;
+  rmssd: number;
+  sdnn: number;
+  rrMean: number;
+  respiratoryRate: number;
+  respiratoryStd: number;
+  spo2: number;
+  skinTemp: number;
+  skinTempDelta: number;
+  clockSin: number;
+  clockCos: number;
+  skinContact: number;
+  signalCompleteness: number;
+}
+
+export interface EpochClassification {
+  timestamp: Date;
+  stage: 'Wake' | 'Light' | 'Deep' | 'REM';
+  confidence: number;
+  probabilities: [number, number, number, number]; // [wake, light, deep, rem]
+}
