@@ -23,7 +23,13 @@ import {
   recomputeBaselineProfile,
 } from '../processing/wellness-scoring.js';
 import { SleepEventEngine } from '../processing/sleep-event-engine.js';
-import { SleepStageEngine } from '../processing/sleep-stage-engine.js';
+import { extractEpochFeatures } from '../processing/epoch-features.js';
+import {
+  loadModel,
+  classifySleepStages,
+} from '../processing/sleep-stage-classifier.js';
+import { median } from '../processing/utils.js';
+import sleepRfModel from '../processing/models/sleep-rf-v1.json';
 import { computeDerivedMetrics } from '../processing/derived-metrics.js';
 import { computeSleepScoreForNight } from '../processing/sleep-score.js';
 import { computeTypicalRanges } from '../processing/typical-ranges.js';
@@ -39,6 +45,7 @@ import type {
 @Injectable()
 export class PipelineService {
   private readonly logger = new Logger(PipelineService.name);
+  private readonly rfModel = loadModel(sleepRfModel);
 
   constructor(
     @InjectRepository(SleepDetection)
@@ -211,7 +218,27 @@ export class PipelineService {
     const sanitized = sanitize(signalSamples);
 
     const sleepDetections = SleepEventEngine.detect(sensorRecords);
-    const sleepStages = SleepStageEngine.detect(sensorRecords, sleepDetections);
+
+    // Extract epoch features and classify sleep stages using RF model
+    const nightMedianHR =
+      sensorRecords.length > 0
+        ? median(sensorRecords.map((r) => r.heartRate).filter((h) => h > 0))
+        : 60;
+
+    const allEpochFeatures = sleepDetections.flatMap((detection) =>
+      extractEpochFeatures(
+        sensorRecords,
+        detection.bedtime,
+        detection.wakeTime,
+        nightMedianHR,
+      ),
+    );
+
+    const sleepStages = classifySleepStages(
+      this.rfModel,
+      allEpochFeatures,
+      sleepDetections,
+    );
 
     const featureByNightKey = new Map<number, import('../processing/interfaces.js').NightFeatureSet>();
     for (const detection of sleepDetections) {
