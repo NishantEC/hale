@@ -1,0 +1,2 @@
+import { SignalSample, HistoricalSensorRecord, NightFeatureSet, SleepDetectionSummary, BaselineProfile, DerivedMetricsBundle } from './interfaces';
+export declare function computeDerivedMetrics(samples: SignalSample[], sensorRecords: HistoricalSensorRecord[], nightFeatures: NightFeatureSet[], sleepDetections: SleepDetectionSummary[], baseline: BaselineProfile, referenceDate: Date): DerivedMetricsBundle;

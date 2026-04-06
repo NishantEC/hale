@@ -1,0 +1,47 @@
+import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+
+@Entity('raw_sensor_records')
+@Index(['userId', 'timestamp'])
+export class RawSensorRecord {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column('varchar')
+  userId: string;
+
+  @Column('timestamptz')
+  timestamp: Date;
+
+  @Column('double precision', { default: 0 })
+  heartRate: number;
+
+  @Column('double precision', { nullable: true })
+  rrAverageMs: number;
+
+  @Column('double precision', { nullable: true })
+  spo2Red: number;
+
+  @Column('double precision', { nullable: true })
+  spo2IR: number;
+
+  @Column('double precision', { nullable: true })
+  skinTempRaw: number;
+
+  @Column('double precision', { nullable: true })
+  gravityMagnitude: number;
+
+  @Column('double precision', { nullable: true })
+  gravityX: number;
+
+  @Column('double precision', { nullable: true })
+  gravityY: number;
+
+  @Column('double precision', { nullable: true })
+  gravityZ: number;
+
+  @Column('double precision', { nullable: true })
+  respRateRaw: number;
+
+  @Column('boolean', { nullable: true })
+  skinContact: boolean;
+}
