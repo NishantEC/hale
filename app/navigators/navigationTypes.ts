@@ -1,13 +1,9 @@
 import { ComponentProps } from "react"
 import { BottomTabScreenProps } from "@react-navigation/bottom-tabs"
-import {
-  CompositeScreenProps,
-  NavigationContainer,
-  NavigatorScreenParams,
-} from "@react-navigation/native"
+import { CompositeScreenProps, NavigationContainer } from "@react-navigation/native"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
 
-// Demo Tab Navigator types
+// Demo Tab Navigator types (kept for existing demo screens)
 export type DemoTabParamList = {
   DemoCommunity: undefined
   DemoShowroom: { queryIndex?: string; itemIndex?: string }
@@ -17,9 +13,25 @@ export type DemoTabParamList = {
 
 // App Stack Navigator types
 export type AppStackParamList = {
-  Welcome: undefined
+  Main: undefined
   Login: undefined
-  Demo: NavigatorScreenParams<DemoTabParamList>
+  HomeMetric: {
+    metric:
+      | "sleep"
+      | "recovery"
+      | "readiness"
+      | "strain"
+      | "stress"
+      | "loadPressure"
+      | "liveHeartRate"
+      | "activities"
+  }
+  HomeDetails: undefined
+  StrainActivity: undefined
+  DeviceSettings: undefined
+  DebugInspector: undefined
+  JournalEntry: undefined
+  JournalHistory: undefined
   // 🔥 Your screens go here
   // IGNITE_GENERATOR_ANCHOR_APP_STACK_PARAM_LIST
 }
