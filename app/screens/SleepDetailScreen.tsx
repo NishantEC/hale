@@ -8,7 +8,7 @@ import {
   ViewStyle,
   useWindowDimensions,
 } from "react-native"
-import { useNavigation, useRoute, RouteProp } from "@react-navigation/native"
+import { useNavigation, useRoute } from "@react-navigation/native"
 
 import { BarSeriesChart } from "@/components/BarSeriesChart"
 import { HypnogramChart } from "@/components/HypnogramChart"
@@ -20,7 +20,6 @@ import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
-import type { AppStackParamList } from "@/navigators/navigationTypes"
 
 const ACCENT = "#BDD7FF"
 const SCREEN_BG = "#06070A"
@@ -41,13 +40,12 @@ function scoreQuality(score: number): string {
 export const SleepDetailScreen: FC = () => {
   const { themed } = useAppTheme()
   const navigation = useNavigation<any>()
-  const route = useRoute<RouteProp<AppStackParamList, "SleepDetail">>()
+  const route = useRoute<any>()
   const { width } = useWindowDimensions()
   const { sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate } =
     useDashboard()
 
-  // When rendered as a tab (no stack params), fall back to the dashboard's selected date.
-  const date: string = route.params?.date ?? selectedDate
+  const date: string = (route.params?.date as string) ?? selectedDate
 
   const lastShownError = useRef<string | null>(null)
 

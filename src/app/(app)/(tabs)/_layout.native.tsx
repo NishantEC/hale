@@ -32,7 +32,6 @@ function canUseNativeTabs() {
 function FallbackTabs() {
   const TAB_CONFIG = {
     index: { icon: "home-outline", activeIcon: "home", label: "Home" },
-    sleep: { icon: "moon-outline", activeIcon: "moon", label: "Sleep" },
     trends: { icon: "stats-chart-outline", activeIcon: "stats-chart", label: "Trends" },
   } as const
 
@@ -100,14 +99,6 @@ export default function NativeTabsLayout() {
           <NativeTabs.Trigger.Icon
             sf={{ default: "house", selected: "house.fill" }}
             md="home"
-          />
-        </NativeTabs.Trigger>
-
-        <NativeTabs.Trigger name="sleep" contentStyle={{ backgroundColor: IOS_CONTENT_BACKGROUND }}>
-          <NativeTabs.Trigger.Label>Sleep</NativeTabs.Trigger.Label>
-          <NativeTabs.Trigger.Icon
-            sf={{ default: "moon", selected: "moon.fill" }}
-            md="dark-mode"
           />
         </NativeTabs.Trigger>
 

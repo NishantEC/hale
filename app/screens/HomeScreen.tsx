@@ -274,7 +274,7 @@ export const HomeScreen: FC = () => {
                       value: homeView?.rings.sleep.value ?? "--",
                       progress: homeView?.rings.sleep.progress ?? 0,
                       icon: "moon-outline",
-                      onPress: () => (navigation as any).navigate("SleepDetail", { date: selectedDate }),
+                      onPress: () => navigateTo("SleepDetail", "sleep-detail", { date: selectedDate }),
                     },
                     {
                       id: "recovery",
