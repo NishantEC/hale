@@ -17,6 +17,7 @@ import { HomeMetricScreen } from "@/screens/HomeMetricScreen"
 import { LoginScreen } from "@/screens/LoginScreen"
 import { JournalEntryScreen } from "@/screens/JournalEntryScreen"
 import { JournalHistoryScreen } from "@/screens/JournalHistoryScreen"
+import { SleepDetailScreen } from "@/screens/SleepDetailScreen"
 import { StrainActivityScreen } from "@/screens/StrainActivityScreen"
 import { useAppTheme } from "@/theme/context"
 
@@ -86,6 +87,7 @@ const AppStack = () => {
         }}
       />
       <Stack.Screen name="JournalHistory" component={JournalHistoryScreen} />
+      <Stack.Screen name="SleepDetail" component={SleepDetailScreen} />
       {/* IGNITE_GENERATOR_ANCHOR_APP_STACK_SCREENS */}
     </Stack.Navigator>
   )

@@ -2,7 +2,7 @@ import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import { BlurView } from "expo-blur"
 import { LinearGradient } from "expo-linear-gradient"
-import Svg, { Defs, RadialGradient, Stop, Ellipse, Circle } from "react-native-svg"
+import Svg, { Defs, RadialGradient, Stop, Ellipse } from "react-native-svg"
 import {
   Platform,
   RefreshControl,
@@ -16,11 +16,12 @@ import {
 } from "react-native"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
-import Animated, { FadeIn, FadeOut, useSharedValue, withTiming, Easing } from "react-native-reanimated"
+import Animated, { FadeIn, FadeInRight, FadeOut, FadeOutLeft, useSharedValue, withTiming, Easing } from "react-native-reanimated"
 
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { CircularProgress } from "@/components/reactx/circular-progress"
+import { Glow } from "@/components/reactx/glow"
 import { RollingCounter } from "@/components/reactx/rolling-counter"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
@@ -273,7 +274,7 @@ export const HomeScreen: FC = () => {
                       value: homeView?.rings.sleep.value ?? "--",
                       progress: homeView?.rings.sleep.progress ?? 0,
                       icon: "moon-outline",
-                      onPress: () => navigateTo("Sleep", "sleep"),
+                      onPress: () => (navigation as any).navigate("SleepDetail", { date: selectedDate }),
                     },
                     {
                       id: "recovery",
@@ -345,7 +346,14 @@ function DateSwitcher({
       <TouchableOpacity style={themed($switcherButton)} onPress={onPrevious}>
         <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
       </TouchableOpacity>
-      <Text text={title} size="sm" weight="semiBold" style={themed($switcherTitle)} />
+      <Animated.Text
+        key={title}
+        entering={FadeInRight.duration(200)}
+        exiting={FadeOutLeft.duration(150)}
+        style={themed($switcherTitle)}
+      >
+        {title}
+      </Animated.Text>
       <TouchableOpacity style={themed($switcherButton)} onPress={onNext}>
         <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.9)" />
       </TouchableOpacity>
@@ -422,50 +430,6 @@ function HomeDaySkeleton() {
   )
 }
 
-function ArcRing({
-  progress,
-  size,
-  strokeWidth,
-  color,
-  trackColor = "rgba(255,255,255,0.08)",
-}: {
-  progress: number
-  size: number
-  strokeWidth: number
-  color: string
-  trackColor?: string
-}) {
-  const radius = (size - strokeWidth) / 2
-  const circumference = 2 * Math.PI * radius
-  const clamped = Math.max(0, Math.min(1, progress))
-  const strokeDashoffset = circumference * (1 - clamped)
-
-  return (
-    <Svg width={size} height={size}>
-      <Circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        stroke={trackColor}
-        strokeWidth={strokeWidth}
-        fill="none"
-      />
-      <Circle
-        cx={size / 2}
-        cy={size / 2}
-        r={radius}
-        stroke={color}
-        strokeWidth={strokeWidth}
-        fill="none"
-        strokeDasharray={`${circumference}`}
-        strokeDashoffset={strokeDashoffset}
-        strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-      />
-    </Svg>
-  )
-}
-
 const RING_COLOR_SLEEP = "#A78BFA"
 const RING_COLOR_RECOVERY = "#34D399"
 const RING_COLOR_STRAIN = "#F59E0B"
@@ -494,20 +458,9 @@ function PrimaryMetricsList({
     ringProgressSV.value = withTiming(ringPercent, { duration: 800, easing: Easing.out(Easing.ease) })
   }, [ringPercent, ringProgressSV])
 
-  const pillColor = (id: string) => {
-    if (id === "sleep") return RING_COLOR_SLEEP
-    if (id === "strain") return RING_COLOR_STRAIN
-    return ACCENT
-  }
-
   const blobColor = (id: string) => {
     if (id === "sleep") return "#A78BFA" // purple
     return "#FF541B" // orange like reference
-  }
-
-  const innerShadowColor = (id: string) => {
-    if (id === "sleep") return "rgba(167,139,250,0.8)"
-    return "rgba(255,84,27,0.8)" // #FF541B
   }
 
   return (
@@ -518,35 +471,45 @@ function PrimaryMetricsList({
         onPress={recovery?.onPress}
         style={$ringContainer}
       >
-        <CircularProgress
-          progress={ringProgressSV}
-          size={148}
-          strokeWidth={12}
-          progressCircleColor={RING_COLOR_RECOVERY}
-          outerCircleColor="rgba(255,255,255,0.08)"
-          backgroundColor="transparent"
-          gap={0}
-          renderIcon={() => (
-            <View style={$ringCenterContent}>
-              <View style={$ringValueRow}>
-                <RollingCounter
-                  value={ringPercent}
-                  height={36}
-                  width={22}
-                  fontSize={32}
-                  color="#fff"
+        <Glow
+          color={RING_COLOR_RECOVERY}
+          secondaryColor="#2B7AE8"
+          size={6}
+          style="breathe"
+          duration={4000}
+          intensity={0.35}
+          radius={74}
+        >
+          <CircularProgress
+            progress={ringProgressSV}
+            size={148}
+            strokeWidth={12}
+            progressCircleColor={RING_COLOR_RECOVERY}
+            outerCircleColor="rgba(255,255,255,0.08)"
+            backgroundColor="transparent"
+            gap={0}
+            renderIcon={() => (
+              <View style={$ringCenterContent}>
+                <View style={$ringValueRow}>
+                  <RollingCounter
+                    value={ringPercent}
+                    height={36}
+                    width={22}
+                    fontSize={32}
+                    color="#fff"
+                  />
+                  <Text text="%" size="lg" weight="bold" style={$ringPercentSign} />
+                </View>
+                <Text
+                  text="Recovery"
+                  size="xxs"
+                  weight="medium"
+                  style={$ringLabel}
                 />
-                <Text text="%" size="lg" weight="bold" style={$ringPercentSign} />
               </View>
-              <Text
-                text="Recovery"
-                size="xxs"
-                weight="medium"
-                style={$ringLabel}
-              />
-            </View>
-          )}
-        />
+            )}
+          />
+        </Glow>
       </TouchableOpacity>
 
       {/* Right: stacked glass cards */}
@@ -604,50 +567,6 @@ function PrimaryMetricsList({
   )
 }
 
-const INSIGHT_COLORS: Record<string, { accent: string; bg: string; icon: keyof typeof Ionicons.glyphMap }> = {
-  health: { accent: "#34D399", bg: "rgba(52,211,153,0.12)", icon: "heart-outline" },
-  stress: { accent: "#F87171", bg: "rgba(248,113,113,0.12)", icon: "pulse-outline" },
-  load: { accent: "#F59E0B", bg: "rgba(245,158,11,0.12)", icon: "barbell-outline" },
-  heart: { accent: "#60A5FA", bg: "rgba(96,165,250,0.12)", icon: "fitness-outline" },
-}
-
-function CompactInsightStrip({
-  items,
-}: {
-  items: Array<{
-    id: string
-    label: string
-    value: string
-    detail: string
-    onPress: () => void
-  }>
-}) {
-  return (
-    <View style={$insightGrid}>
-      {items.map((item) => {
-        const colors = INSIGHT_COLORS[item.id] ?? { accent: ACCENT, bg: "rgba(195,224,255,0.10)", icon: "ellipse-outline" as const }
-        return (
-          <TouchableOpacity
-            key={item.id}
-            activeOpacity={0.85}
-            onPress={item.onPress}
-            style={[$insightCard, { backgroundColor: colors.bg }]}
-          >
-            <View style={$insightCardTop}>
-              <View style={[$insightIconBadge, { backgroundColor: colors.accent }]}>
-                <Ionicons name={colors.icon} size={13} color="#fff" />
-              </View>
-              <Text text={item.label} size="xxs" weight="bold" style={{ color: colors.accent, letterSpacing: 0.3 }} />
-            </View>
-            <Text text={item.value} size="lg" weight="bold" style={$insightValue} numberOfLines={1} />
-            <Text text={item.detail} size="xxs" style={$insightDetail} numberOfLines={1} />
-          </TouchableOpacity>
-        )
-      })}
-    </View>
-  )
-}
-
 function chipDetail(factor: (typeof JOURNAL_FACTORS)[number] | undefined, intensity: number): string | null {
   if (!factor) return `${intensity}`
   const { input } = factor
@@ -667,12 +586,16 @@ function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
       style={$chipScroll}
       contentContainerStyle={$chipScrollContent}
     >
-      {entries.map((entry) => {
+      {entries.map((entry, index) => {
         const factor = JOURNAL_FACTORS.find((f) => f.tag === entry.factorTag)
         const color = factor?.color ?? "#60A5FA"
         const detail = chipDetail(factor, entry.intensity)
         return (
-          <View key={entry.id} style={[$chip, { borderLeftColor: color, borderLeftWidth: 3 }]}>
+          <Animated.View
+            key={entry.id}
+            entering={FadeIn.delay(index * 60).duration(200)}
+            style={[$chip, { borderLeftColor: color, borderLeftWidth: 3 }]}
+          >
             <Ionicons
               name={(factor?.icon ?? "ellipse-outline") as keyof typeof Ionicons.glyphMap}
               size={14}
@@ -691,7 +614,7 @@ function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
                 style={{ color: "rgba(255,255,255,0.5)" }}
               />
             )}
-          </View>
+          </Animated.View>
         )
       })}
     </ScrollView>
@@ -726,13 +649,6 @@ const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   paddingBottom: 132,
   paddingHorizontal: 20,
   paddingTop: 18,
-})
-
-const $rowBetween: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flexDirection: "row",
-  justifyContent: "space-between",
-  gap: 10,
 })
 
 const $screenWrap: ThemedStyle<ViewStyle> = () => ({
@@ -982,89 +898,6 @@ const $glassCardValue: TextStyle = {
   lineHeight: 34,
   marginTop: 4,
 }
-
-const $insightGrid: ViewStyle = {
-  flexDirection: "row",
-  flexWrap: "wrap",
-  gap: 10,
-  marginBottom: 18,
-}
-
-const $insightCard: ViewStyle = {
-  borderRadius: 16,
-  flex: 1,
-  gap: 4,
-  minWidth: "45%",
-  paddingHorizontal: 14,
-  paddingVertical: 14,
-}
-
-const $insightCardTop: ViewStyle = {
-  alignItems: "center",
-  flexDirection: "row",
-  gap: 6,
-  marginBottom: 4,
-}
-
-const $insightIconBadge: ViewStyle = {
-  alignItems: "center",
-  borderRadius: 8,
-  height: 22,
-  justifyContent: "center",
-  width: 22,
-}
-
-const $insightValue: TextStyle = {
-  color: "#fff",
-  fontVariant: ["tabular-nums"],
-}
-
-const $insightDetail: TextStyle = {
-  color: "rgba(255,255,255,0.45)",
-}
-
-const _$compactMetricsStrip: ThemedStyle<ViewStyle> = () => ({
-  backgroundColor: "rgba(255,255,255,0.085)",
-  borderColor: "rgba(255,255,255,0.08)",
-  borderRadius: 24,
-  borderWidth: 1,
-  flexDirection: "row",
-  marginTop: 8,
-  overflow: "hidden",
-})
-
-const $compactMetricItem: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-  gap: 5,
-  justifyContent: "center",
-  minHeight: 104,
-  paddingHorizontal: 8,
-  paddingVertical: 12,
-})
-
-const $compactMetricDivider: ThemedStyle<ViewStyle> = () => ({
-  borderRightColor: "rgba(255,255,255,0.08)",
-  borderRightWidth: 1,
-})
-
-const $compactMetricLabel: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.5)",
-  letterSpacing: 0.4,
-  textAlign: "center",
-})
-
-const $compactMetricValue: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.96)",
-  fontSize: 13,
-  lineHeight: 16,
-  minHeight: 32,
-  textAlign: "center",
-})
-
-const $compactMetricDetail: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.48)",
-  textAlign: "center",
-})
 
 const $myDayHeader: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
