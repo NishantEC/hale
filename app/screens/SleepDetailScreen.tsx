@@ -1,14 +1,25 @@
-import { FC, useRef, useEffect, useState } from "react"
+import { FC, useRef, useEffect, useState, useCallback } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import {
   LayoutAnimation,
+  Modal,
+  Pressable,
   RefreshControl,
+  Switch,
   TextStyle,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
   ViewStyle,
   useWindowDimensions,
 } from "react-native"
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+} from "react-native-reanimated"
 import { useNavigation, useRoute } from "@react-navigation/native"
 
 import { BarSeriesChart } from "@/components/BarSeriesChart"
@@ -38,9 +49,13 @@ function scoreQuality(score: number): string {
   return "Poor"
 }
 
-function formatClockMinutes(minutes: number) {
+function wrapMinutes(minutes: number) {
   const fullDay = 24 * 60
-  const normalized = ((minutes % fullDay) + fullDay) % fullDay
+  return ((minutes % fullDay) + fullDay) % fullDay
+}
+
+function formatClockMinutes(minutes: number) {
+  const normalized = wrapMinutes(minutes)
   const hours = Math.floor(normalized / 60)
   const mins = normalized % 60
   const suffix = hours >= 12 ? "PM" : "AM"
@@ -55,13 +70,42 @@ export const SleepDetailScreen: FC = () => {
   const { width } = useWindowDimensions()
   const {
     sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate,
-    liveDeviceState,
+    liveDeviceState, saveSleepPlan, armAlarm, disarmAlarm,
   } = useDashboard()
 
   const date: string = (route.params?.date as string) ?? selectedDate
   const [detailsExpanded, setDetailsExpanded] = useState(false)
-  const [alarmExpanded, setAlarmExpanded] = useState(false)
+  const [sheetVisible, setSheetVisible] = useState(false)
+  const sheetTranslateY = useSharedValue(400)
+  const backdropOpacity = useSharedValue(0)
   const lastShownError = useRef<string | null>(null)
+
+  const openSheet = useCallback(() => {
+    setSheetVisible(true)
+    backdropOpacity.value = withTiming(1, { duration: 250 })
+    sheetTranslateY.value = withSpring(0, { damping: 28, stiffness: 300 })
+  }, [])
+
+  const closeSheet = useCallback(() => {
+    backdropOpacity.value = withTiming(0, { duration: 200 })
+    sheetTranslateY.value = withSpring(400, { damping: 28, stiffness: 300 }, (finished) => {
+      if (finished) runOnJS(setSheetVisible)(false)
+    })
+  }, [])
+
+  const updatePlanner = useCallback(
+    async (patch: Partial<{ targetSleepMinutes: number; wakeMinutes: number; alarmEnabled: boolean; alarmMinutes: number; smartWakeEnabled: boolean }>) => {
+      if (!sleepView) return
+      await saveSleepPlan({
+        targetSleepMinutes: patch.targetSleepMinutes ?? sleepView.planner.targetSleepMinutes,
+        wakeMinutes: patch.wakeMinutes ?? sleepView.planner.wakeMinutes,
+        alarmEnabled: patch.alarmEnabled ?? sleepView.planner.alarmEnabled,
+        alarmMinutes: patch.alarmMinutes ?? sleepView.planner.alarmMinutes,
+        smartWakeEnabled: patch.smartWakeEnabled ?? sleepView.planner.smartWakeEnabled,
+      })
+    },
+    [saveSleepPlan, sleepView],
+  )
 
   useEffect(() => {
     if (error && error !== lastShownError.current) {
@@ -98,10 +142,13 @@ export const SleepDetailScreen: FC = () => {
     setDetailsExpanded((prev) => !prev)
   }
 
-  const toggleAlarm = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-    setAlarmExpanded((prev) => !prev)
-  }
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetTranslateY.value }],
+  }))
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }))
 
   // --- Nav Bar ---
   const NavBar = (
@@ -110,7 +157,7 @@ export const SleepDetailScreen: FC = () => {
         <Ionicons name="chevron-back" size={24} color="rgba(255,255,255,0.9)" />
       </TouchableOpacity>
       <Text text={formattedDate} size="sm" weight="semiBold" style={themed($navCenter)} />
-      <TouchableOpacity style={themed($navSide)} onPress={toggleAlarm}>
+      <TouchableOpacity style={themed($navSide)} onPress={openSheet}>
         <Ionicons
           name={sleepView?.planner.alarmEnabled ? "alarm" : "alarm-outline"}
           size={22}
@@ -302,79 +349,155 @@ export const SleepDetailScreen: FC = () => {
           </View>
         )}
 
-        {/* 6. Alarm / Sleep Planner (collapsible at bottom) */}
-        {alarmExpanded && (
-          <View style={themed($alarmSection)}>
-            <View style={themed($alarmHeader)}>
-              <Ionicons name="alarm" size={18} color={ACCENT} />
-              <Text text="Sleep Planner" size="sm" weight="semiBold" style={themed($alarmTitle)} />
+        {/* 6. Sleep Planner Bottom Sheet */}
+        <Modal visible={sheetVisible} transparent animationType="none" statusBarTranslucent onRequestClose={closeSheet}>
+          <TouchableWithoutFeedback onPress={closeSheet}>
+            <Animated.View style={[themed($sheetBackdrop), backdropStyle]} />
+          </TouchableWithoutFeedback>
+          <Animated.View style={[themed($sheetContainer), sheetStyle]}>
+            {/* Drag handle */}
+            <View style={themed($sheetHandle)} />
+
+            <View style={themed($sheetHeader)}>
+              <Ionicons name="alarm" size={20} color={ACCENT} />
+              <Text text="Sleep Planner" size="md" weight="semiBold" style={themed($sheetTitle)} />
+              <TouchableOpacity onPress={closeSheet} hitSlop={12}>
+                <Ionicons name="close" size={22} color="rgba(255,255,255,0.5)" />
+              </TouchableOpacity>
             </View>
 
-            <View style={themed($alarmRow)}>
-              <Text text="Target Sleep" size="xs" style={themed($alarmLabel)} />
-              <Text
-                text={`${parseFloat((sleepView.planner.targetSleepMinutes / 60).toFixed(1))}h`}
-                size="xs"
-                weight="semiBold"
-                style={themed($alarmValue)}
+            {/* Target Sleep */}
+            <View style={themed($sheetRow)}>
+              <Text text="Target Sleep" size="xs" style={themed($sheetLabel)} />
+              <View style={themed($sheetStepper)}>
+                <TouchableOpacity
+                  style={themed($stepBtn)}
+                  onPress={() => updatePlanner({ targetSleepMinutes: Math.max(360, sleepView.planner.targetSleepMinutes - 15) })}
+                >
+                  <Text text="−" size="sm" weight="bold" style={themed($stepBtnText)} />
+                </TouchableOpacity>
+                <Text
+                  text={`${parseFloat((sleepView.planner.targetSleepMinutes / 60).toFixed(1))}h`}
+                  size="xs"
+                  weight="semiBold"
+                  style={themed($sheetValue)}
+                />
+                <TouchableOpacity
+                  style={themed($stepBtn)}
+                  onPress={() => updatePlanner({ targetSleepMinutes: Math.min(600, sleepView.planner.targetSleepMinutes + 15) })}
+                >
+                  <Text text="+" size="sm" weight="bold" style={themed($stepBtnText)} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Wake Target */}
+            <View style={themed($sheetRow)}>
+              <Text text="Wake Target" size="xs" style={themed($sheetLabel)} />
+              <View style={themed($sheetStepper)}>
+                <TouchableOpacity
+                  style={themed($stepBtn)}
+                  onPress={() => updatePlanner({ wakeMinutes: wrapMinutes(sleepView.planner.wakeMinutes - 15) })}
+                >
+                  <Text text="−" size="sm" weight="bold" style={themed($stepBtnText)} />
+                </TouchableOpacity>
+                <Text
+                  text={formatClockMinutes(sleepView.planner.wakeMinutes)}
+                  size="xs"
+                  weight="semiBold"
+                  style={themed($sheetValue)}
+                />
+                <TouchableOpacity
+                  style={themed($stepBtn)}
+                  onPress={() => updatePlanner({ wakeMinutes: wrapMinutes(sleepView.planner.wakeMinutes + 15) })}
+                >
+                  <Text text="+" size="sm" weight="bold" style={themed($stepBtnText)} />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Alarm toggle */}
+            <View style={themed($sheetRow)}>
+              <Text text="Alarm" size="xs" style={themed($sheetLabel)} />
+              <Switch
+                value={sleepView.planner.alarmEnabled}
+                onValueChange={(v) => updatePlanner({ alarmEnabled: v })}
+                thumbColor="#F7F7FA"
+                trackColor={{ false: "rgba(255,255,255,0.12)", true: ACCENT }}
               />
             </View>
 
-            <View style={themed($alarmRow)}>
-              <Text text="Wake Target" size="xs" style={themed($alarmLabel)} />
-              <Text
-                text={formatClockMinutes(sleepView.planner.wakeMinutes)}
-                size="xs"
-                weight="semiBold"
-                style={themed($alarmValue)}
+            {/* Alarm Time (only if enabled) */}
+            {sleepView.planner.alarmEnabled && (
+              <View style={themed($sheetRow)}>
+                <Text text="Alarm Time" size="xs" style={themed($sheetLabel)} />
+                <View style={themed($sheetStepper)}>
+                  <TouchableOpacity
+                    style={themed($stepBtn)}
+                    onPress={() => updatePlanner({ alarmMinutes: wrapMinutes(sleepView.planner.alarmMinutes - 15) })}
+                  >
+                    <Text text="−" size="sm" weight="bold" style={themed($stepBtnText)} />
+                  </TouchableOpacity>
+                  <Text
+                    text={formatClockMinutes(sleepView.planner.alarmMinutes)}
+                    size="xs"
+                    weight="semiBold"
+                    style={themed($sheetValue)}
+                  />
+                  <TouchableOpacity
+                    style={themed($stepBtn)}
+                    onPress={() => updatePlanner({ alarmMinutes: wrapMinutes(sleepView.planner.alarmMinutes + 15) })}
+                  >
+                    <Text text="+" size="sm" weight="bold" style={themed($stepBtnText)} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Smart Wake toggle */}
+            <View style={themed($sheetRow)}>
+              <Text text="Smart Wake" size="xs" style={themed($sheetLabel)} />
+              <Switch
+                value={sleepView.planner.smartWakeEnabled}
+                onValueChange={(v) => updatePlanner({ smartWakeEnabled: v })}
+                thumbColor="#F7F7FA"
+                trackColor={{ false: "rgba(255,255,255,0.12)", true: ACCENT }}
               />
             </View>
 
-            <View style={themed($alarmRow)}>
-              <Text text="Alarm" size="xs" style={themed($alarmLabel)} />
-              <Text
-                text={sleepView.planner.alarmEnabled
-                  ? formatClockMinutes(sleepView.planner.alarmMinutes)
-                  : "Off"}
-                size="xs"
-                weight="semiBold"
-                style={themed($alarmValue)}
-              />
-            </View>
-
-            <View style={themed($alarmRow)}>
-              <Text text="Smart Wake" size="xs" style={themed($alarmLabel)} />
-              <Text
-                text={sleepView.planner.smartWakeEnabled ? "On" : "Off"}
-                size="xs"
-                weight="semiBold"
-                style={themed($alarmValue)}
-              />
-            </View>
-
-            <View style={themed($alarmRow)}>
-              <Text text="Strap" size="xs" style={themed($alarmLabel)} />
-              <Text
-                text={
-                  liveDeviceState.connectionState === "ready"
-                    ? liveDeviceState.strapAlarmArmed ? "Alarm armed" : "Connected"
-                    : "Offline"
+            {/* Arm / Disarm button */}
+            <TouchableOpacity
+              style={themed(liveDeviceState.strapAlarmArmed ? $sheetButtonDestructive : $sheetButtonPrimary)}
+              onPress={() => {
+                if (liveDeviceState.strapAlarmArmed) {
+                  disarmAlarm()
+                  Toast.show("Alarm disarmed", { type: "info", position: "top" })
+                } else {
+                  armAlarm()
+                  Toast.show("Alarm armed", { type: "success", position: "top" })
                 }
+              }}
+            >
+              <Text
+                text={liveDeviceState.strapAlarmArmed ? "Disarm Alarm" : "Arm Alarm"}
                 size="xs"
                 weight="semiBold"
-                style={themed($alarmValue)}
+                style={themed(liveDeviceState.strapAlarmArmed ? $sheetButtonDestructiveText : $sheetButtonPrimaryText)}
               />
-            </View>
+            </TouchableOpacity>
 
-            {sleepView.planner.alarmStatusText ? (
-              <Text
-                text={sleepView.planner.alarmStatusText}
-                size="xxs"
-                style={themed($alarmMuted)}
-              />
-            ) : null}
-          </View>
-        )}
+            {/* Status line */}
+            <Text
+              text={
+                liveDeviceState.connectionState === "ready"
+                  ? liveDeviceState.strapAlarmArmed ? "Strap alarm armed" : "Strap connected"
+                  : "Strap offline"
+              }
+              size="xxs"
+              style={themed($sheetMuted)}
+            />
+          </Animated.View>
+        </Modal>
       </Screen>
     </View>
   )
@@ -543,43 +666,109 @@ const $insightMuted: ThemedStyle<TextStyle> = () => ({
   color: "rgba(255,255,255,0.46)",
 })
 
-// Alarm / Planner section
-const $alarmSection: ThemedStyle<ViewStyle> = () => ({
-  backgroundColor: "rgba(255,255,255,0.03)",
-  borderColor: "rgba(255,255,255,0.06)",
-  borderRadius: 16,
-  borderWidth: 1,
-  gap: 12,
-  padding: 16,
+// Bottom Sheet
+const $sheetBackdrop: ThemedStyle<ViewStyle> = () => ({
+  ...({ position: "absolute", top: 0, left: 0, right: 0, bottom: 0 } as any),
+  backgroundColor: "rgba(0,0,0,0.55)",
 })
 
-const $alarmHeader: ThemedStyle<ViewStyle> = () => ({
+const $sheetContainer: ThemedStyle<ViewStyle> = () => ({
+  backgroundColor: "#1A1A1E",
+  borderTopLeftRadius: 20,
+  borderTopRightRadius: 20,
+  bottom: 0,
+  gap: 16,
+  left: 0,
+  paddingBottom: 40,
+  paddingHorizontal: 24,
+  paddingTop: 12,
+  position: "absolute",
+  right: 0,
+})
+
+const $sheetHandle: ThemedStyle<ViewStyle> = () => ({
+  alignSelf: "center",
+  backgroundColor: "rgba(255,255,255,0.2)",
+  borderRadius: 3,
+  height: 5,
+  width: 40,
+})
+
+const $sheetHeader: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
   flexDirection: "row",
   gap: 8,
 })
 
-const $alarmTitle: ThemedStyle<TextStyle> = () => ({
+const $sheetTitle: ThemedStyle<TextStyle> = () => ({
   color: "rgba(255,255,255,0.92)",
+  flex: 1,
 })
 
-const $alarmRow: ThemedStyle<ViewStyle> = () => ({
+const $sheetRow: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
   flexDirection: "row",
   justifyContent: "space-between",
 })
 
-const $alarmLabel: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.52)",
+const $sheetLabel: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.65)",
 })
 
-const $alarmValue: ThemedStyle<TextStyle> = () => ({
+const $sheetValue: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.96)",
+  minWidth: 68,
+  textAlign: "center",
+})
+
+const $sheetStepper: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  flexDirection: "row",
+  gap: 10,
+})
+
+const $stepBtn: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  backgroundColor: "rgba(255,255,255,0.08)",
+  borderRadius: 999,
+  height: 32,
+  justifyContent: "center",
+  width: 32,
+})
+
+const $stepBtnText: ThemedStyle<TextStyle> = () => ({
   color: "rgba(255,255,255,0.92)",
 })
 
-const $alarmMuted: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.38)",
+const $sheetButtonPrimary: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  backgroundColor: ACCENT,
+  borderRadius: 14,
+  justifyContent: "center",
   marginTop: 4,
+  minHeight: 46,
+})
+
+const $sheetButtonPrimaryText: ThemedStyle<TextStyle> = () => ({
+  color: "#09090B",
+})
+
+const $sheetButtonDestructive: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  backgroundColor: "#EF4444",
+  borderRadius: 14,
+  justifyContent: "center",
+  marginTop: 4,
+  minHeight: 46,
+})
+
+const $sheetButtonDestructiveText: ThemedStyle<TextStyle> = () => ({
+  color: "#fff",
+})
+
+const $sheetMuted: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.38)",
+  textAlign: "center",
 })
 
 // Empty State
