@@ -1,6 +1,7 @@
-import { FC } from "react"
+import { FC, useRef, useEffect } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import {
+  RefreshControl,
   TextStyle,
   TouchableOpacity,
   View,
@@ -15,6 +16,7 @@ import { InlineLineChart } from "@/components/InlineLineChart"
 import { Screen } from "@/components/Screen"
 import { SleepHeartRateChart } from "@/components/SleepHeartRateChart"
 import { Text } from "@/components/Text"
+import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
@@ -42,17 +44,29 @@ export const SleepDetailScreen: FC = () => {
   const route = useRoute<RouteProp<AppStackParamList, "SleepDetail">>()
   const { date } = route.params
   const { width } = useWindowDimensions()
-  const { sleepView } = useDashboard()
+  const { sleepView, isRefreshing, refreshDashboard, error, clearError } = useDashboard()
+
+  const lastShownError = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (error && error !== lastShownError.current) {
+      lastShownError.current = error
+      Toast.show(error, { type: "error", position: "top", duration: 4000 })
+      clearError()
+    } else if (!error) {
+      lastShownError.current = null
+    }
+  }, [error, clearError])
 
   const chartWidth = width - 48
 
   // Resolve the sleep score for the given date
   const scorePoint =
-    sleepView?.sleepScoreTrend?.find((p) => p.x === date) ??
+    sleepView?.sleepScoreTrend?.find((p) => p.timestamp.startsWith(date)) ??
     (sleepView?.sleepScoreTrend?.length
       ? sleepView.sleepScoreTrend[sleepView.sleepScoreTrend.length - 1]
       : null)
-  const scoreValue = scorePoint ? Math.round(scorePoint.y) : null
+  const scoreValue = scorePoint ? Math.round(scorePoint.value) : null
 
   // Format the date for the nav bar
   const formattedDate = (() => {
@@ -83,6 +97,15 @@ export const SleepDetailScreen: FC = () => {
           preset="scroll"
           safeAreaEdges={["top"]}
           contentContainerStyle={themed($container)}
+          ScrollViewProps={{
+            refreshControl: (
+              <RefreshControl
+                refreshing={isRefreshing}
+                onRefresh={refreshDashboard}
+                tintColor={ACCENT}
+              />
+            ),
+          }}
         >
           {NavBar}
           <View style={themed($emptyState)}>
@@ -118,6 +141,15 @@ export const SleepDetailScreen: FC = () => {
         preset="scroll"
         safeAreaEdges={["top"]}
         contentContainerStyle={themed($container)}
+        ScrollViewProps={{
+          refreshControl: (
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={refreshDashboard}
+              tintColor={ACCENT}
+            />
+          ),
+        }}
       >
         {/* 1. Nav Bar */}
         {NavBar}
@@ -134,7 +166,7 @@ export const SleepDetailScreen: FC = () => {
                 text={scoreQuality(scoreValue)}
                 size="sm"
                 weight="semiBold"
-                style={[themed($heroQuality), { color: scoreColor(scoreValue) }]}
+                style={{ color: scoreColor(scoreValue) }}
               />
               <Text text={sleepView.header.duration} size="sm" style={themed($heroDuration)} />
             </>
@@ -171,19 +203,21 @@ export const SleepDetailScreen: FC = () => {
         )}
 
         {/* 5. Heart Rate Chart */}
-        <View style={themed($section)}>
-          <Text text="HEART RATE" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-          <SleepHeartRateChart
-            samples={sleepView.hrChart.samples}
-            epochs={sleepView.epochTimeline}
-            width={chartWidth}
-            height={120}
-          />
-          <View style={themed($chartAxis)}>
-            <Text text={sleepView.header.bedtime} size="xxs" style={themed($axisText)} />
-            <Text text={sleepView.header.wakeTime} size="xxs" style={themed($axisText)} />
+        {sleepView.hrChart.samples.length > 0 ? (
+          <View style={themed($section)}>
+            <Text text="HEART RATE" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
+            <SleepHeartRateChart
+              samples={sleepView.hrChart.samples}
+              epochs={sleepView.epochTimeline}
+              width={chartWidth}
+              height={120}
+            />
+            <View style={themed($chartAxis)}>
+              <Text text={sleepView.header.bedtime} size="xxs" style={themed($axisText)} />
+              <Text text={sleepView.header.wakeTime} size="xxs" style={themed($axisText)} />
+            </View>
           </View>
-        </View>
+        ) : null}
 
         {/* 6. Trends (7 Night) */}
         <View style={themed($trendsRow)}>
@@ -296,8 +330,6 @@ const $heroScore: ThemedStyle<TextStyle> = () => ({
   fontWeight: "bold",
   lineHeight: 64,
 })
-
-const $heroQuality: ThemedStyle<TextStyle> = () => ({})
 
 const $heroDuration: ThemedStyle<TextStyle> = () => ({
   color: "rgba(255,255,255,0.52)",
