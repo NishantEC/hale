@@ -24,7 +24,7 @@ import type { AppStackParamList } from "@/navigators/navigationTypes"
 
 const ACCENT = "#BDD7FF"
 const SCREEN_BG = "#06070A"
-const KEY_METRIC_LABELS = ["Efficiency", "Sleep Latency", "Avg HR", "HRV Drop"]
+const KEY_METRIC_LABELS = ["Efficiency", "Resting HR", "HRV (RMSSD)", "Interruptions"]
 
 function scoreColor(score: number): string {
   if (score >= 80) return "#57D37C"
@@ -42,9 +42,12 @@ export const SleepDetailScreen: FC = () => {
   const { themed } = useAppTheme()
   const navigation = useNavigation<any>()
   const route = useRoute<RouteProp<AppStackParamList, "SleepDetail">>()
-  const { date } = route.params
   const { width } = useWindowDimensions()
-  const { sleepView, isRefreshing, refreshDashboard, error, clearError } = useDashboard()
+  const { sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate } =
+    useDashboard()
+
+  // When rendered as a tab (no stack params), fall back to the dashboard's selected date.
+  const date: string = route.params?.date ?? selectedDate
 
   const lastShownError = useRef<string | null>(null)
 
