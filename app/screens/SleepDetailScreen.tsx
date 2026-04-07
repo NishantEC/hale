@@ -1,6 +1,7 @@
-import { FC, useRef, useEffect } from "react"
+import { FC, useRef, useEffect, useState } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import {
+  LayoutAnimation,
   RefreshControl,
   TextStyle,
   TouchableOpacity,
@@ -37,16 +38,29 @@ function scoreQuality(score: number): string {
   return "Poor"
 }
 
+function formatClockMinutes(minutes: number) {
+  const fullDay = 24 * 60
+  const normalized = ((minutes % fullDay) + fullDay) % fullDay
+  const hours = Math.floor(normalized / 60)
+  const mins = normalized % 60
+  const suffix = hours >= 12 ? "PM" : "AM"
+  const hour12 = hours % 12 || 12
+  return `${hour12}:${String(mins).padStart(2, "0")} ${suffix}`
+}
+
 export const SleepDetailScreen: FC = () => {
   const { themed } = useAppTheme()
   const navigation = useNavigation<any>()
   const route = useRoute<any>()
   const { width } = useWindowDimensions()
-  const { sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate } =
-    useDashboard()
+  const {
+    sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate,
+    liveDeviceState,
+  } = useDashboard()
 
   const date: string = (route.params?.date as string) ?? selectedDate
-
+  const [detailsExpanded, setDetailsExpanded] = useState(false)
+  const [alarmExpanded, setAlarmExpanded] = useState(false)
   const lastShownError = useRef<string | null>(null)
 
   useEffect(() => {
@@ -61,7 +75,7 @@ export const SleepDetailScreen: FC = () => {
 
   const chartWidth = width - 48
 
-  // Resolve the sleep score for the given date
+  // Resolve sleep score
   const scorePoint =
     sleepView?.sleepScoreTrend?.find((p) => p.timestamp.startsWith(date)) ??
     (sleepView?.sleepScoreTrend?.length
@@ -69,27 +83,44 @@ export const SleepDetailScreen: FC = () => {
       : null)
   const scoreValue = scorePoint ? Math.round(scorePoint.value) : null
 
-  // Format the date for the nav bar
+  // Format date for nav bar
   const formattedDate = (() => {
     const [year, month, day] = date.split("-").map(Number)
     return new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
       month: "short",
       day: "numeric",
     }).format(new Date(year, month - 1, day, 12))
   })()
 
+  const toggleDetails = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+    setDetailsExpanded((prev) => !prev)
+  }
+
+  const toggleAlarm = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+    setAlarmExpanded((prev) => !prev)
+  }
+
   // --- Nav Bar ---
   const NavBar = (
     <View style={themed($navBar)}>
-      <TouchableOpacity style={themed($backButton)} onPress={() => navigation.goBack()}>
+      <TouchableOpacity style={themed($navSide)} onPress={() => navigation.goBack()}>
         <Ionicons name="chevron-back" size={24} color="rgba(255,255,255,0.9)" />
       </TouchableOpacity>
-      <Text text="Sleep" size="lg" weight="semiBold" style={themed($navTitle)} />
-      <Text text={formattedDate} size="sm" style={themed($navDate)} />
+      <Text text={formattedDate} size="sm" weight="semiBold" style={themed($navCenter)} />
+      <TouchableOpacity style={themed($navSide)} onPress={toggleAlarm}>
+        <Ionicons
+          name={sleepView?.planner.alarmEnabled ? "alarm" : "alarm-outline"}
+          size={22}
+          color={sleepView?.planner.alarmEnabled ? ACCENT : "rgba(255,255,255,0.6)"}
+        />
+      </TouchableOpacity>
     </View>
   )
 
-  // --- Empty / Loading State ---
+  // --- Empty State ---
   if (!sleepView || sleepView.emptyState.isEmpty) {
     return (
       <View style={themed($screenWrap)}>
@@ -100,11 +131,7 @@ export const SleepDetailScreen: FC = () => {
           contentContainerStyle={themed($container)}
           ScrollViewProps={{
             refreshControl: (
-              <RefreshControl
-                refreshing={isRefreshing}
-                onRefresh={refreshDashboard}
-                tintColor={ACCENT}
-              />
+              <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={ACCENT} />
             ),
           }}
         >
@@ -127,12 +154,11 @@ export const SleepDetailScreen: FC = () => {
     )
   }
 
-  // --- Key metrics row ---
+  // --- Key metrics ---
   const keyMetrics = KEY_METRIC_LABELS.map((label) =>
     sleepView.metrics.find((m) => m.label === label),
   ).filter(Boolean) as Array<{ label: string; value: string; detail: string | null }>
 
-  // --- Trends half-width ---
   const halfWidth = (width - 48 - 12) / 2
 
   return (
@@ -144,15 +170,11 @@ export const SleepDetailScreen: FC = () => {
         contentContainerStyle={themed($container)}
         ScrollViewProps={{
           refreshControl: (
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={refreshDashboard}
-              tintColor={ACCENT}
-            />
+            <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={ACCENT} />
           ),
         }}
       >
-        {/* 1. Nav Bar */}
+        {/* 1. Nav Bar — [back]  [date centered]  [alarm icon] */}
         {NavBar}
 
         {/* 2. Hero Score */}
@@ -203,75 +225,154 @@ export const SleepDetailScreen: FC = () => {
           </View>
         )}
 
-        {/* 5. Heart Rate Chart */}
-        {sleepView.hrChart.samples.length > 0 ? (
-          <View style={themed($section)}>
-            <Text text="HEART RATE" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-            <SleepHeartRateChart
-              samples={sleepView.hrChart.samples}
-              epochs={sleepView.epochTimeline}
-              width={chartWidth}
-              height={120}
-            />
-            <View style={themed($chartAxis)}>
-              <Text text={sleepView.header.bedtime} size="xxs" style={themed($axisText)} />
-              <Text text={sleepView.header.wakeTime} size="xxs" style={themed($axisText)} />
-            </View>
-          </View>
-        ) : null}
+        {/* 5. Collapsible: HR Chart + Trends + Insights */}
+        <TouchableOpacity style={themed($expandRow)} onPress={toggleDetails} activeOpacity={0.7}>
+          <Text text="More Details" size="xs" weight="semiBold" style={themed($expandLabel)} />
+          <Ionicons
+            name={detailsExpanded ? "chevron-up" : "chevron-down"}
+            size={18}
+            color="rgba(255,255,255,0.5)"
+          />
+        </TouchableOpacity>
 
-        {/* 6. Trends (7 Night) */}
-        <View style={themed($trendsRow)}>
-          <View style={[themed($trendColumn), { width: halfWidth }]}>
-            <Text text="DURATION — 7 NIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-            <BarSeriesChart
-              points={sleepView.durationTrend.samples}
-              width={halfWidth}
-              height={80}
-              fill={ACCENT}
-              referenceValue={sleepView.durationTrend.targetHours}
-            />
-          </View>
-          <View style={[themed($trendColumn), { width: halfWidth }]}>
-            <Text text="SCORE — 7 NIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-            <InlineLineChart
-              points={sleepView.sleepScoreTrend}
-              width={halfWidth}
-              height={80}
-              stroke={ACCENT}
-            />
-          </View>
-        </View>
-
-        {/* 7. Insights */}
-        {sleepView.factorInsights.length > 0 && (
-          <View style={themed($section)}>
-            <Text text="INSIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-            <View style={themed($insightList)}>
-              {sleepView.factorInsights.map((insight) => (
-                <View key={insight.factorTag} style={themed($insightRow)}>
-                  <Text
-                    text={insight.factorTag}
-                    size="xs"
-                    weight="semiBold"
-                    style={themed($insightTag)}
-                  />
-                  <View style={themed($insightRight)}>
-                    {insight.deepDelta ? (
-                      <Text text={insight.deepDelta} size="xxs" style={themed($insightPositive)} />
-                    ) : null}
-                    {insight.remDelta ? (
-                      <Text text={insight.remDelta} size="xxs" style={themed($insightNeutral)} />
-                    ) : null}
-                    <Text
-                      text={`(${insight.sampleCount}n)`}
-                      size="xxs"
-                      style={themed($insightMuted)}
-                    />
-                  </View>
+        {detailsExpanded && (
+          <View style={themed($collapsedContent)}>
+            {/* Heart Rate Chart */}
+            {sleepView.hrChart.samples.length > 0 && (
+              <View style={themed($section)}>
+                <Text text="HEART RATE" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
+                <SleepHeartRateChart
+                  samples={sleepView.hrChart.samples}
+                  epochs={sleepView.epochTimeline}
+                  width={chartWidth}
+                  height={120}
+                />
+                <View style={themed($chartAxis)}>
+                  <Text text={sleepView.header.bedtime} size="xxs" style={themed($axisText)} />
+                  <Text text={sleepView.header.wakeTime} size="xxs" style={themed($axisText)} />
                 </View>
-              ))}
+              </View>
+            )}
+
+            {/* Trends */}
+            <View style={themed($trendsRow)}>
+              <View style={[themed($trendColumn), { width: halfWidth }]}>
+                <Text text="DURATION — 7 NIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
+                <BarSeriesChart
+                  points={sleepView.durationTrend.samples}
+                  width={halfWidth}
+                  height={80}
+                  fill={ACCENT}
+                  referenceValue={sleepView.durationTrend.targetHours}
+                />
+              </View>
+              <View style={[themed($trendColumn), { width: halfWidth }]}>
+                <Text text="SCORE — 7 NIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
+                <InlineLineChart
+                  points={sleepView.sleepScoreTrend}
+                  width={halfWidth}
+                  height={80}
+                  stroke={ACCENT}
+                />
+              </View>
             </View>
+
+            {/* Insights */}
+            {sleepView.factorInsights.length > 0 && (
+              <View style={themed($section)}>
+                <Text text="INSIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
+                <View style={themed($insightList)}>
+                  {sleepView.factorInsights.map((insight) => (
+                    <View key={insight.factorTag} style={themed($insightRow)}>
+                      <Text text={insight.factorTag} size="xs" weight="semiBold" style={themed($insightTag)} />
+                      <View style={themed($insightRight)}>
+                        {insight.deepDelta ? (
+                          <Text text={insight.deepDelta} size="xxs" style={themed($insightPositive)} />
+                        ) : null}
+                        {insight.remDelta ? (
+                          <Text text={insight.remDelta} size="xxs" style={themed($insightNeutral)} />
+                        ) : null}
+                        <Text text={`(${insight.sampleCount}n)`} size="xxs" style={themed($insightMuted)} />
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* 6. Alarm / Sleep Planner (collapsible at bottom) */}
+        {alarmExpanded && (
+          <View style={themed($alarmSection)}>
+            <View style={themed($alarmHeader)}>
+              <Ionicons name="alarm" size={18} color={ACCENT} />
+              <Text text="Sleep Planner" size="sm" weight="semiBold" style={themed($alarmTitle)} />
+            </View>
+
+            <View style={themed($alarmRow)}>
+              <Text text="Target Sleep" size="xs" style={themed($alarmLabel)} />
+              <Text
+                text={`${parseFloat((sleepView.planner.targetSleepMinutes / 60).toFixed(1))}h`}
+                size="xs"
+                weight="semiBold"
+                style={themed($alarmValue)}
+              />
+            </View>
+
+            <View style={themed($alarmRow)}>
+              <Text text="Wake Target" size="xs" style={themed($alarmLabel)} />
+              <Text
+                text={formatClockMinutes(sleepView.planner.wakeMinutes)}
+                size="xs"
+                weight="semiBold"
+                style={themed($alarmValue)}
+              />
+            </View>
+
+            <View style={themed($alarmRow)}>
+              <Text text="Alarm" size="xs" style={themed($alarmLabel)} />
+              <Text
+                text={sleepView.planner.alarmEnabled
+                  ? formatClockMinutes(sleepView.planner.alarmMinutes)
+                  : "Off"}
+                size="xs"
+                weight="semiBold"
+                style={themed($alarmValue)}
+              />
+            </View>
+
+            <View style={themed($alarmRow)}>
+              <Text text="Smart Wake" size="xs" style={themed($alarmLabel)} />
+              <Text
+                text={sleepView.planner.smartWakeEnabled ? "On" : "Off"}
+                size="xs"
+                weight="semiBold"
+                style={themed($alarmValue)}
+              />
+            </View>
+
+            <View style={themed($alarmRow)}>
+              <Text text="Strap" size="xs" style={themed($alarmLabel)} />
+              <Text
+                text={
+                  liveDeviceState.connectionState === "ready"
+                    ? liveDeviceState.strapAlarmArmed ? "Alarm armed" : "Connected"
+                    : "Offline"
+                }
+                size="xs"
+                weight="semiBold"
+                style={themed($alarmValue)}
+              />
+            </View>
+
+            {sleepView.planner.alarmStatusText ? (
+              <Text
+                text={sleepView.planner.alarmStatusText}
+                size="xxs"
+                style={themed($alarmMuted)}
+              />
+            ) : null}
           </View>
         )}
       </Screen>
@@ -279,7 +380,7 @@ export const SleepDetailScreen: FC = () => {
   )
 }
 
-// --------------- Styles ---------------
+// ═══════════════════════ Styles ═══════════════════════
 
 const $screenWrap: ThemedStyle<ViewStyle> = () => ({
   backgroundColor: SCREEN_BG,
@@ -293,29 +394,24 @@ const $container: ThemedStyle<ViewStyle> = () => ({
   paddingTop: 12,
 })
 
-// Nav Bar
+// Nav Bar — 3-column: [back] [centered date] [alarm]
 const $navBar: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
   flexDirection: "row",
-  gap: 8,
+  justifyContent: "space-between",
   minHeight: 44,
 })
 
-const $backButton: ThemedStyle<ViewStyle> = () => ({
+const $navSide: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
   height: 36,
   justifyContent: "center",
-  marginRight: 4,
   width: 36,
 })
 
-const $navTitle: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.96)",
-  flex: 1,
-})
-
-const $navDate: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.52)",
+const $navCenter: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.88)",
+  textAlign: "center",
 })
 
 // Hero
@@ -366,7 +462,6 @@ const $axisText: ThemedStyle<TextStyle> = () => ({
 // Key Metrics Row
 const $metricsRow: ThemedStyle<ViewStyle> = () => ({
   flexDirection: "row",
-  gap: 0,
 })
 
 const $metricCell: ThemedStyle<ViewStyle> = () => ({
@@ -382,6 +477,26 @@ const $metricLabel: ThemedStyle<TextStyle> = () => ({
 
 const $metricValue: ThemedStyle<TextStyle> = () => ({
   color: "rgba(255,255,255,0.96)",
+})
+
+// Expand / Collapse row
+const $expandRow: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  borderColor: "rgba(255,255,255,0.06)",
+  borderRadius: 12,
+  borderWidth: 1,
+  flexDirection: "row",
+  gap: 6,
+  justifyContent: "center",
+  paddingVertical: 12,
+})
+
+const $expandLabel: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.5)",
+})
+
+const $collapsedContent: ThemedStyle<ViewStyle> = () => ({
+  gap: 24,
 })
 
 // Trends
@@ -426,6 +541,45 @@ const $insightNeutral: ThemedStyle<TextStyle> = () => ({
 
 const $insightMuted: ThemedStyle<TextStyle> = () => ({
   color: "rgba(255,255,255,0.46)",
+})
+
+// Alarm / Planner section
+const $alarmSection: ThemedStyle<ViewStyle> = () => ({
+  backgroundColor: "rgba(255,255,255,0.03)",
+  borderColor: "rgba(255,255,255,0.06)",
+  borderRadius: 16,
+  borderWidth: 1,
+  gap: 12,
+  padding: 16,
+})
+
+const $alarmHeader: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  flexDirection: "row",
+  gap: 8,
+})
+
+const $alarmTitle: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.92)",
+})
+
+const $alarmRow: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  flexDirection: "row",
+  justifyContent: "space-between",
+})
+
+const $alarmLabel: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.52)",
+})
+
+const $alarmValue: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.92)",
+})
+
+const $alarmMuted: ThemedStyle<TextStyle> = () => ({
+  color: "rgba(255,255,255,0.38)",
+  marginTop: 4,
 })
 
 // Empty State
