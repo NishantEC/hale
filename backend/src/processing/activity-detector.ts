@@ -7,6 +7,7 @@
 
 import type { HistoricalSensorRecord, SleepDetectionSummary, BaselineProfile } from './interfaces';
 import { average, standardDeviation } from './utils';
+import { fftRadix2, makeHannWindow } from './hrv-frequency.js';
 
 // ── Types ────────────────────────────────────────────────
 
@@ -270,44 +271,58 @@ function classifyBout(
   };
 }
 
-/**
- * Detect dominant cadence frequency from gravity magnitude oscillations.
- * Uses zero-crossing counting as a simple frequency estimator.
- */
 function detectCadence(records: HistoricalSensorRecord[]): number | null {
-  if (records.length < 30) return null;
+  if (records.length < 120) return null;
 
-  // Compute gravity magnitude time series
   const magnitudes: number[] = [];
   for (const r of records) {
     if (r.gravityX != null && r.gravityY != null && r.gravityZ != null) {
       magnitudes.push(Math.sqrt(r.gravityX ** 2 + r.gravityY ** 2 + r.gravityZ ** 2));
     }
   }
-  if (magnitudes.length < 30) return null;
-
-  // Remove DC (mean) to get oscillation
-  const mean = average(magnitudes);
-  const centered = magnitudes.map((m) => m - mean);
-
-  // Count zero crossings
-  let crossings = 0;
-  for (let i = 1; i < centered.length; i++) {
-    if ((centered[i - 1] < 0 && centered[i] >= 0) || (centered[i - 1] >= 0 && centered[i] < 0)) {
-      crossings++;
-    }
-  }
+  if (magnitudes.length < 128) return null;
 
   // Estimate sample rate from timestamps
   const totalSeconds =
     (records[records.length - 1].timestamp.getTime() - records[0].timestamp.getTime()) / 1000;
   if (totalSeconds <= 0) return null;
+  const sampleRate = magnitudes.length / totalSeconds;
 
-  // Frequency = crossings / (2 * duration) — each full cycle has 2 crossings
-  const freqHz = crossings / (2 * totalSeconds);
+  // Use last 256 samples (or pad to 256)
+  const segmentSize = 256;
+  const segment = new Float64Array(segmentSize);
+  const hannWindow = makeHannWindow(segmentSize);
+  const mean = magnitudes.reduce((s, v) => s + v, 0) / magnitudes.length;
+  const start = Math.max(0, magnitudes.length - segmentSize);
 
-  // Only return if in plausible human movement range (0.5 - 4 Hz)
-  return freqHz >= 0.5 && freqHz <= 4.0 ? freqHz : null;
+  for (let i = 0; i < segmentSize; i++) {
+    const idx = start + i;
+    const val = idx < magnitudes.length ? magnitudes[idx] - mean : 0;
+    segment[i] = val * hannWindow[i];
+  }
+
+  const { re, im } = fftRadix2(segment);
+
+  // Find peak in cadence range (1.2-4.0 Hz)
+  const freqResolution = sampleRate / segmentSize;
+  let peakFreq = 0;
+  let peakPower = 0;
+  let totalPower = 0;
+
+  for (let k = 0; k <= segmentSize / 2; k++) {
+    const power = re[k] * re[k] + im[k] * im[k];
+    totalPower += power;
+
+    const freq = k * freqResolution;
+    if (freq >= 1.2 && freq <= 4.0 && power > peakPower) {
+      peakPower = power;
+      peakFreq = freq;
+    }
+  }
+
+  // Require peak to be significantly above noise floor
+  const noiseFloor = totalPower / (segmentSize / 2 + 1);
+  return peakPower > noiseFloor * 3 ? peakFreq : null;
 }
 
 /**
