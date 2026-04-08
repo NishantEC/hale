@@ -1,9 +1,11 @@
 import type { HistoricalSensorRecord, EpochFeature } from './interfaces';
 import { average, standardDeviation, median } from './utils';
+import { computeLfHfRatio } from './hrv-frequency';
+import { computeRSA } from './respiratory-sinus-arrhythmia';
 
 const EPOCH_SECONDS = 30;
 const GRAVITY_STILL_THRESHOLD = 0.01;
-const FEATURE_COUNT = 21;
+const FEATURE_COUNT = 28;
 
 export function extractEpochFeatures(
   records: HistoricalSensorRecord[],
@@ -136,6 +138,40 @@ function computeEpochFeature(
   const skinContact =
     contactValues.every((c) => c === false) ? 0 : 1;
 
+  // HRV frequency domain (LF/HF ratio)
+  const lfHfResult = computeLfHfRatio(ibis);
+  const lfPower = lfHfResult?.lf ?? NaN;
+  const hfPower = lfHfResult?.hf ?? NaN;
+  const lfHfRatio = lfHfResult?.lfHfRatio ?? NaN;
+
+  // Respiratory sinus arrhythmia
+  const rsaResult = computeRSA(ibis, respiratoryRate);
+  const rsaAmplitude = rsaResult?.rsaAmplitude ?? NaN;
+
+  // Ambient light (higher = more interference)
+  const ambientValues = records
+    .map((r) => r.ambientLight)
+    .filter((v): v is number => v != null);
+  const ambientLightMean = ambientValues.length > 0 ? average(ambientValues) : 0;
+
+  // PPG confidence from green channel (coefficient of variation inverted)
+  const ppgGreenValues = records
+    .map((r) => r.ppgGreen)
+    .filter((v): v is number => v != null && v > 0);
+  const ppgConfidence = (() => {
+    if (ppgGreenValues.length < 2) return NaN;
+    const mean = average(ppgGreenValues);
+    if (mean <= 0) return NaN;
+    const cv = standardDeviation(ppgGreenValues) / mean;
+    return Math.max(0, Math.min(1, 1 - cv));
+  })();
+
+  // Device signal quality index (normalized 0-1)
+  const sqValues = records
+    .map((r) => r.signalQuality)
+    .filter((v): v is number => v != null && v >= 0);
+  const deviceSignalQuality = sqValues.length > 0 ? average(sqValues) / 100 : NaN;
+
   // Signal completeness
   const featureValues = [
     hrMean, hrStd, hrMin, hrMax, hrDeltaFromBaseline,
@@ -144,6 +180,8 @@ function computeEpochFeature(
     respiratoryRate, respiratoryStd,
     spo2, skinTemp, skinTempDelta,
     clockSin, clockCos, skinContact,
+    ambientLightMean, ppgConfidence, deviceSignalQuality,
+    lfPower, hfPower, lfHfRatio, rsaAmplitude,
   ];
   const nonNanCount = featureValues.filter((v) => !isNaN(v)).length + 1; // +1 for signalCompleteness itself
   const signalCompleteness = nonNanCount / FEATURE_COUNT;
@@ -171,6 +209,13 @@ function computeEpochFeature(
     clockCos,
     skinContact,
     signalCompleteness,
+    ambientLightMean,
+    ppgConfidence,
+    deviceSignalQuality,
+    lfPower,
+    hfPower,
+    lfHfRatio,
+    rsaAmplitude,
   };
 }
 
@@ -193,6 +238,8 @@ function computeGravityDeltas(
       const dy = curr.gravityY - prev.gravityY;
       const dz = curr.gravityZ - prev.gravityZ;
       deltas.push(Math.sqrt(dx * dx + dy * dy + dz * dz));
+    } else {
+      deltas.push(1.0); // Missing data = assume motion (reference behavior)
     }
   }
   return deltas;
