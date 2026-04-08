@@ -95,10 +95,11 @@ function filterAwakeRecords(
   sleepDetections: SleepDetectionSummary[],
 ): HistoricalSensorRecord[] {
   if (sleepDetections.length === 0) return records;
+  const BUFFER_MS = 10 * 60 * 1000; // 10-minute guard band
   return records.filter((r) => {
     const ts = r.timestamp.getTime();
     return !sleepDetections.some(
-      (d) => ts >= d.bedtime.getTime() && ts <= d.wakeTime.getTime(),
+      (d) => ts >= (d.bedtime.getTime() - BUFFER_MS) && ts <= (d.wakeTime.getTime() + BUFFER_MS),
     );
   });
 }
@@ -250,7 +251,7 @@ function classifyBout(
     hrZone >= 4 ? 'hard' : hrZone >= 2 ? 'moderate' : 'light';
 
   // Per-bout strain (TRIMP)
-  const strainScore = computeBoutStrain(heartRates, restingHR, maxHR);
+  const strainScore = computeBoutStrain(boutRecords, restingHR, maxHR);
 
   return {
     startTime: bout.start,
@@ -339,30 +340,32 @@ function computeImpactScore(records: HistoricalSensorRecord[], motionIntensity: 
 }
 
 /**
- * Compute TRIMP strain for a bout's HR samples.
+ * Compute TRIMP strain for a bout using actual record timestamps.
  */
 function computeBoutStrain(
-  heartRates: number[],
+  boutRecords: HistoricalSensorRecord[],
   restingHR: number,
   maxHR: number,
 ): number {
-  if (heartRates.length < 600) return 0; // 10 min @ 1Hz minimum (matches reference)
+  const valid = boutRecords.filter((r) => r.heartRate > 0);
+  if (valid.length < 600) return 0; // 10 min @ 1Hz minimum
 
   const hrReserve = maxHR - restingHR;
   if (hrReserve <= 0) return 0;
 
   let trimp = 0;
-  const sampleDurationMin = 1 / 60; // Assume ~1 second per sample
+  for (let i = 1; i < valid.length; i++) {
+    const dtMs = valid[i].timestamp.getTime() - valid[i - 1].timestamp.getTime();
+    const dtMinutes = Math.max(1 / 60, Math.min(5, dtMs / 60000));
 
-  for (const hr of heartRates) {
-    const pctHRR = ((hr - restingHR) / hrReserve) * 100;
+    const pctHRR = ((valid[i].heartRate - restingHR) / hrReserve) * 100;
     let weight = 0;
     if (pctHRR >= 90) weight = 5;
     else if (pctHRR >= 80) weight = 4;
     else if (pctHRR >= 70) weight = 3;
     else if (pctHRR >= 60) weight = 2;
     else if (pctHRR >= 50) weight = 1;
-    trimp += sampleDurationMin * weight;
+    trimp += dtMinutes * weight;
   }
 
   return Math.min(21, (21 * Math.log(trimp + 1)) / STRAIN_LN_7201);
