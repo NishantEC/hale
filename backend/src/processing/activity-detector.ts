@@ -44,17 +44,12 @@ const MERGE_GAP_MINUTES = 5;
 const STRAIN_LN_7201 = Math.log(7201);
 
 // Cadence bands (Hz) — from FFT of gravity magnitude oscillations
-const CADENCE_RUNNING_LOW = 2.5;
-const CADENCE_RUNNING_HIGH = 3.5;
-const CADENCE_WALKING_LOW = 1.7;
-const CADENCE_WALKING_HIGH = 2.5;
-const CADENCE_CYCLING_LOW = 1.0;
-const CADENCE_CYCLING_HIGH = 1.7;
-
-// Impact threshold for Z-axis peak-to-trough
-const IMPACT_RUNNING = 0.3;
-const IMPACT_WALKING = 0.15;
-const IMPACT_CYCLING_MAX = 0.1;
+const CADENCE_RUNNING_LOW = 2.3;
+const CADENCE_RUNNING_HIGH = 3.7;
+const CADENCE_WALKING_LOW = 1.5;
+const CADENCE_WALKING_HIGH = 2.4;
+const CADENCE_CYCLING_LOW = 0.8;
+const CADENCE_CYCLING_HIGH = 2.0;
 
 // ── Main entry point ─────────────────────────────────────
 
@@ -201,8 +196,8 @@ function classifyBout(
   // Cadence detection (dominant frequency of gravity magnitude oscillation)
   const cadenceHz = detectCadence(boutRecords);
 
-  // Impact score (Z-axis peak-to-trough)
-  const impactScore = computeImpactScore(boutRecords);
+  // Impact ratio (Z-axis peak-to-trough normalized by motion intensity)
+  const impactRatio = computeImpactScore(boutRecords, motionIntensity);
 
   // Classify
   let activityType: ActivityType;
@@ -217,21 +212,21 @@ function classifyBout(
   } else if (
     cadenceHz != null &&
     cadenceHz >= CADENCE_RUNNING_LOW && cadenceHz <= CADENCE_RUNNING_HIGH &&
-    impactScore > IMPACT_RUNNING
+    impactRatio > 3.0
   ) {
     activityType = 'Running';
     confidence = 0.8;
   } else if (
     cadenceHz != null &&
     cadenceHz >= CADENCE_WALKING_LOW && cadenceHz <= CADENCE_WALKING_HIGH &&
-    impactScore > IMPACT_WALKING
+    impactRatio > 1.5
   ) {
     activityType = 'Walking';
     confidence = 0.7;
   } else if (
     cadenceHz != null &&
     cadenceHz >= CADENCE_CYCLING_LOW && cadenceHz <= CADENCE_CYCLING_HIGH &&
-    impactScore < IMPACT_CYCLING_MAX &&
+    impactRatio < 1.0 &&
     hrZone >= 2
   ) {
     activityType = 'Cycling';
@@ -326,19 +321,21 @@ function detectCadence(records: HistoricalSensorRecord[]): number | null {
 }
 
 /**
- * Compute impact score from Z-axis gravity peak-to-trough amplitude.
+ * Compute impact score from Z-axis gravity peak-to-trough amplitude,
+ * normalized by motion intensity — returns impact-to-motion ratio.
  */
-function computeImpactScore(records: HistoricalSensorRecord[]): number {
+function computeImpactScore(records: HistoricalSensorRecord[], motionIntensity: number): number {
   const zValues = records
     .map((r) => r.gravityZ)
     .filter((z): z is number => z != null);
   if (zValues.length < 10) return 0;
 
-  // Use interquartile range-style: 95th percentile - 5th percentile
-  const sorted = [...zValues].sort((a, b) => a - b);
-  const p5 = sorted[Math.floor(sorted.length * 0.05)];
-  const p95 = sorted[Math.floor(sorted.length * 0.95)];
-  return Math.abs(p95 - p5);
+  const mean = average(zValues);
+  const centered = zValues.map((z) => z - mean);
+  const ptp = Math.max(...centered) - Math.min(...centered);
+
+  // Normalize by motion intensity — returns impact-to-motion ratio
+  return motionIntensity > 0.001 ? ptp / motionIntensity : 0;
 }
 
 /**
