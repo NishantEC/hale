@@ -126,6 +126,7 @@ export interface DerivedMetricsBundle {
   coreTemperatureEstimate: number | null;
   circadianNadir: Date | null;
   sleepArchitectureScore: number | null;
+  hrvRmssdSeries: { timestamp: Date; value: number }[];
 }
 
 export type WellnessConfidence = 'High' | 'Medium' | 'Low';

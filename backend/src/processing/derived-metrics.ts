@@ -88,6 +88,8 @@ export function computeDerivedMetrics(
     ).length;
   }
 
+  const hrvRmssdSeries = rollingRmssd(samples);
+
   return {
     stressScores: stress,
     spo2Scores: spo2,
@@ -102,6 +104,7 @@ export function computeDerivedMetrics(
         : null,
     stressAverage: stressAvg,
     spo2Average: spo2Avg,
+    hrvRmssdSeries,
     ...computeAdvancedMetrics(
       spo2, skinTemp, nightFeatures, sleepDetections, baseline,
       strain, spo2Avg, skinTempAvg, skinTempBaseline, referenceDate,
@@ -177,6 +180,45 @@ function computeAdvancedMetrics(
     circadianNadir: coreResult?.nadir ?? null,
     sleepArchitectureScore: null as number | null, // Computed from sleep stages in pipeline
   };
+}
+
+function rollingRmssd(
+  samples: SignalSample[],
+  windowSize: number = 300,
+  stepSize: number = 30,
+): { timestamp: Date; value: number }[] {
+  const sorted = [...samples]
+    .filter((s) => s.ibiMs != null && s.ibiMs > 0)
+    .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+
+  const results: { timestamp: Date; value: number }[] = [];
+
+  for (let start = 0; start + windowSize <= sorted.length; start += stepSize) {
+    const windowSlice = sorted.slice(start, start + windowSize);
+    const ibis = windowSlice.map((s) => s.ibiMs!);
+
+    // Artifact filter: reject successive diffs > 20%
+    const cleanIbis: number[] = [ibis[0]];
+    for (let i = 1; i < ibis.length; i++) {
+      if (Math.abs(ibis[i] - ibis[i - 1]) / ibis[i - 1] <= 0.20) {
+        cleanIbis.push(ibis[i]);
+      }
+    }
+
+    if (cleanIbis.length < 30) continue;
+
+    let sumSqDiffs = 0;
+    for (let i = 1; i < cleanIbis.length; i++) {
+      const diff = cleanIbis[i] - cleanIbis[i - 1];
+      sumSqDiffs += diff * diff;
+    }
+    const rmssd = Math.sqrt(sumSqDiffs / (cleanIbis.length - 1));
+
+    const midpoint = windowSlice[Math.floor(windowSlice.length / 2)].timestamp;
+    results.push({ timestamp: midpoint, value: Math.round(rmssd * 10) / 10 });
+  }
+
+  return results;
 }
 
 function averageInDay(
