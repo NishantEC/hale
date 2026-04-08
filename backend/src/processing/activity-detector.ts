@@ -193,7 +193,7 @@ function classifyBout(
   const hrMean = heartRates.length > 0 ? average(heartRates) : 0;
   const hrMax = heartRates.length > 0 ? Math.max(...heartRates) : 0;
   const restingHR = baseline.restingHeartRate > 0 ? baseline.restingHeartRate : 60;
-  const maxHR = 190;
+  const maxHR = baseline.maxHeartRate ?? 190;
   const hrReserve = maxHR - restingHR;
   const hrZone = hrReserve > 0 ? Math.floor(((hrMean - restingHR) / hrReserve) * 5) : 0;
 

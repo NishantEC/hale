@@ -20,6 +20,12 @@ export interface HistoricalSensorRecord {
   gravityZ: number | null;
   respRateRaw: number | null;
   skinContact: boolean | null;
+  ppgGreen: number | null;
+  ppgRedIr: number | null;
+  ambientLight: number | null;
+  ledDrive1: number | null;
+  ledDrive2: number | null;
+  signalQuality: number | null;
 }
 
 export interface NightFeatureSet {
@@ -42,6 +48,7 @@ export interface BaselineProfile {
   sdnn: number;
   nightsUsed: number;
   isWarmedUp: boolean;
+  maxHeartRate: number | null;
 }
 
 export interface SleepDetectionSummary {
@@ -109,6 +116,16 @@ export interface DerivedMetricsBundle {
   skinTempDeltaCelsius: number | null;
   stressAverage: number | null;
   spo2Average: number | null;
+  lfHfRatioAverage: number | null;
+  recoveryIndex: number | null;
+  trainingLoadRatio: number | null;
+  trainingLoadRiskZone: string | null;
+  spo2DipCount: number | null;
+  odiPerHour: number | null;
+  lowestSpo2: number | null;
+  coreTemperatureEstimate: number | null;
+  circadianNadir: Date | null;
+  sleepArchitectureScore: number | null;
 }
 
 export type WellnessConfidence = 'High' | 'Medium' | 'Low';
@@ -147,6 +164,13 @@ export interface EpochFeature {
   clockCos: number;
   skinContact: number;
   signalCompleteness: number;
+  ambientLightMean: number;
+  ppgConfidence: number;
+  deviceSignalQuality: number;
+  lfPower: number;
+  hfPower: number;
+  lfHfRatio: number;
+  rsaAmplitude: number;
 }
 
 export interface EpochClassification {

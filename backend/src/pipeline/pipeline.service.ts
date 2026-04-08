@@ -23,6 +23,8 @@ import {
   recomputeBaselineProfile,
 } from '../processing/wellness-scoring.js';
 import { SleepEventEngine } from '../processing/sleep-event-engine.js';
+import { detectActivities } from '../processing/activity-detector.js';
+import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 import { extractEpochFeatures } from '../processing/epoch-features.js';
 import {
   loadModel,
@@ -68,6 +70,8 @@ export class PipelineService {
     private sleepPlanRepo: Repository<SleepPlan>,
     @InjectRepository(RawSensorRecord)
     private rawSensorRepo: Repository<RawSensorRecord>,
+    @InjectRepository(ActivityDetection)
+    private activityDetectionRepo: Repository<ActivityDetection>,
   ) {}
 
   // ------------------------------------------------------------------ ingest
@@ -134,6 +138,12 @@ export class PipelineService {
         entity.gravityZ = r.gravityZ as any;
         entity.respRateRaw = r.respRateRaw as any;
         entity.skinContact = r.skinContact as any;
+        entity.ppgGreen = r.ppgGreen as any;
+        entity.ppgRedIr = r.ppgRedIr as any;
+        entity.ambientLight = r.ambientLight as any;
+        entity.ledDrive1 = r.ledDrive1 as any;
+        entity.ledDrive2 = r.ledDrive2 as any;
+        entity.signalQuality = r.signalQuality as any;
         return entity;
       });
       await this.rawSensorRepo.save(entities, { chunk: 500 });
@@ -190,6 +200,12 @@ export class PipelineService {
       gravityZ: r.gravityZ ?? null,
       respRateRaw: r.respRateRaw ?? null,
       skinContact: r.skinContact ?? null,
+      ppgGreen: r.ppgGreen ?? null,
+      ppgRedIr: r.ppgRedIr ?? null,
+      ambientLight: r.ambientLight ?? null,
+      ledDrive1: r.ledDrive1 ?? null,
+      ledDrive2: r.ledDrive2 ?? null,
+      signalQuality: r.signalQuality ?? null,
     }));
 
     const baseline: BaselineProfileInterface = dbBaseline
@@ -199,8 +215,9 @@ export class PipelineService {
           sdnn: dbBaseline.sdnn,
           nightsUsed: dbBaseline.nightsUsed,
           isWarmedUp: dbBaseline.nightsUsed >= 5,
+          maxHeartRate: dbBaseline.maxHeartRate ?? null,
         }
-      : { restingHeartRate: 0, rmssd: 0, sdnn: 0, nightsUsed: 0, isWarmedUp: false };
+      : { restingHeartRate: 0, rmssd: 0, sdnn: 0, nightsUsed: 0, isWarmedUp: false, maxHeartRate: null };
 
     const targetMinutes = dbSleepPlan?.targetSleepMinutes ?? 480;
 
@@ -218,6 +235,40 @@ export class PipelineService {
     const sanitized = sanitize(signalSamples);
 
     const sleepDetections = SleepEventEngine.detect(sensorRecords);
+
+    // Activity detection on non-sleep daytime periods
+    const activityBouts = detectActivities(sensorRecords, sleepDetections, baseline);
+    if (activityBouts.length > 0) {
+      // Delete existing detected activities for this user's data range, then insert new
+      const boutStart = activityBouts[0].startTime;
+      const boutEnd = activityBouts[activityBouts.length - 1].endTime;
+      await this.activityDetectionRepo
+        .createQueryBuilder()
+        .delete()
+        .where('"userId" = :userId', { userId })
+        .andWhere('"source" = :source', { source: 'detected' })
+        .andWhere('"startTime" >= :start', { start: boutStart })
+        .andWhere('"startTime" <= :end', { end: boutEnd })
+        .execute();
+
+      const entities = activityBouts.map((bout) => {
+        const entity = new ActivityDetection();
+        entity.userId = userId;
+        entity.startTime = bout.startTime;
+        entity.endTime = bout.endTime;
+        entity.durationMinutes = bout.durationMinutes;
+        entity.activityType = bout.activityType;
+        entity.intensity = bout.intensity;
+        entity.confidence = bout.confidence;
+        entity.heartRateAvg = bout.heartRateAvg;
+        entity.heartRateMax = bout.heartRateMax;
+        entity.strainScore = bout.strainScore;
+        entity.cadenceHz = bout.cadenceHz as any;
+        entity.source = 'detected';
+        return entity;
+      });
+      await this.activityDetectionRepo.save(entities, { chunk: 200 });
+    }
 
     // Extract epoch features and classify sleep stages using RF model
     const nightMedianHR =
@@ -616,6 +667,16 @@ export class PipelineService {
       strainScore: metrics.strainScore,
       sleepConsistencyScore: metrics.sleepConsistencyScore,
       detectedSleepNights: metrics.detectedSleepNights,
+      lfHfRatioAverage: metrics.lfHfRatioAverage,
+      recoveryIndex: metrics.recoveryIndex,
+      trainingLoadRatio: metrics.trainingLoadRatio,
+      trainingLoadRiskZone: metrics.trainingLoadRiskZone,
+      spo2DipCount: metrics.spo2DipCount,
+      odiPerHour: metrics.odiPerHour,
+      lowestSpo2: metrics.lowestSpo2,
+      coreTemperatureEstimate: metrics.coreTemperatureEstimate,
+      circadianNadir: metrics.circadianNadir,
+      sleepArchitectureScore: metrics.sleepArchitectureScore,
     };
 
     if (existing) {
@@ -637,6 +698,7 @@ export class PipelineService {
       existing.rmssd = baseline.rmssd;
       existing.sdnn = baseline.sdnn;
       existing.nightsUsed = baseline.nightsUsed;
+      existing.maxHeartRate = baseline.maxHeartRate ?? existing.maxHeartRate;
       await this.baselineRepo.save(existing);
     } else {
       const entity = this.baselineRepo.create({
@@ -645,6 +707,7 @@ export class PipelineService {
         rmssd: baseline.rmssd,
         sdnn: baseline.sdnn,
         nightsUsed: baseline.nightsUsed,
+        ...(baseline.maxHeartRate != null ? { maxHeartRate: baseline.maxHeartRate } : {}),
       });
       await this.baselineRepo.save(entity);
     }

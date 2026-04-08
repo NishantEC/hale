@@ -7,6 +7,10 @@ import {
   DerivedMetricsBundle,
 } from './interfaces';
 import { average, standardDeviation, clamp } from './utils';
+import { detectDesaturationEvents } from './spo2-events';
+import { computeRecoveryIndex } from './recovery-index';
+import { computeTrainingLoadRatio } from './training-load';
+import { estimateCoreTemperature } from './core-temperature';
 
 interface SensorSample {
   timestamp: Date;
@@ -98,6 +102,80 @@ export function computeDerivedMetrics(
         : null,
     stressAverage: stressAvg,
     spo2Average: spo2Avg,
+    ...computeAdvancedMetrics(
+      spo2, skinTemp, nightFeatures, sleepDetections, baseline,
+      strain, spo2Avg, skinTempAvg, skinTempBaseline, referenceDate,
+    ),
+  };
+}
+
+function computeAdvancedMetrics(
+  spo2Points: TimestampedValue[],
+  skinTempPoints: TimestampedValue[],
+  nightFeatures: NightFeatureSet[],
+  sleepDetections: SleepDetectionSummary[],
+  baseline: BaselineProfile,
+  strain: number | null,
+  spo2Avg: number | null,
+  skinTempAvg: number | null,
+  skinTempBaseline: number | null,
+  referenceDate: Date,
+) {
+  // SpO2 desaturation events
+  const desatResult = spo2Points.length >= 30
+    ? detectDesaturationEvents(spo2Points)
+    : null;
+
+  // Core temperature
+  const nightMedianSkinTemp = skinTempAvg ?? 0;
+  const coreResult = skinTempPoints.length >= 10
+    ? estimateCoreTemperature(skinTempPoints, nightMedianSkinTemp)
+    : null;
+
+  // Training load ratio (need historical strain data from nightFeatures as proxy)
+  const strainHistory = nightFeatures
+    .filter((f) => f.nightDate <= referenceDate)
+    .map((f) => ({
+      date: f.nightDate,
+      strain: strain ?? 0, // Use current strain as placeholder; ideally from dailyMetrics
+    }));
+  const trainingLoad = computeTrainingLoadRatio(strainHistory);
+
+  // Recovery index
+  const latestFeature = nightFeatures.length > 0
+    ? nightFeatures[nightFeatures.length - 1]
+    : null;
+  const latestDetection = sleepDetections.length > 0
+    ? sleepDetections[sleepDetections.length - 1]
+    : null;
+
+  const recovery = latestFeature
+    ? computeRecoveryIndex({
+        hrvRmssd: latestFeature.rmssd,
+        baselineRmssd: baseline.rmssd,
+        lfHfRatio: null, // Will be populated when epoch features are threaded through
+        prevDayStrain: strain,
+        spo2Average: spo2Avg,
+        skinTempDelta: skinTempAvg != null && skinTempBaseline != null
+          ? skinTempAvg - skinTempBaseline
+          : null,
+        architectureScore: null, // Populated in pipeline when sleep stages available
+        sleepDurationHours: latestDetection?.durationHours ?? latestFeature.sleepEstimateHours,
+        targetSleepMinutes: 480,
+      })
+    : null;
+
+  return {
+    lfHfRatioAverage: null as number | null, // Computed from epoch features in pipeline
+    recoveryIndex: recovery,
+    trainingLoadRatio: trainingLoad?.ratio ?? null,
+    trainingLoadRiskZone: trainingLoad?.riskZone ?? null,
+    spo2DipCount: desatResult?.events.length ?? null,
+    odiPerHour: desatResult ? Math.round(desatResult.odiPerHour * 10) / 10 : null,
+    lowestSpo2: desatResult?.lowestSpo2 ?? null,
+    coreTemperatureEstimate: coreResult?.coreEstimate ?? null,
+    circadianNadir: coreResult?.nadir ?? null,
+    sleepArchitectureScore: null as number | null, // Computed from sleep stages in pipeline
   };
 }
 
@@ -246,7 +324,7 @@ function strainScore(
   );
   if (sorted.length < 2) return null;
 
-  const maxHR = 190.0;
+  const maxHR = baseline.maxHeartRate ?? 190.0;
   const resting =
     baseline.restingHeartRate > 0 ? baseline.restingHeartRate : 60.0;
   if (maxHR <= resting) return null;

@@ -20,6 +20,9 @@ export class BaselineProfile {
   @Column('int', { default: 0 })
   nightsUsed: number;
 
+  @Column('double precision', { nullable: true })
+  maxHeartRate: number;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }

@@ -23,6 +23,7 @@ import { DailyMetric } from '../wellness/entities/daily-metric.entity.js';
 import { DailyScore } from '../wellness/entities/daily-score.entity.js';
 import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
 import { UpdateSleepPlanDto } from './dto/update-sleep-plan.dto.js';
+import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 
 type DashboardData = {
   selectedDate: Date;
@@ -58,10 +59,21 @@ export class ViewsService {
     private readonly sleepPlanRepo: Repository<SleepPlan>,
     @InjectRepository(SignalSample)
     private readonly signalSampleRepo: Repository<SignalSample>,
+    @InjectRepository(ActivityDetection)
+    private readonly activityDetectionRepo: Repository<ActivityDetection>,
   ) {}
 
   async getHomeView(userId: string, selectedDateInput?: string) {
     const data = await this.loadDashboardData(userId, selectedDateInput);
+
+    // Fetch detected activities for the selected day
+    const dayStart = new Date(data.selectedDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const dayActivities = await this.activityDetectionRepo.find({
+      where: { userId, startTime: Between(dayStart, dayEnd) },
+      order: { startTime: 'ASC' },
+    });
     const selectedScore = this.findByDay(data.dailyScores, 'dayDate', data.selectedKey);
     const selectedMetric = this.findByDay(data.dailyMetrics, 'dayDate', data.selectedKey);
     const selectedDetection = this.findSleepByDayOrLatestForToday(
@@ -172,6 +184,36 @@ export class ViewsService {
           selectedMetric?.skinTempDeltaCelsius != null
             ? `${selectedMetric.skinTempDeltaCelsius >= 0 ? '+' : ''}${selectedMetric.skinTempDeltaCelsius.toFixed(2)}C`
             : '--',
+        recoveryIndex:
+          selectedMetric?.recoveryIndex != null
+            ? `${Math.round(selectedMetric.recoveryIndex)}`
+            : '--',
+        trainingLoad:
+          selectedMetric?.trainingLoadRatio != null
+            ? `${selectedMetric.trainingLoadRatio.toFixed(2)}`
+            : '--',
+        trainingLoadRiskZone: selectedMetric?.trainingLoadRiskZone ?? '--',
+        spo2Dips:
+          selectedMetric?.spo2DipCount != null
+            ? `${selectedMetric.spo2DipCount}`
+            : '--',
+        activityFeed: dayActivities
+          .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest')
+          .map((a) => ({
+            type: a.activityType,
+            duration: `${Math.round(a.durationMinutes)} min`,
+            strain: a.strainScore.toFixed(1),
+            intensity: a.intensity,
+            time: a.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          })),
+        totalActiveMinutes: (() => {
+          const total = dayActivities
+            .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest')
+            .reduce((s, a) => s + a.durationMinutes, 0);
+          return total > 0 ? `${Math.round(total)}` : '--';
+        })(),
+        activityCount: dayActivities
+          .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest').length,
       },
       confidence: {
         confidence: selectedScore?.confidence ?? 'Low',
@@ -330,6 +372,7 @@ export class ViewsService {
             sdnn: data.baselineProfile?.sdnn ?? 0,
             nightsUsed: data.baselineProfile?.nightsUsed ?? 0,
             isWarmedUp: (data.baselineProfile?.nightsUsed ?? 0) >= 5,
+            maxHeartRate: data.baselineProfile?.maxHeartRate ?? null,
           },
         );
 
@@ -572,10 +615,27 @@ export class ViewsService {
   ): T | null {
     const exact = this.findByDay(items, key, selectedKey);
     if (exact) return exact;
+
     if (this.isToday(selectedDate)) {
+      // For today, fall back to the most recent night
       return items.length > 0 ? items[items.length - 1] : null;
     }
-    return null;
+
+    // For past dates, find the closest night within ±1 day
+    // (handles timezone drift where nightDate lands on an adjacent day)
+    const selectedMs = selectedDate.getTime();
+    const ONE_DAY = 24 * 60 * 60 * 1000;
+    let closest: T | null = null;
+    let closestDist = Infinity;
+    for (const item of items) {
+      const itemMs = (item[key] as Date).getTime();
+      const dist = Math.abs(itemMs - selectedMs);
+      if (dist <= ONE_DAY && dist < closestDist) {
+        closestDist = dist;
+        closest = item;
+      }
+    }
+    return closest;
   }
 
   private formatSelectedDateTitle(date: Date) {
@@ -864,6 +924,7 @@ export class ViewsService {
               sdnn: baselineProfile?.sdnn ?? 0,
               nightsUsed: baselineProfile?.nightsUsed ?? 0,
               isWarmedUp: (baselineProfile?.nightsUsed ?? 0) >= 5,
+              maxHeartRate: baselineProfile?.maxHeartRate ?? null,
             },
           );
 
@@ -920,12 +981,66 @@ export class ViewsService {
         detail: null,
       },
       {
+        label: 'Blood Oxygen',
+        value:
+          selectedMetric?.spo2Average != null
+            ? `${selectedMetric.spo2Average.toFixed(1)}%`
+            : '--',
+        detail: null,
+      },
+      {
+        label: 'Skin Temp',
+        value:
+          selectedMetric?.skinTempAvgCelsius != null
+            ? `${selectedMetric.skinTempAvgCelsius.toFixed(1)}°C`
+            : '--',
+        detail:
+          selectedMetric?.skinTempDeltaCelsius != null
+            ? `${selectedMetric.skinTempDeltaCelsius >= 0 ? '+' : ''}${selectedMetric.skinTempDeltaCelsius.toFixed(2)}°C`
+            : null,
+      },
+      {
         label: 'Consistency',
         value:
           selectedMetric?.sleepConsistencyScore != null
             ? `${Math.round(selectedMetric.sleepConsistencyScore)}`
             : '--',
         detail: '/ 100',
+      },
+      {
+        label: 'Architecture Score',
+        value:
+          selectedMetric?.sleepArchitectureScore != null
+            ? `${Math.round(selectedMetric.sleepArchitectureScore)}`
+            : '--',
+        detail: '/ 100',
+      },
+      {
+        label: 'SpO2 Dips',
+        value:
+          selectedMetric?.spo2DipCount != null
+            ? `${selectedMetric.spo2DipCount}`
+            : '--',
+        detail:
+          selectedMetric?.odiPerHour != null
+            ? `ODI ${selectedMetric.odiPerHour.toFixed(1)}/hr`
+            : null,
+      },
+      {
+        label: 'Core Temp',
+        value:
+          selectedMetric?.coreTemperatureEstimate != null
+            ? `${selectedMetric.coreTemperatureEstimate.toFixed(1)}°C`
+            : '--',
+        detail: null,
+      },
+      {
+        label: 'LF/HF Ratio',
+        value:
+          selectedMetric?.lfHfRatioAverage != null
+            ? `${selectedMetric.lfHfRatioAverage.toFixed(2)}`
+            : '--',
+        detail: null,
       },
     ];
   }

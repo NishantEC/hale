@@ -15,6 +15,7 @@ describe('computeDerivedMetrics', () => {
       sdnn: 35,
       nightsUsed: 7,
       isWarmedUp: true,
+      maxHeartRate: null,
     };
 
     const referenceDate = new Date(2026, 3, 4, 12, 0, 0, 0);

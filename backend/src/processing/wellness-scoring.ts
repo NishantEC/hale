@@ -201,8 +201,12 @@ export function recomputeBaselineProfile(
       sdnn: 0,
       nightsUsed: 0,
       isWarmedUp: false,
+      maxHeartRate: null,
     };
   }
+
+  const maxRestingHR = Math.max(...valid.map(feature => feature.restingHeartRate));
+  const maxHeartRate = maxRestingHR > 0 ? Math.round(maxRestingHR * 1.5) : null;
 
   return {
     restingHeartRate: average(valid.map(feature => feature.restingHeartRate)),
@@ -210,6 +214,7 @@ export function recomputeBaselineProfile(
     sdnn: average(valid.map(feature => feature.sdnn)),
     nightsUsed: valid.length,
     isWarmedUp: valid.length >= 5,
+    maxHeartRate,
   };
 }
 
