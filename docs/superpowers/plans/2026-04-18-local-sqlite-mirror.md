@@ -2141,4 +2141,764 @@ git commit -m "feat(screens): HomeScreen reads from view_cache with background r
 
 ---
 
+### Task 15: SleepDetailScreen + TrendsScreen read from viewCache
+
+**Files:**
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/screens/SleepDetailScreen.tsx`
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/screens/TrendsScreen.tsx`
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/app.tsx` (extend viewCache prefetch in Phase 3's SyncService wiring)
+
+- [ ] **Step 1: Verify current fetch path**
+
+Run:
+```bash
+cd /Users/nishantgupta/Documents/noop/app && grep -n "fetchSleepView\|fetchTrendsView" app/screens/SleepDetailScreen.tsx app/screens/TrendsScreen.tsx
+```
+Expected: each screen has a direct `fetchSleepView` / `fetchTrendsView` call that needs replacing.
+
+- [ ] **Step 2: Type check baseline**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS.
+
+- [ ] **Step 3: Apply the edits**
+
+`SleepDetailScreen.tsx` — replace fetch call:
+
+```typescript
+import { openDatabase } from "../services/db"
+import { getViewCache } from "../services/db/repositories/viewCache"
+import { useDbQuery } from "../services/db/useDbQuery"
+
+const db = openDatabase()
+const { data: sleep, refetch } = useDbQuery(
+  ["view_cache"],
+  () => getViewCache<SleepViewModel>(db, "sleep", selectedDate),
+  [selectedDate],
+)
+```
+
+`TrendsScreen.tsx`:
+
+```typescript
+const db = openDatabase()
+const { data: trends, refetch } = useDbQuery(
+  ["view_cache"],
+  () => getViewCache<TrendsViewModel>(db, "trends", `${days}d`),
+  [days],
+)
+```
+
+Extend the view-cache prefetch in `app.tsx` from Task 14 to also prefetch sleep and trends on refresh:
+
+```typescript
+const today = new Date().toISOString().slice(0, 10)
+const [home, sleep, trends] = await Promise.all([
+  apiGet(`/views/home?date=${today}`),
+  apiGet(`/views/sleep?date=${today}`),
+  apiGet(`/views/trends?days=30`),
+])
+await setViewCache(db, "home", today, home)
+await setViewCache(db, "sleep", today, sleep)
+await setViewCache(db, "trends", "30d", trends)
+```
+
+- [ ] **Step 4: Type check + simulator smoke**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS.
+
+Simulator: open Sleep tab, verify everything renders. Open Trends tab, verify the same. Airplane mode + app restart: both should render the cached data.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/screens/SleepDetailScreen.tsx app/app/screens/TrendsScreen.tsx app/app/app.tsx
+git commit -m "feat(screens): Sleep + Trends read from view_cache"
+```
+
+---
+
+## Phase 4 — Remaining uplink tables
+
+### Task 16: Journal entry uplink
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/journalEntry.ts`
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/screens/JournalEntryScreen.tsx`
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/screens/JournalHistoryScreen.tsx`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/journalEntry.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/journalEntry.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { setActiveUserId } from "../../app/services/db/session"
+import { insertJournalEntry, listJournalEntriesByDate, deleteJournalEntry } from "../../app/services/db/repositories/journalEntry"
+import { queueDepth } from "../../app/services/db/repositories/outboundQueue"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE journal_entries (
+    id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, factor_tag TEXT NOT NULL,
+    intensity INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL, _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  sqlite.execSync(`CREATE TABLE outbound_queue (
+    id TEXT PRIMARY KEY, table_name TEXT NOT NULL, row_id TEXT NOT NULL,
+    payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER, last_error TEXT, created_at INTEGER NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("journalEntry repository", () => {
+  beforeEach(() => setActiveUserId("u"))
+
+  it("insert writes local row + enqueues uplink", async () => {
+    const db = makeDb()
+    await insertJournalEntry(db, {
+      id: "j1", timestamp: 1000, factorTag: "caffeine", intensity: 3, note: "", createdAt: 1000,
+    })
+    expect(await queueDepth(db)).toBe(1)
+  })
+
+  it("list returns entries for a given date scoped to active user", async () => {
+    const db = makeDb()
+    const d = new Date("2026-04-18T10:00:00Z").getTime()
+    await insertJournalEntry(db, { id: "a", timestamp: d, factorTag: "caffeine", intensity: 3, note: "", createdAt: d })
+    const rows = await listJournalEntriesByDate(db, "2026-04-18")
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBe("a")
+  })
+
+  it("deleteJournalEntry removes + enqueues delete intent", async () => {
+    const db = makeDb()
+    await insertJournalEntry(db, { id: "a", timestamp: 1000, factorTag: "caffeine", intensity: 3, note: "", createdAt: 1000 })
+    await deleteJournalEntry(db, "a")
+    const rows = await db.select().from(schema.journalEntries)
+    expect(rows).toHaveLength(0)
+    expect(await queueDepth(db)).toBeGreaterThan(0)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/journalEntry.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/journalEntry.ts`:
+
+```typescript
+import { and, asc, eq, gte, lt } from "drizzle-orm"
+import type { NoopDatabase } from "../index"
+import { journalEntries } from "../schema"
+import { getActiveUserId } from "../session"
+import { enqueueOutbound } from "./outboundQueue"
+import { notifyTable } from "../observable"
+
+export interface JournalEntryInput {
+  id: string
+  timestamp: number
+  factorTag: string
+  intensity: number
+  note: string
+  createdAt: number
+}
+
+export async function insertJournalEntry(db: NoopDatabase, input: JournalEntryInput): Promise<void> {
+  const userId = getActiveUserId()
+  await db.insert(journalEntries).values({
+    ...input,
+    _syncedAt: null,
+    _localCreatedAt: Date.now(),
+    _origin: "local",
+    userId,
+  })
+  await enqueueOutbound(db, { tableName: "journal_entries", rowId: input.id, payload: input })
+  notifyTable("journal_entries")
+}
+
+export async function listJournalEntriesByDate(db: NoopDatabase, yyyyMmDd: string) {
+  const userId = getActiveUserId()
+  const start = new Date(`${yyyyMmDd}T00:00:00Z`).getTime()
+  const end = start + 24 * 60 * 60 * 1000
+  return db
+    .select()
+    .from(journalEntries)
+    .where(
+      and(
+        eq(journalEntries.userId, userId),
+        gte(journalEntries.timestamp, start),
+        lt(journalEntries.timestamp, end),
+      ),
+    )
+    .orderBy(asc(journalEntries.timestamp))
+}
+
+export async function deleteJournalEntry(db: NoopDatabase, id: string): Promise<void> {
+  await db.delete(journalEntries).where(eq(journalEntries.id, id))
+  await enqueueOutbound(db, {
+    tableName: "journal_entries",
+    rowId: id,
+    payload: { id, __deleted: true },
+  })
+  notifyTable("journal_entries")
+}
+```
+
+In `JournalEntryScreen.tsx`: replace `createJournalEntry` (from `noopClient`) with `insertJournalEntry(openDatabase(), …)`. In `JournalHistoryScreen.tsx`: replace `fetchJournalEntries` with `listJournalEntriesByDate` via `useDbQuery(["journal_entries"], ...)`.
+
+Teach the drainer's `post` to map a deleted payload (`__deleted: true`) to a `DELETE /journal/{id}` request — the backend already supports this. Extend `drainFn` wiring in `app.tsx`:
+
+```typescript
+post: async (tableName, payloads) => {
+  if (tableName === "journal_entries") {
+    for (const p of payloads as any[]) {
+      if (p.__deleted) await deleteJournalEntryRemote(p.id)
+      else await createJournalEntryRemote(p)
+    }
+    return { ok: true }
+  }
+  return apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads })
+},
+```
+
+Add the remote helpers to `noopClient.ts`:
+
+```typescript
+export const deleteJournalEntryRemote = (id: string) => requestJson(`/journal/${encodeURIComponent(id)}`, { method: "DELETE", headers: withBaseHeaders({ Authorization: `Bearer ${sessionToken}` }) })
+export const createJournalEntryRemote = (body: any) => apiPost("/journal", body)
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/journalEntry.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS; tsc clean.
+
+Simulator smoke: add a journal entry offline (airplane mode). Open JournalHistoryScreen — entry shows immediately. Disable airplane mode — entry eventually syncs, verified by backend-side logs / Debug screen.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/repositories/journalEntry.ts app/app/screens/JournalEntryScreen.tsx app/app/screens/JournalHistoryScreen.tsx app/app/services/api/noopClient.ts app/app/app.tsx app/test/db/journalEntry.test.ts
+git commit -m "feat(db): journalEntry local-first with create/delete uplink"
+```
+
+---
+
+### Task 17: Telemetry — deviceEvents, realtimeSamples, consoleLogs repositories + wiring
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/telemetry.ts`
+- Modify: existing telemetry ingest call sites to write-local-first
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/telemetry.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/telemetry.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { setActiveUserId } from "../../app/services/db/session"
+import {
+  insertDeviceEvent,
+  insertRealtimeSample,
+  insertConsoleLog,
+} from "../../app/services/db/repositories/telemetry"
+import { queueDepth } from "../../app/services/db/repositories/outboundQueue"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE device_events (
+    id TEXT PRIMARY KEY, device_id TEXT NOT NULL, event_number INTEGER NOT NULL, event_name TEXT NOT NULL,
+    raw_payload TEXT, captured_at INTEGER NOT NULL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL, _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  sqlite.execSync(`CREATE TABLE realtime_samples (
+    id TEXT PRIMARY KEY, device_id TEXT NOT NULL, session_id TEXT NOT NULL, data_type TEXT NOT NULL,
+    heart_rate INTEGER, raw_fields TEXT, raw_payload TEXT, captured_at INTEGER NOT NULL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL, _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  sqlite.execSync(`CREATE TABLE console_logs (
+    id TEXT PRIMARY KEY, device_id TEXT NOT NULL, message TEXT NOT NULL,
+    log_level TEXT, metadata TEXT, captured_at INTEGER NOT NULL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL, _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  sqlite.execSync(`CREATE TABLE outbound_queue (
+    id TEXT PRIMARY KEY, table_name TEXT NOT NULL, row_id TEXT NOT NULL,
+    payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER, last_error TEXT, created_at INTEGER NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("telemetry repositories", () => {
+  beforeEach(() => setActiveUserId("u"))
+
+  it("each insert enqueues an uplink", async () => {
+    const db = makeDb()
+    await insertDeviceEvent(db, { id: "e1", deviceId: "d1", eventNumber: 1, eventName: "connect", rawPayload: null, capturedAt: 1000 })
+    await insertRealtimeSample(db, { id: "r1", deviceId: "d1", sessionId: "s1", dataType: "hr", heartRate: 62, rawFields: null, rawPayload: null, capturedAt: 1000 })
+    await insertConsoleLog(db, { id: "c1", deviceId: "d1", message: "hello", logLevel: "info", metadata: null, capturedAt: 1000 })
+    expect(await queueDepth(db)).toBe(3)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/telemetry.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/telemetry.ts`:
+
+```typescript
+import type { NoopDatabase } from "../index"
+import { deviceEvents, realtimeSamples, consoleLogs } from "../schema"
+import { getActiveUserId } from "../session"
+import { enqueueOutbound } from "./outboundQueue"
+import { notifyTable } from "../observable"
+
+function localMirror() {
+  return { _syncedAt: null, _localCreatedAt: Date.now(), _origin: "local" as const }
+}
+
+export async function insertDeviceEvent(db: NoopDatabase, row: any): Promise<void> {
+  const userId = getActiveUserId()
+  await db.insert(deviceEvents).values({ ...row, ...localMirror(), userId })
+  await enqueueOutbound(db, { tableName: "device_events", rowId: row.id, payload: row })
+  notifyTable("device_events")
+}
+
+export async function insertRealtimeSample(db: NoopDatabase, row: any): Promise<void> {
+  const userId = getActiveUserId()
+  await db.insert(realtimeSamples).values({ ...row, ...localMirror(), userId })
+  await enqueueOutbound(db, { tableName: "realtime_samples", rowId: row.id, payload: row })
+  notifyTable("realtime_samples")
+}
+
+export async function insertConsoleLog(db: NoopDatabase, row: any): Promise<void> {
+  const userId = getActiveUserId()
+  await db.insert(consoleLogs).values({ ...row, ...localMirror(), userId })
+  await enqueueOutbound(db, { tableName: "console_logs", rowId: row.id, payload: row })
+  notifyTable("console_logs")
+}
+```
+
+Find existing telemetry ingest call sites:
+```bash
+cd /Users/nishantgupta/Documents/noop/app && grep -rn "ingestDeviceEvents\|ingestRealtimeSamples\|ingestConsoleLogs\|telemetry/events\|telemetry/realtime" app/
+```
+Replace each direct `apiPost` call with the corresponding repository insert. The drainer's `post` gains table-specific branches (same pattern as Task 16 journal):
+
+```typescript
+if (tableName === "device_events") return apiPost("/telemetry/events", { events: payloads })
+if (tableName === "realtime_samples") return apiPost("/telemetry/realtime", { samples: payloads })
+if (tableName === "console_logs") return apiPost("/telemetry/logs", { logs: payloads })
+```
+
+- [ ] **Step 4: Type check + test**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/telemetry.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS; tsc clean.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/repositories/telemetry.ts app/app/services/api/noopClient.ts app/app/app.tsx app/test/db/telemetry.test.ts
+git commit -m "feat(db): telemetry (device_events/realtime/logs) local-first"
+```
+
+---
+
+### Task 18: DebugInspectorScreen surfaces sync diagnostics
+
+**Files:**
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/screens/DebugInspectorScreen.tsx`
+
+- [ ] **Step 1: Type check baseline**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS.
+
+- [ ] **Step 2: Apply the edit**
+
+Add a "Local DB Diagnostics" panel at the top of DebugInspectorScreen showing:
+- Per-table row counts (raw_sensor_records, daily_metrics, sleep_stages, journal_entries, outbound_queue, view_cache)
+- Outbound queue depth + dead-letter count
+- Per-table lastSyncAt timestamp
+
+Implementation:
+```typescript
+import { openDatabase } from "../services/db"
+import * as schema from "../services/db/schema"
+import { sql } from "drizzle-orm"
+import { listDeadLetters, queueDepth } from "../services/db/repositories/outboundQueue"
+import { getLastSyncAt } from "../services/db/repositories/syncState"
+import { useDbQuery } from "../services/db/useDbQuery"
+
+const db = openDatabase()
+
+const { data: diagnostics } = useDbQuery(
+  ["raw_sensor_records", "daily_metrics", "sleep_stages", "journal_entries", "outbound_queue", "view_cache", "sync_state"],
+  async () => {
+    const count = async (t: any) =>
+      (await db.select({ c: sql<number>`count(*)` }).from(t))[0]?.c ?? 0
+    return {
+      rawCount: await count(schema.rawSensorRecords),
+      dailyMetricsCount: await count(schema.dailyMetrics),
+      sleepStagesCount: await count(schema.sleepStages),
+      journalCount: await count(schema.journalEntries),
+      viewCacheCount: await count(schema.viewCache),
+      outboundDepth: await queueDepth(db),
+      deadLetters: (await listDeadLetters(db)).length,
+      lastSyncDailyMetrics: await getLastSyncAt(db, "daily_metrics"),
+      lastSyncSleepStages: await getLastSyncAt(db, "sleep_stages"),
+    }
+  },
+  [],
+)
+```
+
+Render as a simple key/value table at the top of the screen (matches the existing Debug styling).
+
+- [ ] **Step 3: Simulator smoke**
+
+Open Debug tab. Verify all counts render. Let the app run for a minute while ingesting BLE data — counts should tick up. Toggle airplane mode and observe outbound queue depth growing; toggle off and observe it draining.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/app/screens/DebugInspectorScreen.tsx
+git commit -m "feat(debug): local DB diagnostics panel"
+```
+
+---
+
+### Task 19: Logout wipes the database
+
+**Files:**
+- Modify: wherever `logout()` is called / defined in the app (likely `app/context/AuthContext` or `app/services/auth`)
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/wipe.test.ts`
+
+- [ ] **Step 1: Find the logout path**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && grep -rn "logout\|sessionToken" app/context app/services/auth app/services/api 2>/dev/null | head -20`
+Note the function that clears the session token today.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/wipe.test.ts`:
+
+```typescript
+import { wipeDatabaseForLogout } from "../../app/services/db/wipe"
+import * as dbModule from "../../app/services/db"
+import { setActiveUserId, peekActiveUserId } from "../../app/services/db/session"
+
+jest.mock("../../app/services/db", () => ({ wipeDatabase: jest.fn() }))
+
+describe("wipeDatabaseForLogout", () => {
+  it("calls wipeDatabase and clears active user", async () => {
+    setActiveUserId("u")
+    await wipeDatabaseForLogout()
+    expect(dbModule.wipeDatabase).toHaveBeenCalled()
+    expect(peekActiveUserId()).toBeNull()
+  })
+})
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/wipe.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 4: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/wipe.ts`:
+
+```typescript
+import { wipeDatabase } from "./index"
+import { setActiveUserId } from "./session"
+
+export async function wipeDatabaseForLogout(): Promise<void> {
+  await wipeDatabase()
+  setActiveUserId(null)
+}
+```
+
+Modify the existing logout function to call `wipeDatabaseForLogout()` before clearing the session token. Modify login to call `setActiveUserId(userId)` after a successful sign-in (the backend returns the user's id in the auth response).
+
+- [ ] **Step 5: Run test + simulator smoke**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/wipe.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS; tsc clean.
+
+Simulator: log in, let it accumulate some data, log out. Log back in. Verify no old data leaks (Debug screen counts should be zero after logout → login).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add app/app/services/db/wipe.ts app/context app/services/auth app/services/api/noopClient.ts app/test/db/wipe.test.ts
+git commit -m "feat(auth): wipe local DB on logout; tag userId on login"
+```
+
+---
+
+## Phase 5 — Retention
+
+### Task 20: retentionSweeper + user-configurable setting
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/sync/retentionSweeper.ts`
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/settings.ts`
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/screens/DeviceSettingsScreen.tsx` — add "Keep history for" picker
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/app.tsx` — run sweeper on foreground
+- Test: `/Users/nishantgupta/Documents/noop/app/test/sync/retentionSweeper.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/sync/retentionSweeper.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { setActiveUserId } from "../../app/services/db/session"
+import { sweepRetention } from "../../app/services/sync/retentionSweeper"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE raw_sensor_records (
+    id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, heart_rate REAL NOT NULL DEFAULT 0,
+    rr_average_ms REAL, spo2_red REAL, spo2_ir REAL, skin_temp_raw REAL,
+    gravity_magnitude REAL, gravity_x REAL, gravity_y REAL, gravity_z REAL,
+    resp_rate_raw REAL, skin_contact INTEGER,
+    ppg_green REAL, ppg_red_ir REAL, ambient_light REAL,
+    led_drive_1 REAL, led_drive_2 REAL, signal_quality REAL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL,
+    _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("retentionSweeper", () => {
+  beforeEach(() => setActiveUserId("u"))
+
+  it("deletes synced raw rows older than retention cutoff; preserves pending uplink rows", async () => {
+    const db = makeDb()
+    const now = Date.now()
+    const old = now - 60 * 24 * 60 * 60 * 1000
+    const fresh = now - 1 * 24 * 60 * 60 * 1000
+    await db.insert(schema.rawSensorRecords).values([
+      { id: "old-synced", timestamp: old, _syncedAt: old, _localCreatedAt: old, _origin: "local", userId: "u" } as any,
+      { id: "old-pending", timestamp: old, _syncedAt: null, _localCreatedAt: old, _origin: "local", userId: "u" } as any,
+      { id: "fresh-synced", timestamp: fresh, _syncedAt: fresh, _localCreatedAt: fresh, _origin: "local", userId: "u" } as any,
+    ])
+    await sweepRetention(db, { rawDays: 30 })
+    const rows = await db.select().from(schema.rawSensorRecords)
+    const ids = rows.map((r) => r.id).sort()
+    expect(ids).toEqual(["fresh-synced", "old-pending"])
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/retentionSweeper.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/settings.ts`:
+
+```typescript
+import { eq } from "drizzle-orm"
+import type { NoopDatabase } from "../index"
+import { settings } from "../schema"
+
+export async function getSetting(db: NoopDatabase, key: string): Promise<string | null> {
+  const [row] = await db.select().from(settings).where(eq(settings.key, key))
+  return row?.value ?? null
+}
+
+export async function setSetting(db: NoopDatabase, key: string, value: string): Promise<void> {
+  await db
+    .insert(settings)
+    .values({ key, value })
+    .onConflictDoUpdate({ target: settings.key, set: { value } })
+}
+
+export const SETTING_RAW_RETENTION_DAYS = "raw_retention_days"
+export const DEFAULT_RAW_RETENTION_DAYS = 30
+```
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/sync/retentionSweeper.ts`:
+
+```typescript
+import { and, eq, isNotNull, lt } from "drizzle-orm"
+import type { NoopDatabase } from "../db"
+import { rawSensorRecords, realtimeSamples, deviceEvents, consoleLogs } from "../db/schema"
+import { getActiveUserId } from "../db/session"
+
+export interface SweepOptions {
+  rawDays: number
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+export async function sweepRetention(db: NoopDatabase, opts: SweepOptions): Promise<void> {
+  const userId = getActiveUserId()
+  const cutoff = Date.now() - opts.rawDays * MS_PER_DAY
+  for (const table of [rawSensorRecords, realtimeSamples, deviceEvents, consoleLogs]) {
+    await db
+      .delete(table)
+      .where(
+        and(
+          eq((table as any).userId, userId),
+          isNotNull((table as any)._syncedAt),
+          lt((table as any).timestamp ?? (table as any).capturedAt, cutoff),
+        ),
+      )
+  }
+}
+```
+
+Wire the sweeper to run on foreground after SyncService.refresh(). In `app.tsx` inside the `AppState` listener:
+
+```typescript
+import { sweepRetention } from "./services/sync/retentionSweeper"
+import { getSetting, SETTING_RAW_RETENTION_DAYS, DEFAULT_RAW_RETENTION_DAYS } from "./services/db/repositories/settings"
+
+// ...
+const sub = AppState.addEventListener("change", async (state) => {
+  if (state === "active") {
+    await svc.refresh()
+    const raw = Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) || DEFAULT_RAW_RETENTION_DAYS
+    if (raw > 0) await sweepRetention(db, { rawDays: raw })
+  }
+})
+```
+
+In `DeviceSettingsScreen.tsx` add a row:
+
+```tsx
+<ListItem
+  text="Keep raw history for"
+  rightText={`${rawDays === 0 ? "forever" : `${rawDays} days`}`}
+  onPress={() => /* open a sheet/picker with options: 7, 30, 90, 0 (forever) */}
+/>
+```
+
+On selection, call `setSetting(openDatabase(), SETTING_RAW_RETENTION_DAYS, String(chosen))`.
+
+- [ ] **Step 4: Run test + simulator**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/retentionSweeper.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS; tsc clean.
+
+Simulator: change retention to 7 days. Background + foreground the app. In Debug screen, observe raw_sensor_records count drop if there are rows older than 7 days that have been synced.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/repositories/settings.ts app/app/services/sync/retentionSweeper.ts app/app/screens/DeviceSettingsScreen.tsx app/app/app.tsx app/test/sync/retentionSweeper.test.ts
+git commit -m "feat(retention): user-configurable sweep for synced raw tables"
+```
+
+---
+
+## Backend dependency
+
+### Task 21: Document `?since=` endpoint requirement for a separate backend PR
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/docs/superpowers/specs/2026-04-18-backend-since-endpoints.md`
+
+This task does **not** modify backend code — it records the contract the downlinkPuller expects so a separate backend PR can land this ahead of merging the app changes that consume it.
+
+- [ ] **Step 1: Write the contract document**
+
+Create `/Users/nishantgupta/Documents/noop/docs/superpowers/specs/2026-04-18-backend-since-endpoints.md`:
+
+```markdown
+# Backend `?since=` Endpoints for SQLite Mirror Downlink
+
+**Dependency of:** `docs/superpowers/specs/2026-04-18-local-sqlite-mirror-design.md`
+
+## Required routes
+
+Add `GET /sync/<table_name>?since=<unix-ms>&limit=<int>` for each downlink table. Response shape:
+
+```json
+{
+  "rows": [{ ...entity fields..., "updatedAt": 1700000000000 }],
+  "hasMore": false
+}
+```
+
+- Filter: rows where `updatedAt > since` for the requesting user.
+- Order: `updatedAt` ascending, secondary `id` ascending.
+- Limit: `limit` (default 1000, max 5000).
+- `hasMore`: true if more rows exist past the response tail.
+
+## Tables the app pulls
+
+| table_name | backend entity |
+|---|---|
+| `daily_metrics` | `DailyMetric` |
+| `daily_scores` | `DailyScore` |
+| `sleep_detections` | `SleepDetection` |
+| `sleep_stages` | `SleepStage` |
+| `night_features` | `NightFeature` |
+| `signal_samples` | `SignalSample` |
+| `activity_detections` | `ActivityDetection` |
+| `baseline_profile` | `BaselineProfile` |
+| `sleep_plans` | `SleepPlan` |
+
+For entities that don't yet have an `updatedAt` column, add one (`@UpdateDateColumn()` from TypeORM) — same migration that ships these endpoints.
+
+## Why not reuse existing list endpoints
+
+Existing endpoints like `/pipeline/results` return everything with no since filter — fetching everything on every foreground is wasteful and doesn't scale past a few weeks of data. The app needs an incremental pull.
+
+## Testing
+
+- E2E test per table: seed 10 rows, call `?since=<timestamp_between_5_and_6>`, assert only rows 6–10 returned.
+- Pagination test: seed 50 rows, `limit=20`, assert `hasMore=true` and cursor advances correctly.
+- Authorization: 401 when no session, 200 with session; `userId` scoping enforced (no cross-user leakage).
+```
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add docs/superpowers/specs/2026-04-18-backend-since-endpoints.md
+git commit -m "docs: backend ?since= endpoint contract for sqlite mirror"
+```
+
+---
+
+## Rollout notes
+
+- Merge order: backend PR (Task 21 contract → backend implementation) → then this app plan. Phases 1–2 and 4–5 of this plan do not depend on the backend PR; only Phase 3 (downlink) does.
+- Each phase is independently shippable. Do not start Phase 3 until the backend endpoints are live.
+- Regression surface: `expo run:ios` after each task, verify the app still opens, verify Debug screen is reachable.
+- Performance: the `outbound_queue` + drain loop has been sized for ~200 rows per 15 s cycle. Adjust `batchSize` in `SyncService` wiring if real-world BLE rate exceeds that.
+
+---
+
+**Total tasks: 21.** Covers every section of the spec. When all tasks are green and committed, the local SQLite mirror is feature-complete per the design doc.
+
+
 
