@@ -1364,3 +1364,781 @@ git commit -m "feat(sync): BLE ingest now writes local-first + enqueues uplink"
 
 ---
 
+## Phase 3 — Downlink for derived tables + view cache
+
+### Task 9: syncState repository (per-table lastSyncAt cursor)
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/syncState.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/syncState.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/syncState.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { getLastSyncAt, setLastSyncAt } from "../../app/services/db/repositories/syncState"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE sync_state (
+    table_name TEXT PRIMARY KEY, last_sync_at INTEGER NOT NULL DEFAULT 0,
+    last_synced_row_timestamp INTEGER
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("syncState", () => {
+  it("returns 0 when no row yet", async () => {
+    const db = makeDb()
+    expect(await getLastSyncAt(db, "daily_metrics")).toBe(0)
+  })
+
+  it("upserts and retrieves lastSyncAt per table", async () => {
+    const db = makeDb()
+    await setLastSyncAt(db, "daily_metrics", 1000)
+    await setLastSyncAt(db, "sleep_stages", 2000)
+    expect(await getLastSyncAt(db, "daily_metrics")).toBe(1000)
+    expect(await getLastSyncAt(db, "sleep_stages")).toBe(2000)
+    await setLastSyncAt(db, "daily_metrics", 1500)
+    expect(await getLastSyncAt(db, "daily_metrics")).toBe(1500)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/syncState.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/syncState.ts`:
+
+```typescript
+import { eq } from "drizzle-orm"
+import type { NoopDatabase } from "../index"
+import { syncState } from "../schema"
+
+export async function getLastSyncAt(db: NoopDatabase, tableName: string): Promise<number> {
+  const [row] = await db.select().from(syncState).where(eq(syncState.tableName, tableName))
+  return row?.lastSyncAt ?? 0
+}
+
+export async function setLastSyncAt(
+  db: NoopDatabase,
+  tableName: string,
+  lastSyncAt: number,
+  lastSyncedRowTimestamp?: number,
+): Promise<void> {
+  await db
+    .insert(syncState)
+    .values({ tableName, lastSyncAt, lastSyncedRowTimestamp: lastSyncedRowTimestamp ?? null })
+    .onConflictDoUpdate({
+      target: syncState.tableName,
+      set: { lastSyncAt, lastSyncedRowTimestamp: lastSyncedRowTimestamp ?? null },
+    })
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/syncState.test.ts`
+Expected: PASS (2 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/repositories/syncState.ts app/test/db/syncState.test.ts
+git commit -m "feat(db): syncState cursor repository"
+```
+
+---
+
+### Task 10: Derived table repositories (one file exporting upserts for every downlink entity)
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/derived.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/derived.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/derived.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { setActiveUserId } from "../../app/services/db/session"
+import { upsertDailyMetrics, listDailyMetricsByRange } from "../../app/services/db/repositories/derived"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE daily_metrics (
+    id TEXT PRIMARY KEY, day_date INTEGER NOT NULL,
+    stress_average REAL, spo2_average REAL, skin_temp_avg_celsius REAL, skin_temp_delta_celsius REAL,
+    strain_score REAL, sleep_consistency_score REAL, detected_sleep_nights INTEGER NOT NULL DEFAULT 0,
+    lf_hf_ratio_average REAL, recovery_index REAL, training_load_ratio REAL,
+    training_load_risk_zone TEXT, spo2_dip_count INTEGER, odi_per_hour REAL, lowest_spo2 REAL,
+    core_temperature_estimate REAL, circadian_nadir INTEGER, sleep_architecture_score REAL,
+    active_minutes REAL, activity_count INTEGER, updated_at INTEGER NOT NULL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL, _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("derived repositories — daily_metrics", () => {
+  beforeEach(() => setActiveUserId("u1"))
+
+  it("upsert with same id overwrites + marks _origin='backend'", async () => {
+    const db = makeDb()
+    await upsertDailyMetrics(db, [
+      { id: "m1", dayDate: 20260101, strainScore: 5, updatedAt: 1000 } as any,
+    ])
+    await upsertDailyMetrics(db, [
+      { id: "m1", dayDate: 20260101, strainScore: 7, updatedAt: 2000 } as any,
+    ])
+    const rows = await db.select().from(schema.dailyMetrics)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].strainScore).toBe(7)
+    expect(rows[0]._origin).toBe("backend")
+  })
+
+  it("conflict policy: backend row overwrites a local row with same id", async () => {
+    const db = makeDb()
+    // Simulate a local-origin row (edge case — daily_metrics wouldn't normally be local,
+    // but we test the policy uniformly).
+    const sqlite = (db as any)._session.sqliteDB as SQLite.SQLiteDatabase
+    sqlite.execSync(
+      `INSERT INTO daily_metrics (id, day_date, detected_sleep_nights, updated_at, _local_created_at, _origin, user_id) VALUES ('m1', 20260101, 0, 500, 500, 'local', 'u1');`,
+    )
+    await upsertDailyMetrics(db, [
+      { id: "m1", dayDate: 20260101, strainScore: 9, updatedAt: 3000 } as any,
+    ])
+    const rows = await db.select().from(schema.dailyMetrics)
+    expect(rows[0]._origin).toBe("backend")
+    expect(rows[0].strainScore).toBe(9)
+  })
+
+  it("listDailyMetricsByRange filters by userId and dayDate inclusive", async () => {
+    const db = makeDb()
+    await upsertDailyMetrics(db, [
+      { id: "a", dayDate: 20260101, updatedAt: 1 } as any,
+      { id: "b", dayDate: 20260102, updatedAt: 2 } as any,
+      { id: "c", dayDate: 20260103, updatedAt: 3 } as any,
+    ])
+    const mid = await listDailyMetricsByRange(db, 20260102, 20260103)
+    expect(mid.map((r) => r.id).sort()).toEqual(["b", "c"])
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/derived.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/derived.ts`:
+
+```typescript
+import { and, asc, eq, gte, lte } from "drizzle-orm"
+import type { NoopDatabase } from "../index"
+import {
+  dailyMetrics,
+  dailyScores,
+  sleepDetections,
+  sleepStages,
+  nightFeatures,
+  signalSamples,
+  activityDetections,
+  baselineProfile,
+  sleepPlans,
+} from "../schema"
+import { getActiveUserId } from "../session"
+
+function backendMirror() {
+  return { _syncedAt: Date.now(), _localCreatedAt: Date.now(), _origin: "backend" as const }
+}
+
+async function upsertMany<T extends { id: string }>(
+  db: NoopDatabase,
+  table: any,
+  rows: T[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const userId = getActiveUserId()
+  const mirror = backendMirror()
+  for (const row of rows) {
+    await db
+      .insert(table)
+      .values({ ...row, userId, ...mirror })
+      .onConflictDoUpdate({
+        target: table.id,
+        set: { ...row, ...mirror, _origin: "backend" },
+      })
+  }
+}
+
+export const upsertDailyMetrics = (db: NoopDatabase, rows: any[]) => upsertMany(db, dailyMetrics, rows)
+export const upsertDailyScores = (db: NoopDatabase, rows: any[]) => upsertMany(db, dailyScores, rows)
+export const upsertSleepDetections = (db: NoopDatabase, rows: any[]) => upsertMany(db, sleepDetections, rows)
+export const upsertSleepStages = (db: NoopDatabase, rows: any[]) => upsertMany(db, sleepStages, rows)
+export const upsertNightFeatures = (db: NoopDatabase, rows: any[]) => upsertMany(db, nightFeatures, rows)
+export const upsertSignalSamples = (db: NoopDatabase, rows: any[]) => upsertMany(db, signalSamples, rows)
+export const upsertActivityDetections = (db: NoopDatabase, rows: any[]) => upsertMany(db, activityDetections, rows)
+export const upsertBaselineProfile = (db: NoopDatabase, rows: any[]) => upsertMany(db, baselineProfile, rows)
+export const upsertSleepPlans = (db: NoopDatabase, rows: any[]) => upsertMany(db, sleepPlans, rows)
+
+export async function listDailyMetricsByRange(
+  db: NoopDatabase,
+  fromDayDate: number,
+  toDayDate: number,
+) {
+  const userId = getActiveUserId()
+  return db
+    .select()
+    .from(dailyMetrics)
+    .where(
+      and(
+        eq(dailyMetrics.userId, userId),
+        gte(dailyMetrics.dayDate, fromDayDate),
+        lte(dailyMetrics.dayDate, toDayDate),
+      ),
+    )
+    .orderBy(asc(dailyMetrics.dayDate))
+}
+
+export async function listSleepDetectionByNight(db: NoopDatabase, nightDate: number) {
+  const userId = getActiveUserId()
+  const rows = await db
+    .select()
+    .from(sleepDetections)
+    .where(and(eq(sleepDetections.userId, userId), eq(sleepDetections.nightDate, nightDate)))
+  return rows[0] ?? null
+}
+
+export async function listSleepStagesByNight(db: NoopDatabase, nightDate: number) {
+  const userId = getActiveUserId()
+  const rows = await db
+    .select()
+    .from(sleepStages)
+    .where(and(eq(sleepStages.userId, userId), eq(sleepStages.nightDate, nightDate)))
+  return rows[0] ?? null
+}
+
+export async function getBaselineProfile(db: NoopDatabase) {
+  const userId = getActiveUserId()
+  const rows = await db.select().from(baselineProfile).where(eq(baselineProfile.userId, userId))
+  return rows[0] ?? null
+}
+
+export async function getSleepPlan(db: NoopDatabase) {
+  const userId = getActiveUserId()
+  const rows = await db.select().from(sleepPlans).where(eq(sleepPlans.userId, userId))
+  return rows[0] ?? null
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/derived.test.ts`
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/repositories/derived.ts app/test/db/derived.test.ts
+git commit -m "feat(db): derived-table upsert repositories with backend-wins policy"
+```
+
+---
+
+### Task 11: viewCache repository
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/viewCache.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/viewCache.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/viewCache.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { setActiveUserId } from "../../app/services/db/session"
+import { getViewCache, setViewCache } from "../../app/services/db/repositories/viewCache"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE view_cache (
+    view_name TEXT NOT NULL, date TEXT NOT NULL, payload TEXT NOT NULL,
+    updated_at INTEGER NOT NULL, user_id TEXT NOT NULL,
+    PRIMARY KEY (view_name, date, user_id)
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("viewCache", () => {
+  beforeEach(() => setActiveUserId("u"))
+
+  it("upserts and reads a view payload", async () => {
+    const db = makeDb()
+    await setViewCache(db, "home", "2026-04-18", { rings: { sleep: { value: "7h" } } })
+    const payload = await getViewCache<any>(db, "home", "2026-04-18")
+    expect(payload.rings.sleep.value).toBe("7h")
+  })
+
+  it("returns null when no cache row", async () => {
+    const db = makeDb()
+    expect(await getViewCache(db, "home", "2026-04-18")).toBeNull()
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/viewCache.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/viewCache.ts`:
+
+```typescript
+import { and, eq } from "drizzle-orm"
+import type { NoopDatabase } from "../index"
+import { viewCache } from "../schema"
+import { getActiveUserId } from "../session"
+
+export async function setViewCache(
+  db: NoopDatabase,
+  viewName: string,
+  date: string,
+  payload: unknown,
+): Promise<void> {
+  const userId = getActiveUserId()
+  await db
+    .insert(viewCache)
+    .values({ viewName, date, userId, payload: JSON.stringify(payload), updatedAt: Date.now() })
+    .onConflictDoUpdate({
+      target: [viewCache.viewName, viewCache.date, viewCache.userId],
+      set: { payload: JSON.stringify(payload), updatedAt: Date.now() },
+    })
+}
+
+export async function getViewCache<T>(
+  db: NoopDatabase,
+  viewName: string,
+  date: string,
+): Promise<T | null> {
+  const userId = getActiveUserId()
+  const [row] = await db
+    .select()
+    .from(viewCache)
+    .where(
+      and(
+        eq(viewCache.viewName, viewName),
+        eq(viewCache.date, date),
+        eq(viewCache.userId, userId),
+      ),
+    )
+  if (!row) return null
+  return JSON.parse(row.payload) as T
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/viewCache.test.ts`
+Expected: PASS (2 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/repositories/viewCache.ts app/test/db/viewCache.test.ts
+git commit -m "feat(db): viewCache repo for HomeView/SleepView/TrendsView JSON"
+```
+
+---
+
+### Task 12: downlinkPuller + conflict policy test
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/sync/downlinkPuller.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/sync/downlinkPuller.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/sync/downlinkPuller.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { setActiveUserId } from "../../app/services/db/session"
+import { pullDownlink } from "../../app/services/sync/downlinkPuller"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE daily_metrics (
+    id TEXT PRIMARY KEY, day_date INTEGER NOT NULL, stress_average REAL, spo2_average REAL,
+    skin_temp_avg_celsius REAL, skin_temp_delta_celsius REAL, strain_score REAL,
+    sleep_consistency_score REAL, detected_sleep_nights INTEGER NOT NULL DEFAULT 0,
+    lf_hf_ratio_average REAL, recovery_index REAL, training_load_ratio REAL,
+    training_load_risk_zone TEXT, spo2_dip_count INTEGER, odi_per_hour REAL, lowest_spo2 REAL,
+    core_temperature_estimate REAL, circadian_nadir INTEGER, sleep_architecture_score REAL,
+    active_minutes REAL, activity_count INTEGER, updated_at INTEGER NOT NULL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL, _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  sqlite.execSync(`CREATE TABLE sync_state (
+    table_name TEXT PRIMARY KEY, last_sync_at INTEGER NOT NULL DEFAULT 0,
+    last_synced_row_timestamp INTEGER
+  );`)
+  sqlite.execSync(`CREATE TABLE outbound_queue (
+    id TEXT PRIMARY KEY, table_name TEXT NOT NULL, row_id TEXT NOT NULL,
+    payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER, last_error TEXT, created_at INTEGER NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("downlinkPuller", () => {
+  beforeEach(() => setActiveUserId("u"))
+
+  it("fetches derived rows and upserts them; advances sync cursor", async () => {
+    const db = makeDb()
+    const apiGet = jest
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ id: "m1", dayDate: 20260101, updatedAt: 1500 }], hasMore: false })
+      .mockResolvedValue({ rows: [], hasMore: false })
+    await pullDownlink(db, { apiGet, tables: ["daily_metrics"] })
+    const rows = await db.select().from(schema.dailyMetrics)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]._origin).toBe("backend")
+  })
+
+  it("conflict policy: backend version wins over local version with same id", async () => {
+    const db = makeDb()
+    const sqlite = (db as any)._session.sqliteDB as SQLite.SQLiteDatabase
+    sqlite.execSync(
+      `INSERT INTO daily_metrics (id, day_date, detected_sleep_nights, updated_at, _local_created_at, _origin, user_id, strain_score) VALUES ('m1', 20260101, 0, 500, 500, 'local', 'u', 1);`,
+    )
+    const apiGet = jest
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ id: "m1", dayDate: 20260101, updatedAt: 2000, strainScore: 9 }], hasMore: false })
+      .mockResolvedValue({ rows: [], hasMore: false })
+    await pullDownlink(db, { apiGet, tables: ["daily_metrics"] })
+    const rows = await db.select().from(schema.dailyMetrics)
+    expect(rows[0]._origin).toBe("backend")
+    expect(rows[0].strainScore).toBe(9)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/downlinkPuller.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/sync/downlinkPuller.ts`:
+
+```typescript
+import type { NoopDatabase } from "../db"
+import { getLastSyncAt, setLastSyncAt } from "../db/repositories/syncState"
+import {
+  upsertDailyMetrics,
+  upsertDailyScores,
+  upsertSleepDetections,
+  upsertSleepStages,
+  upsertNightFeatures,
+  upsertSignalSamples,
+  upsertActivityDetections,
+  upsertBaselineProfile,
+  upsertSleepPlans,
+} from "../db/repositories/derived"
+
+type Upserter = (db: NoopDatabase, rows: any[]) => Promise<void>
+
+const UPSERTERS: Record<string, Upserter> = {
+  daily_metrics: upsertDailyMetrics,
+  daily_scores: upsertDailyScores,
+  sleep_detections: upsertSleepDetections,
+  sleep_stages: upsertSleepStages,
+  night_features: upsertNightFeatures,
+  signal_samples: upsertSignalSamples,
+  activity_detections: upsertActivityDetections,
+  baseline_profile: upsertBaselineProfile,
+  sleep_plans: upsertSleepPlans,
+}
+
+export interface PullOptions {
+  apiGet: (path: string) => Promise<{ rows: any[]; hasMore: boolean }>
+  tables: string[]
+  pageSize?: number
+}
+
+export async function pullDownlink(db: NoopDatabase, opts: PullOptions): Promise<void> {
+  const pageSize = opts.pageSize ?? 1000
+  for (const tableName of opts.tables) {
+    const upserter = UPSERTERS[tableName]
+    if (!upserter) continue
+    let since = await getLastSyncAt(db, tableName)
+    for (;;) {
+      const path = `/sync/${tableName}?since=${since}&limit=${pageSize}`
+      const { rows, hasMore } = await opts.apiGet(path)
+      if (rows.length === 0) break
+      await upserter(db, rows)
+      const maxUpdatedAt = Math.max(...rows.map((r: any) => r.updatedAt ?? since))
+      since = maxUpdatedAt
+      await setLastSyncAt(db, tableName, since)
+      if (!hasMore) break
+    }
+  }
+}
+```
+
+Also wire this into `SyncService` in `/Users/nishantgupta/Documents/noop/app/app/app.tsx` — replace the Phase-2 empty `pullFn` with a real one:
+
+```typescript
+pullFn: () =>
+  pullDownlink(db, {
+    apiGet,
+    tables: [
+      "daily_metrics",
+      "daily_scores",
+      "sleep_detections",
+      "sleep_stages",
+      "night_features",
+      "signal_samples",
+      "activity_detections",
+      "baseline_profile",
+      "sleep_plans",
+    ],
+  }),
+```
+
+with imports:
+```typescript
+import { pullDownlink } from "./services/sync/downlinkPuller"
+import { apiGet } from "./services/api/noopClient"
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/downlinkPuller.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: Jest PASS (2 tests); tsc clean.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/sync/downlinkPuller.ts app/app/app.tsx app/test/sync/downlinkPuller.test.ts
+git commit -m "feat(sync): downlinkPuller with backend-wins conflict policy"
+```
+
+---
+
+### Task 13: useDbQuery hook + repository observe() wrapper
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/observable.ts`
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/useDbQuery.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/observable.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/observable.test.ts`:
+
+```typescript
+import { createObservable, notifyTable } from "../../app/services/db/observable"
+
+describe("observable", () => {
+  it("notifies subscribers for the notified table only", () => {
+    const subA = jest.fn()
+    const subB = jest.fn()
+    const unsubA = createObservable("daily_metrics", subA)
+    const unsubB = createObservable("sleep_stages", subB)
+    notifyTable("daily_metrics")
+    expect(subA).toHaveBeenCalledTimes(1)
+    expect(subB).toHaveBeenCalledTimes(0)
+    unsubA()
+    unsubB()
+  })
+
+  it("stops notifying after unsubscribe", () => {
+    const sub = jest.fn()
+    const unsub = createObservable("daily_metrics", sub)
+    unsub()
+    notifyTable("daily_metrics")
+    expect(sub).toHaveBeenCalledTimes(0)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/observable.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/observable.ts`:
+
+```typescript
+type Subscriber = () => void
+
+const subscribers = new Map<string, Set<Subscriber>>()
+
+export function createObservable(tableName: string, subscriber: Subscriber): () => void {
+  if (!subscribers.has(tableName)) subscribers.set(tableName, new Set())
+  subscribers.get(tableName)!.add(subscriber)
+  return () => subscribers.get(tableName)?.delete(subscriber)
+}
+
+export function notifyTable(tableName: string): void {
+  const set = subscribers.get(tableName)
+  if (!set) return
+  for (const sub of set) sub()
+}
+```
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/useDbQuery.ts`:
+
+```typescript
+import { useEffect, useState, useRef } from "react"
+import { createObservable } from "./observable"
+
+export function useDbQuery<T>(
+  tableDeps: string[],
+  queryFn: () => Promise<T>,
+  deps: ReadonlyArray<unknown> = [],
+): { data: T | null; isLoading: boolean; error: Error | null; refetch: () => void } {
+  const [data, setData] = useState<T | null>(null)
+  const [isLoading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+  const tick = useRef(0)
+
+  const refetch = () => {
+    const myTick = ++tick.current
+    setLoading(true)
+    queryFn()
+      .then((value) => {
+        if (myTick !== tick.current) return
+        setData(value)
+        setError(null)
+      })
+      .catch((err) => {
+        if (myTick !== tick.current) return
+        setError(err)
+      })
+      .finally(() => {
+        if (myTick !== tick.current) return
+        setLoading(false)
+      })
+  }
+
+  useEffect(() => {
+    refetch()
+    const unsubs = tableDeps.map((name) => createObservable(name, refetch))
+    return () => { for (const u of unsubs) u() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps)
+
+  return { data, isLoading, error, refetch }
+}
+```
+
+Update the repository inserts/upserts from Tasks 4, 5, 10, 11 to call `notifyTable(tableName)` after writes. For example, in `rawSensorRecord.ts` append:
+```typescript
+import { notifyTable } from "../observable"
+// ...at end of insertRawSensorRecord:
+notifyTable("raw_sensor_records")
+```
+Repeat in every repo write function (insert/upsert/markSynced) — notify the matching table name. This is straightforward: each write → one `notifyTable(...)` call.
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/observable.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: Jest PASS (2 tests); tsc clean.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/observable.ts app/app/services/db/useDbQuery.ts app/app/services/db/repositories app/test/db/observable.test.ts
+git commit -m "feat(db): observable + useDbQuery hook; repositories notify on writes"
+```
+
+---
+
+### Task 14: HomeScreen reads from viewCache (not backend directly)
+
+**Files:**
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/screens/HomeScreen.tsx`
+
+- [ ] **Step 1: Verify current fetch path**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && grep -n "fetchHomeView" app/screens/HomeScreen.tsx`
+Expected: shows the current direct call to `fetchHomeView` from `noopClient`. Note the line number.
+
+- [ ] **Step 2: Type check baseline**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS (baseline before edits)
+
+- [ ] **Step 3: Apply the edit**
+
+In `HomeScreen.tsx`, replace the direct `fetchHomeView(date)` call with a local-DB read + background refresh pattern:
+
+```typescript
+// Remove: import { fetchHomeView } from "../services/api/noopClient"
+import { openDatabase } from "../services/db"
+import { getViewCache } from "../services/db/repositories/viewCache"
+import { useDbQuery } from "../services/db/useDbQuery"
+
+// inside the component:
+const db = openDatabase()
+const { data: home, isLoading, refetch } = useDbQuery(
+  ["view_cache"],
+  () => getViewCache<HomeViewModel>(db, "home", selectedDate),
+  [selectedDate],
+)
+```
+
+The `SyncService` already refreshes `view_cache` on foreground + pull-to-refresh. Wire the existing pull-to-refresh gesture to call both `SyncService.refresh()` and `refetch()`. Where the screen currently passes the fetched view to its children, pass `home` instead; tolerate `home === null` by showing the existing empty state.
+
+For the view_cache to actually contain the home view JSON, extend `downlinkPuller` to fetch `GET /views/home?date=<date>` for the currently-shown date. Add to `Phase 3 downlinkPuller` call site in `app.tsx`:
+
+```typescript
+// After pullDownlink for entities, also refresh cached views for the active date.
+const today = new Date().toISOString().slice(0, 10)
+const home = await apiGet(`/views/home?date=${today}`)
+await setViewCache(db, "home", today, home)
+```
+
+This lives alongside the existing `pullDownlink` call.
+
+- [ ] **Step 4: Type check + simulator smoke**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS.
+
+Simulator: open the Home tab. Verify rings render with the same values as before (when online). Toggle airplane mode, kill the app, reopen — Home should still render from `view_cache`. No "network error" banner. Pull-to-refresh should bump the updatedAt timestamp in the `view_cache` table (`sqlite3` inspector or Debug screen in Phase 4's retention task).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/screens/HomeScreen.tsx app/app/app.tsx
+git commit -m "feat(screens): HomeScreen reads from view_cache with background refresh"
+```
+
+---
+
+
