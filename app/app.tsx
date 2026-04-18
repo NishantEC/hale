@@ -30,6 +30,7 @@ import { DashboardProvider } from "./context/DashboardContext"
 import { initI18n } from "./i18n"
 import { AppNavigator } from "./navigators/AppNavigator"
 import { useNavigationPersistence } from "./navigators/navigationUtilities"
+import { runMigrations } from "./services/db"
 import { ThemeProvider } from "./theme/context"
 import { customFontsToLoad } from "./theme/typography"
 import { loadDateFnsLocale } from "./utils/formatDate"
@@ -72,11 +73,21 @@ export function App() {
 
   const [areFontsLoaded, fontLoadError] = useFonts(customFontsToLoad)
   const [isI18nInitialized, setIsI18nInitialized] = useState(false)
+  const [isDbReady, setIsDbReady] = useState(false)
 
   useEffect(() => {
     initI18n()
       .then(() => setIsI18nInitialized(true))
       .then(() => loadDateFnsLocale())
+  }, [])
+
+  useEffect(() => {
+    runMigrations()
+      .then(() => setIsDbReady(true))
+      .catch((err) => {
+        console.error("[db] migration failed", err)
+        setIsDbReady(true)
+      })
   }, [])
 
   // Before we show the app, we have to wait for our state to be ready.
@@ -85,7 +96,12 @@ export function App() {
   // In iOS: application:didFinishLaunchingWithOptions:
   // In Android: https://stackoverflow.com/a/45838109/204044
   // You can replace with your own loading component if you wish.
-  if (!isNavigationStateRestored || !isI18nInitialized || (!areFontsLoaded && !fontLoadError)) {
+  if (
+    !isNavigationStateRestored ||
+    !isI18nInitialized ||
+    !isDbReady ||
+    (!areFontsLoaded && !fontLoadError)
+  ) {
     return null
   }
 
