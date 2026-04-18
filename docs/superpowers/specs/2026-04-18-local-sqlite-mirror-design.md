@@ -242,6 +242,7 @@ Phased, each phase independently shippable:
 2. **Conflict policy on downlink.** If a row was written locally (`_origin='local'`, `_syncedAt=null`) and the backend returns a row with the same `id` via downlink, we take backend's version and clear the queue entry. Document this.
 3. **View cache invalidation on new raw data.** When raw data arrives and is uplinked, the backend will eventually produce fresher view models. Right now nothing tells the app "your home view is stale". For now, refresh view_cache on every foreground and accept up to one foreground-cycle of staleness. Revisit if users complain.
 4. **Bundle size.** Adding Drizzle + expo-sqlite is ~200KB gzipped. Acceptable but track in the PR.
+5. **Strap backfill size is runtime-discovered, not a fixed capacity.** The WHOOP 4.0 BLE protocol does not expose a static "N days of storage" constant. On sync initiation the strap sends `HistoryStart` (metadata code 1) with `count_u32_LE` = total records available, and the app drains until `HistoryComplete` (code 3). The `outbound_queue` handles backfill of arbitrary size, so no capacity assumption is baked into the schema. Community reverse-engineering puts practical on-strap buffer at ~3–7 days of V12/V24 full-sensor records (~6.3 MB/day at 1 Hz), but the app should never rely on that number — always trust the runtime count.
 
 ---
 
