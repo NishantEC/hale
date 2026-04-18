@@ -621,3 +621,746 @@ git commit -m "feat(db): open DB and run migrations on app boot"
 ```
 
 ---
+
+## Phase 2 — Uplink for raw sensor records
+
+### Task 4: Session-scoped userId + rawSensorRecords repository
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/session.ts`
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/rawSensorRecord.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/rawSensorRecord.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/rawSensorRecord.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { insertRawSensorRecord, listRawSensorRecordsByDateRange } from "../../app/services/db/repositories/rawSensorRecord"
+import { setActiveUserId } from "../../app/services/db/session"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  // Apply schema inline for the test (drizzle-kit migrations not available in jest)
+  sqlite.execSync(`CREATE TABLE raw_sensor_records (
+    id TEXT PRIMARY KEY,
+    timestamp INTEGER NOT NULL,
+    heart_rate REAL NOT NULL DEFAULT 0,
+    rr_average_ms REAL, spo2_red REAL, spo2_ir REAL, skin_temp_raw REAL,
+    gravity_magnitude REAL, gravity_x REAL, gravity_y REAL, gravity_z REAL,
+    resp_rate_raw REAL, skin_contact INTEGER,
+    ppg_green REAL, ppg_red_ir REAL, ambient_light REAL,
+    led_drive_1 REAL, led_drive_2 REAL, signal_quality REAL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL,
+    _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  return { db: drizzle(sqlite, { schema }), sqlite }
+}
+
+describe("rawSensorRecord repository", () => {
+  beforeEach(() => setActiveUserId("user-abc"))
+
+  it("inserts a local-origin row with mirror columns populated", async () => {
+    const { db } = makeDb()
+    await insertRawSensorRecord(db, {
+      id: "r1",
+      timestamp: 1_700_000_000_000,
+      heartRate: 62,
+      rrAverageMs: null,
+      spo2Red: null, spo2IR: null, skinTempRaw: null,
+      gravityMagnitude: null, gravityX: null, gravityY: null, gravityZ: null,
+      respRateRaw: null, skinContact: 1,
+      ppgGreen: null, ppgRedIr: null, ambientLight: null,
+      ledDrive1: null, ledDrive2: null, signalQuality: null,
+    })
+    const rows = await db.select().from(schema.rawSensorRecords)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].userId).toBe("user-abc")
+    expect(rows[0]._origin).toBe("local")
+    expect(rows[0]._syncedAt).toBeNull()
+    expect(rows[0]._localCreatedAt).toBeGreaterThan(0)
+  })
+
+  it("queries by timestamp range scoped to active user", async () => {
+    const { db } = makeDb()
+    await insertRawSensorRecord(db, { id: "a", timestamp: 100, heartRate: 60 } as any)
+    await insertRawSensorRecord(db, { id: "b", timestamp: 200, heartRate: 61 } as any)
+    await insertRawSensorRecord(db, { id: "c", timestamp: 300, heartRate: 62 } as any)
+    const mid = await listRawSensorRecordsByDateRange(db, 150, 250)
+    expect(mid.map((r) => r.id)).toEqual(["b"])
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/rawSensorRecord.test.ts`
+Expected: FAIL — `Cannot find module '../../app/services/db/repositories/rawSensorRecord'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/session.ts`:
+
+```typescript
+// Session-scoped active user id. Wiped and re-set on login / logout.
+// Used by every repository write to stamp `userId` on mirrored rows and
+// by wipeDatabase() to know whose data to clear.
+
+let activeUserId: string | null = null
+
+export function setActiveUserId(userId: string | null): void {
+  activeUserId = userId
+}
+
+export function getActiveUserId(): string {
+  if (!activeUserId) throw new Error("No active user — call setActiveUserId before DB writes")
+  return activeUserId
+}
+
+export function peekActiveUserId(): string | null {
+  return activeUserId
+}
+```
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/rawSensorRecord.ts`:
+
+```typescript
+import { and, eq, gte, lte, asc } from "drizzle-orm"
+import type { NoopDatabase } from "../index"
+import { rawSensorRecords } from "../schema"
+import { getActiveUserId } from "../session"
+
+export interface RawSensorRecordInput {
+  id: string
+  timestamp: number
+  heartRate: number
+  rrAverageMs: number | null
+  spo2Red: number | null
+  spo2IR: number | null
+  skinTempRaw: number | null
+  gravityMagnitude: number | null
+  gravityX: number | null
+  gravityY: number | null
+  gravityZ: number | null
+  respRateRaw: number | null
+  skinContact: number | null
+  ppgGreen: number | null
+  ppgRedIr: number | null
+  ambientLight: number | null
+  ledDrive1: number | null
+  ledDrive2: number | null
+  signalQuality: number | null
+}
+
+export async function insertRawSensorRecord(
+  db: NoopDatabase,
+  input: RawSensorRecordInput,
+): Promise<void> {
+  const userId = getActiveUserId()
+  await db.insert(rawSensorRecords).values({
+    ...input,
+    _syncedAt: null,
+    _localCreatedAt: Date.now(),
+    _origin: "local",
+    userId,
+  })
+}
+
+export async function listRawSensorRecordsByDateRange(
+  db: NoopDatabase,
+  fromTs: number,
+  toTs: number,
+) {
+  const userId = getActiveUserId()
+  return db
+    .select()
+    .from(rawSensorRecords)
+    .where(
+      and(
+        eq(rawSensorRecords.userId, userId),
+        gte(rawSensorRecords.timestamp, fromTs),
+        lte(rawSensorRecords.timestamp, toTs),
+      ),
+    )
+    .orderBy(asc(rawSensorRecords.timestamp))
+}
+
+export async function markRawSensorRecordsSynced(
+  db: NoopDatabase,
+  ids: string[],
+  syncedAt: number,
+): Promise<void> {
+  if (ids.length === 0) return
+  for (const id of ids) {
+    await db
+      .update(rawSensorRecords)
+      .set({ _syncedAt: syncedAt })
+      .where(eq(rawSensorRecords.id, id))
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/rawSensorRecord.test.ts`
+Expected: PASS (2 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/session.ts app/app/services/db/repositories/rawSensorRecord.ts app/test/db/rawSensorRecord.test.ts
+git commit -m "feat(db): rawSensorRecord repo + session userId tagging"
+```
+
+---
+
+### Task 5: outboundQueue repository
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/outboundQueue.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/db/outboundQueue.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/db/outboundQueue.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import {
+  enqueueOutbound,
+  claimOutboundBatch,
+  markOutboundSynced,
+  recordOutboundFailure,
+  listDeadLetters,
+} from "../../app/services/db/repositories/outboundQueue"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE outbound_queue (
+    id TEXT PRIMARY KEY, table_name TEXT NOT NULL, row_id TEXT NOT NULL,
+    payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER, last_error TEXT, created_at INTEGER NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("outboundQueue", () => {
+  it("enqueues and claims in FIFO order", async () => {
+    const db = makeDb()
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "b", payload: { id: "b" } })
+    const batch = await claimOutboundBatch(db, 10)
+    expect(batch.map((r) => r.rowId)).toEqual(["a", "b"])
+  })
+
+  it("markOutboundSynced removes rows", async () => {
+    const db = makeDb()
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
+    const [row] = await claimOutboundBatch(db, 10)
+    await markOutboundSynced(db, [row.id])
+    const next = await claimOutboundBatch(db, 10)
+    expect(next).toHaveLength(0)
+  })
+
+  it("recordOutboundFailure increments attempts + preserves payload", async () => {
+    const db = makeDb()
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
+    const [row] = await claimOutboundBatch(db, 10)
+    await recordOutboundFailure(db, row.id, "network timeout")
+    const retry = (await claimOutboundBatch(db, 10))[0]
+    expect(retry.attempts).toBe(1)
+    expect(retry.lastError).toBe("network timeout")
+  })
+
+  it("listDeadLetters returns rows with attempts >= 10", async () => {
+    const db = makeDb()
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "dead", payload: {} })
+    const [row] = await claimOutboundBatch(db, 10)
+    for (let i = 0; i < 10; i++) await recordOutboundFailure(db, row.id, "err")
+    const dead = await listDeadLetters(db)
+    expect(dead).toHaveLength(1)
+    expect(dead[0].rowId).toBe("dead")
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/outboundQueue.test.ts`
+Expected: FAIL — `Cannot find module '../../app/services/db/repositories/outboundQueue'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/db/repositories/outboundQueue.ts`:
+
+```typescript
+import { and, asc, eq, gte, sql } from "drizzle-orm"
+import type { NoopDatabase } from "../index"
+import { outboundQueue } from "../schema"
+
+// Dead-letter threshold: row moves out of active drain once attempts >= this.
+export const MAX_ATTEMPTS_BEFORE_DEAD_LETTER = 10
+
+export interface EnqueueInput {
+  tableName: string
+  rowId: string
+  payload: unknown
+}
+
+function newId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+export async function enqueueOutbound(db: NoopDatabase, input: EnqueueInput): Promise<void> {
+  await db.insert(outboundQueue).values({
+    id: newId(),
+    tableName: input.tableName,
+    rowId: input.rowId,
+    payload: JSON.stringify(input.payload),
+    attempts: 0,
+    lastAttemptAt: null,
+    lastError: null,
+    createdAt: Date.now(),
+  })
+}
+
+export async function claimOutboundBatch(db: NoopDatabase, limit: number) {
+  // Skip dead-letters (attempts >= threshold); drain FIFO otherwise.
+  const rows = await db
+    .select()
+    .from(outboundQueue)
+    .where(sql`attempts < ${MAX_ATTEMPTS_BEFORE_DEAD_LETTER}`)
+    .orderBy(asc(outboundQueue.createdAt))
+    .limit(limit)
+  return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) as unknown }))
+}
+
+export async function markOutboundSynced(db: NoopDatabase, ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  for (const id of ids) {
+    await db.delete(outboundQueue).where(eq(outboundQueue.id, id))
+  }
+}
+
+export async function recordOutboundFailure(
+  db: NoopDatabase,
+  id: string,
+  errorMessage: string,
+): Promise<void> {
+  await db
+    .update(outboundQueue)
+    .set({
+      attempts: sql`${outboundQueue.attempts} + 1`,
+      lastAttemptAt: Date.now(),
+      lastError: errorMessage,
+    })
+    .where(eq(outboundQueue.id, id))
+}
+
+export async function listDeadLetters(db: NoopDatabase) {
+  return db
+    .select()
+    .from(outboundQueue)
+    .where(gte(outboundQueue.attempts, MAX_ATTEMPTS_BEFORE_DEAD_LETTER))
+}
+
+export async function queueDepth(db: NoopDatabase): Promise<number> {
+  const rows = await db.select({ c: sql<number>`count(*)` }).from(outboundQueue)
+  return rows[0]?.c ?? 0
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/db/outboundQueue.test.ts`
+Expected: PASS (4 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/db/repositories/outboundQueue.ts app/test/db/outboundQueue.test.ts
+git commit -m "feat(db): outbound queue repository with dead-letter threshold"
+```
+
+---
+
+### Task 6: uplinkDrainer — pulls batches, POSTs to backend, marks synced
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/sync/uplinkDrainer.ts`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/sync/uplinkDrainer.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/sync/uplinkDrainer.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { enqueueOutbound, queueDepth } from "../../app/services/db/repositories/outboundQueue"
+import { drainOnce } from "../../app/services/sync/uplinkDrainer"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE outbound_queue (
+    id TEXT PRIMARY KEY, table_name TEXT NOT NULL, row_id TEXT NOT NULL,
+    payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER, last_error TEXT, created_at INTEGER NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("uplinkDrainer", () => {
+  it("drains the queue when POST succeeds", async () => {
+    const db = makeDb()
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
+    const post = jest.fn().mockResolvedValue({ ok: true })
+    await drainOnce(db, { post, batchSize: 100 })
+    expect(post).toHaveBeenCalledWith("raw_sensor_records", expect.arrayContaining([{ id: "a" }]))
+    expect(await queueDepth(db)).toBe(0)
+  })
+
+  it("leaves row enqueued on failure and increments attempts", async () => {
+    const db = makeDb()
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: {} })
+    const post = jest.fn().mockRejectedValue(new Error("network"))
+    await drainOnce(db, { post, batchSize: 100 })
+    expect(await queueDepth(db)).toBe(1)
+  })
+
+  it("groups payloads by tableName and batches per group", async () => {
+    const db = makeDb()
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
+    await enqueueOutbound(db, { tableName: "journal_entries", rowId: "j", payload: { id: "j" } })
+    const post = jest.fn().mockResolvedValue({ ok: true })
+    await drainOnce(db, { post, batchSize: 100 })
+    expect(post).toHaveBeenCalledTimes(2)
+    expect(post).toHaveBeenCalledWith("raw_sensor_records", [{ id: "a" }])
+    expect(post).toHaveBeenCalledWith("journal_entries", [{ id: "j" }])
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/uplinkDrainer.test.ts`
+Expected: FAIL — `Cannot find module '../../app/services/sync/uplinkDrainer'`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/sync/uplinkDrainer.ts`:
+
+```typescript
+import type { NoopDatabase } from "../db"
+import {
+  claimOutboundBatch,
+  markOutboundSynced,
+  recordOutboundFailure,
+} from "../db/repositories/outboundQueue"
+
+export interface DrainOptions {
+  post: (tableName: string, payloads: unknown[]) => Promise<unknown>
+  batchSize: number
+}
+
+export async function drainOnce(db: NoopDatabase, opts: DrainOptions): Promise<void> {
+  const batch = await claimOutboundBatch(db, opts.batchSize)
+  if (batch.length === 0) return
+
+  // Group by tableName so each POST is a single-table bulk.
+  const groups = new Map<string, typeof batch>()
+  for (const row of batch) {
+    const list = groups.get(row.tableName) ?? []
+    list.push(row)
+    groups.set(row.tableName, list)
+  }
+
+  for (const [tableName, rows] of groups) {
+    const payloads = rows.map((r) => r.payload)
+    try {
+      await opts.post(tableName, payloads)
+      await markOutboundSynced(db, rows.map((r) => r.id))
+    } catch (err: any) {
+      for (const r of rows) {
+        await recordOutboundFailure(db, r.id, err?.message ?? "unknown error")
+      }
+    }
+  }
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/uplinkDrainer.test.ts`
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/sync/uplinkDrainer.ts app/test/sync/uplinkDrainer.test.ts
+git commit -m "feat(sync): uplinkDrainer groups by table and batches POSTs"
+```
+
+---
+
+### Task 7: SyncService orchestrator shell + app-state integration
+
+**Files:**
+- Create: `/Users/nishantgupta/Documents/noop/app/app/services/sync/SyncService.ts`
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/app.tsx`
+- Test: `/Users/nishantgupta/Documents/noop/app/test/sync/SyncService.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/sync/SyncService.test.ts`:
+
+```typescript
+import { SyncService } from "../../app/services/sync/SyncService"
+
+describe("SyncService", () => {
+  jest.useFakeTimers()
+
+  it("calls drainFn every interval while started", () => {
+    const drainFn = jest.fn().mockResolvedValue(undefined)
+    const svc = new SyncService({ drainFn, pullFn: jest.fn(), intervalMs: 5000 })
+    svc.start()
+    expect(drainFn).toHaveBeenCalledTimes(0)
+    jest.advanceTimersByTime(5000)
+    expect(drainFn).toHaveBeenCalledTimes(1)
+    jest.advanceTimersByTime(5000)
+    expect(drainFn).toHaveBeenCalledTimes(2)
+    svc.stop()
+    jest.advanceTimersByTime(10000)
+    expect(drainFn).toHaveBeenCalledTimes(2)
+  })
+
+  it("refresh() triggers both drain and pull once", async () => {
+    const drainFn = jest.fn().mockResolvedValue(undefined)
+    const pullFn = jest.fn().mockResolvedValue(undefined)
+    const svc = new SyncService({ drainFn, pullFn, intervalMs: 5000 })
+    await svc.refresh()
+    expect(drainFn).toHaveBeenCalledTimes(1)
+    expect(pullFn).toHaveBeenCalledTimes(1)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/SyncService.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/sync/SyncService.ts`:
+
+```typescript
+export interface SyncServiceOptions {
+  drainFn: () => Promise<void>
+  pullFn: () => Promise<void>
+  intervalMs: number
+}
+
+export class SyncService {
+  private timer: ReturnType<typeof setInterval> | null = null
+
+  constructor(private readonly opts: SyncServiceOptions) {}
+
+  start(): void {
+    if (this.timer) return
+    this.timer = setInterval(() => {
+      this.opts.drainFn().catch((err) => console.warn("[sync] drain failed", err))
+    }, this.opts.intervalMs)
+  }
+
+  stop(): void {
+    if (this.timer) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
+  }
+
+  async refresh(): Promise<void> {
+    await this.opts.drainFn().catch((err) => console.warn("[sync] drain failed", err))
+    await this.opts.pullFn().catch((err) => console.warn("[sync] pull failed", err))
+  }
+}
+```
+
+Modify `/Users/nishantgupta/Documents/noop/app/app/app.tsx`: after DB ready, wire SyncService.
+
+Add near other imports:
+```typescript
+import { AppState } from "react-native"
+import { SyncService } from "./services/sync/SyncService"
+import { drainOnce } from "./services/sync/uplinkDrainer"
+import { openDatabase } from "./services/db"
+import { apiPost } from "./services/api/noopClient"
+```
+
+Inside `App()`, after the `isDbReady` effect:
+
+```typescript
+useEffect(() => {
+  if (!isDbReady) return
+  const db = openDatabase()
+  const svc = new SyncService({
+    drainFn: () =>
+      drainOnce(db, {
+        post: (tableName, payloads) =>
+          apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
+        batchSize: 200,
+      }),
+    pullFn: async () => {
+      // Phase 3 will fill this in with downlinkPuller.
+    },
+    intervalMs: 15_000,
+  })
+  svc.start()
+  const sub = AppState.addEventListener("change", (state) => {
+    if (state === "active") void svc.refresh()
+  })
+  return () => {
+    svc.stop()
+    sub.remove()
+  }
+}, [isDbReady])
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/SyncService.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: Jest PASS, tsc clean.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/sync/SyncService.ts app/app/app.tsx app/test/sync/SyncService.test.ts
+git commit -m "feat(sync): SyncService orchestrator + app-state refresh"
+```
+
+---
+
+### Task 8: Wire BLE ingest path to write-local-first + enqueue
+
+**Files:**
+- Modify: `/Users/nishantgupta/Documents/noop/app/app/services/api/noopClient.ts` (add a backend-ingest endpoint the drainer calls; keep existing `ingestHistoricalRecords` as-is during transition)
+- Modify: the BLE ingest call site — find the existing path that calls `ingestHistoricalRecords` / writes to the backend, and change it to write-local-first
+- Test: `/Users/nishantgupta/Documents/noop/app/test/sync/bleIngestLocalFirst.test.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+Create `/Users/nishantgupta/Documents/noop/app/test/sync/bleIngestLocalFirst.test.ts`:
+
+```typescript
+import * as SQLite from "expo-sqlite"
+import { drizzle } from "drizzle-orm/expo-sqlite"
+import * as schema from "../../app/services/db/schema"
+import { ingestBleRecord } from "../../app/services/sync/bleIngest"
+import { setActiveUserId } from "../../app/services/db/session"
+import { queueDepth } from "../../app/services/db/repositories/outboundQueue"
+
+function makeDb() {
+  const sqlite = SQLite.openDatabaseSync(":memory:")
+  sqlite.execSync(`CREATE TABLE raw_sensor_records (
+    id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL,
+    heart_rate REAL NOT NULL DEFAULT 0,
+    rr_average_ms REAL, spo2_red REAL, spo2_ir REAL, skin_temp_raw REAL,
+    gravity_magnitude REAL, gravity_x REAL, gravity_y REAL, gravity_z REAL,
+    resp_rate_raw REAL, skin_contact INTEGER,
+    ppg_green REAL, ppg_red_ir REAL, ambient_light REAL,
+    led_drive_1 REAL, led_drive_2 REAL, signal_quality REAL,
+    _synced_at INTEGER, _local_created_at INTEGER NOT NULL,
+    _origin TEXT NOT NULL, user_id TEXT NOT NULL
+  );`)
+  sqlite.execSync(`CREATE TABLE outbound_queue (
+    id TEXT PRIMARY KEY, table_name TEXT NOT NULL, row_id TEXT NOT NULL,
+    payload TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+    last_attempt_at INTEGER, last_error TEXT, created_at INTEGER NOT NULL
+  );`)
+  return drizzle(sqlite, { schema })
+}
+
+describe("bleIngest (write-local-first)", () => {
+  beforeEach(() => setActiveUserId("u"))
+
+  it("writes a raw row + enqueues an uplink payload in one call", async () => {
+    const db = makeDb()
+    await ingestBleRecord(db, {
+      id: "r1",
+      timestamp: 1_700_000_000_000,
+      heartRate: 60,
+      rrAverageMs: null,
+      spo2Red: null, spo2IR: null, skinTempRaw: null,
+      gravityMagnitude: null, gravityX: null, gravityY: null, gravityZ: null,
+      respRateRaw: null, skinContact: 1,
+      ppgGreen: null, ppgRedIr: null, ambientLight: null,
+      ledDrive1: null, ledDrive2: null, signalQuality: null,
+    })
+    const raws = await db.select().from(schema.rawSensorRecords)
+    expect(raws).toHaveLength(1)
+    expect(await queueDepth(db)).toBe(1)
+  })
+})
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/bleIngestLocalFirst.test.ts`
+Expected: FAIL — module not found.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `/Users/nishantgupta/Documents/noop/app/app/services/sync/bleIngest.ts`:
+
+```typescript
+import type { NoopDatabase } from "../db"
+import {
+  insertRawSensorRecord,
+  RawSensorRecordInput,
+} from "../db/repositories/rawSensorRecord"
+import { enqueueOutbound } from "../db/repositories/outboundQueue"
+
+export async function ingestBleRecord(
+  db: NoopDatabase,
+  record: RawSensorRecordInput,
+): Promise<void> {
+  await insertRawSensorRecord(db, record)
+  await enqueueOutbound(db, {
+    tableName: "raw_sensor_records",
+    rowId: record.id,
+    payload: record,
+  })
+}
+```
+
+Find the existing BLE ingest call site. In the current repo this is wherever the app decodes a `HistoricalRecord` and calls `ingestHistoricalRecords` from `noopClient`. Replace that direct call with `ingestBleRecord(openDatabase(), mapped)` where `mapped` shapes the record to `RawSensorRecordInput`. The `ingestHistoricalRecords` HTTP call is now made only by the uplink drainer — leave the function in `noopClient.ts` so the drainer can still call it, but remove its direct callers.
+
+Search for call sites:
+```bash
+cd /Users/nishantgupta/Documents/noop/app && grep -rn "ingestHistoricalRecords" app/
+```
+Each hit outside `noopClient.ts` and the drainer should be replaced with the local-first variant.
+
+- [ ] **Step 4: Run test to verify it passes + smoke check**
+
+Run: `cd /Users/nishantgupta/Documents/noop/app && npx jest test/sync/bleIngestLocalFirst.test.ts && cd /Users/nishantgupta/Documents/noop/app && npx tsc --noEmit`
+Expected: PASS, tsc clean.
+
+Manual simulator check: with the simulator running from your normal `npx expo run:ios` flow, connect a strap, capture a few records, verify the app still renders them and the backend receives them after a ~15s drain cycle. Airplane-mode test: toggle airplane mode, capture more records, toggle off — the drainer should catch up on the next `AppState.active` event.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add app/app/services/sync/bleIngest.ts app/app/services/ble app/test/sync/bleIngestLocalFirst.test.ts
+git commit -m "feat(sync): BLE ingest now writes local-first + enqueues uplink"
+```
+
+---
+
