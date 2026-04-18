@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HistoricalRecord } from '../ble/packet-types';
 
-const DEFAULT_BASE_URL = 'https://a00a-49-207-195-126.ngrok-free.app';
+const DEFAULT_BASE_URL = 'https://4c2c-2a09-bac1-36e0-1468-00-243-a9.ngrok-free.app';
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   process.env.EXPO_PUBLIC_BACKEND_URL ||
@@ -78,6 +78,19 @@ export interface HomeViewModel {
     skinTemp: string;
     strain: string;
     skinTempDelta: string;
+    recoveryIndex: string;
+    trainingLoad: string;
+    trainingLoadRiskZone: string;
+    spo2Dips: string;
+    activityFeed: Array<{
+      type: string;
+      duration: string;
+      strain: string;
+      intensity: string;
+      time: string;
+    }>;
+    totalActiveMinutes: string;
+    activityCount: number;
   };
   confidence: {
     confidence: string;
@@ -499,15 +512,21 @@ export async function ingestHistoricalRecords(records: HistoricalRecord[]): Prom
         rrAverageMs: r.rrIntervals.length > 0
           ? r.rrIntervals.reduce((a, b) => a + b, 0) / r.rrIntervals.length
           : null,
-        spo2Red: r.spo2Red || null,
-        spo2IR: r.spo2IR || null,
-        skinTempRaw: r.skinTempRaw || null,
-        gravityMagnitude: Math.sqrt(r.gravityX ** 2 + r.gravityY ** 2 + r.gravityZ ** 2) || null,
-        gravityX: r.gravityX || null,
-        gravityY: r.gravityY || null,
-        gravityZ: r.gravityZ || null,
-        respRateRaw: r.respRateRaw || null,
+        spo2Red: r.spo2Red ?? null,
+        spo2IR: r.spo2IR ?? null,
+        skinTempRaw: r.skinTempRaw ?? null,
+        gravityMagnitude: Math.sqrt(r.gravityX ** 2 + r.gravityY ** 2 + r.gravityZ ** 2),
+        gravityX: r.gravityX ?? null,
+        gravityY: r.gravityY ?? null,
+        gravityZ: r.gravityZ ?? null,
+        respRateRaw: r.respRateRaw ?? null,
         skinContact: r.skinContact,
+        ppgGreen: r.ppgGreen ?? null,
+        ppgRedIr: r.ppgRedIr ?? null,
+        ambientLight: r.ambientLight ?? null,
+        ledDrive1: r.ledDrive1 ?? null,
+        ledDrive2: r.ledDrive2 ?? null,
+        signalQuality: r.signalQuality ?? null,
       })),
     };
     const result = await apiPost('/pipeline/ingest', payload);
@@ -532,6 +551,28 @@ export async function fetchHomeView(date: string): Promise<HomeViewModel> {
 
 export async function fetchSleepView(date: string): Promise<SleepViewModel> {
   return apiGet(`/views/sleep?date=${encodeURIComponent(date)}`);
+}
+
+export interface TrendsViewModel {
+  days: number;
+  dataPoints: number;
+  hrvTrend: SeriesPoint[];
+  restingHrTrend: SeriesPoint[];
+  sleepDurationTrend: SeriesPoint[];
+  recoveryTrend: SeriesPoint[];
+  trainingLoadTrend: SeriesPoint[];
+  consistencyTrend: SeriesPoint[];
+  strainTrend: SeriesPoint[];
+  stressTrend: SeriesPoint[];
+  summaries: {
+    hrv: { current: number | null; weekAgo: number | null; trend: string | null };
+    restingHr: { current: number | null; weekAgo: number | null; trend: string | null };
+    sleepDuration: { avgHours: number | null; nights: number };
+  };
+}
+
+export async function fetchTrendsView(days: number = 30): Promise<TrendsViewModel> {
+  return apiGet(`/views/trends?days=${days}`);
 }
 
 export async function updateSleepPlan(input: SleepPlanInput): Promise<{ ok: boolean; sleepView: SleepViewModel }> {
@@ -587,6 +628,16 @@ export async function createJournalEntry(entry: {
 
 export async function fetchJournalEntries(date: string): Promise<{ entries: JournalEntryResponse[] }> {
   return apiGet(`/journal?date=${encodeURIComponent(date)}`);
+}
+
+// Telemetry ingestion
+
+export async function ingestDeviceEvents(events: any[]): Promise<{ count: number }> {
+  return apiPost('/telemetry/events', { events });
+}
+
+export async function ingestRealtimeSamples(samples: any[]): Promise<{ count: number }> {
+  return apiPost('/telemetry/realtime', { samples });
 }
 
 export async function deleteJournalEntry(id: string): Promise<{ ok: boolean }> {

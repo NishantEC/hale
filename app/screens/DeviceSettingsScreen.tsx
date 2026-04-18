@@ -1,57 +1,53 @@
-import { FC, useMemo, useState } from "react"
+import { FC, useEffect, useMemo, useRef } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import { router } from "expo-router"
-import { useNavigation } from "@react-navigation/native"
 import {
-  Switch,
+  Animated,
+  Easing,
   TextStyle,
   TouchableOpacity,
   View,
   ViewStyle,
 } from "react-native"
 
+import { DetailScreenHeader } from "@/components/DetailScreenHeader"
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
-import SegmentedControl from "@/components/reactx/segmented-control"
+import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Dialog } from "@/components/reactx/dialog"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
 
-const ACCENT = "#ABCCFF"
-
-type DeviceSettingsTab = "status" | "advanced"
-
 export const DeviceSettingsScreen: FC = () => {
-  const navigation = useNavigation<any>()
-  const { themed } = useAppTheme()
-  const [selectedTabIndex, setSelectedTabIndex] = useState(0)
-  const selectedTab: DeviceSettingsTab = selectedTabIndex === 0 ? "status" : "advanced"
+  const { themed, theme: { colors } } = useAppTheme()
   const {
     liveDeviceState,
     scannedDevices,
     isSyncing,
     syncStage,
     syncProgress,
-    syncSummary,
     scan,
     connect,
     disconnect,
     syncNow,
-    refreshStrapMetadata,
-    toggleRealtimeHeartRate,
-    toggleBroadcastHeartRate,
-    toggleRawDataStreaming,
-    armAlarm,
-    disarmAlarm,
-    testAlarm,
   } = useDashboard()
 
   const isConnected = liveDeviceState.connectionState === "ready"
-  const statusLabel = isConnected ? "CONNECTED" : liveDeviceState.connectionState.toUpperCase()
+  const isBusy = liveDeviceState.connectionState === "connecting" || liveDeviceState.connectionState === "discovering"
   const batteryLabel =
-    liveDeviceState.batteryLevel == null ? "--" : `${Math.round(liveDeviceState.batteryLevel)}%`
+    liveDeviceState.batteryLevel == null ? "--" : `${Math.round(liveDeviceState.batteryLevel)}`
+  const batteryColor =
+    liveDeviceState.batteryLevel == null
+      ? colors.text
+      : liveDeviceState.isCharging
+        ? colors.tint
+        : liveDeviceState.batteryLevel >= 50
+          ? colors.statusGreen
+          : liveDeviceState.batteryLevel >= 20
+            ? colors.statusAmber
+            : colors.statusRed
   const deviceNameLabel = (liveDeviceState.deviceName ?? "WHOOP").replace(/\s+/g, " ").trim()
   const lastSyncText = liveDeviceState.lastSyncAt
     ? new Date(liveDeviceState.lastSyncAt).toLocaleString([], {
@@ -60,673 +56,499 @@ export const DeviceSettingsScreen: FC = () => {
         hour: "numeric",
         minute: "2-digit",
       })
-    : "No sync yet"
+    : "Never"
 
-  const primaryAction = useMemo(() => {
-    if (isConnected) {
-      return {
-        title: "UNPAIR DEVICE",
-        description: "Disconnect the current strap Bluetooth connection.",
-        icon: "watch-outline" as const,
-        onPress: disconnect,
-      }
+  // Charging pulse animation
+  const chargingAnim = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    if (liveDeviceState.isCharging) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(chargingAnim, {
+            toValue: 1,
+            duration: 1400,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(chargingAnim, {
+            toValue: 0,
+            duration: 1400,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      )
+      loop.start()
+      return () => loop.stop()
+    } else {
+      chargingAnim.setValue(0)
+      return undefined
     }
+  }, [liveDeviceState.isCharging, chargingAnim])
 
+  const chargingGlowOpacity = chargingAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 0.35],
+  })
+  const chargingBadgeScale = chargingAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.15],
+  })
+
+  const connectionAction = useMemo(() => {
+    if (isConnected) {
+      return { title: "Unpair Device", onPress: disconnect }
+    }
     return {
-      title: scannedDevices.length > 0 ? "PAIR A DEVICE" : "SCAN FOR DEVICE",
-      description:
-        scannedDevices.length > 0
-          ? "Choose a nearby WHOOP strap from the list below."
-          : "Scan and reconnect a strap to continue syncing.",
-      icon: "bluetooth-outline" as const,
+      title: scannedDevices.length > 0 ? "Pair a Device" : "Scan for Device",
       onPress: scan,
     }
   }, [disconnect, isConnected, scan, scannedDevices.length])
 
   return (
     <Screen
-      preset="scroll"
+      preset="fixed"
       safeAreaEdges={["top", "bottom"]}
       contentContainerStyle={themed($container)}
-      ScrollViewProps={{
-        stickyHeaderIndices: [0],
-      }}
     >
-      <View style={themed($stickyChrome)}>
-        <View style={themed($headerRow)}>
-          <TouchableOpacity
-            accessibilityLabel="Close device settings"
-            onPress={() => navigation.goBack()}
-            style={themed($closeButton)}
-          >
-            <Ionicons name="close" size={18} color="rgba(255,255,255,0.92)" />
-          </TouchableOpacity>
+      <DetailScreenHeader title="Device Settings" />
 
-          <Text text="Device Settings" size="md" weight="semiBold" style={themed($headerTitle)} />
-
-          <View style={themed($headerSpacer)} />
+      {/* ─── Hero: big watch + battery ─── */}
+      <View style={themed($hero)}>
+        <View style={themed($watchCircleOuter)}>
+          {liveDeviceState.isCharging ? (
+            <Animated.View
+              style={[themed($chargingGlow), { opacity: chargingGlowOpacity }]}
+            />
+          ) : null}
+          <View style={themed($watchCircle)}>
+            <Ionicons
+              name="watch-outline"
+              size={48}
+              color={isConnected ? colors.tint : colors.iconDim}
+            />
+            {liveDeviceState.isCharging ? (
+              <Animated.View
+                style={[themed($chargingBadge), { transform: [{ scale: chargingBadgeScale }] }]}
+              >
+                <Ionicons name="flash" size={12} color={colors.onPrimary} />
+              </Animated.View>
+            ) : null}
+          </View>
         </View>
 
-        <View style={themed($summaryBlock)}>
-          <View style={themed($summaryColumn)}>
-            <Text text="Connected to" size="xxs" weight="bold" style={themed($eyebrow)} />
-            <Text
-              text={deviceNameLabel.toUpperCase()}
-              size="sm"
-              weight="bold"
-              style={themed($summaryValue)}
-            />
-          </View>
+        <Text text={deviceNameLabel} size="md" weight="bold" style={themed($deviceName)} />
 
-          <View style={themed($summaryColumnRight)}>
-            <Text text="Last sync" size="xxs" weight="bold" style={themed($summaryLabel)} />
+        <View style={themed($statusPills)}>
+          <View style={[themed($pill), isConnected ? themed($pillGreen) : isBusy ? themed($pillAmber) : themed($pillDim)]}>
             <Text
-              text={lastSyncText}
+              text={isConnected ? "Connected" : isBusy ? "Connecting" : "Disconnected"}
               size="xxs"
               weight="semiBold"
-              style={themed($summaryValueSecondary)}
+              style={themed(isConnected ? $pillTextDark : isBusy ? $pillTextDark : $pillTextLight)}
             />
           </View>
+          {isConnected && liveDeviceState.isWorn ? (
+            <View style={themed($pill)}>
+              <Text text="On wrist" size="xxs" weight="semiBold" style={themed($pillTextLight)} />
+            </View>
+          ) : null}
         </View>
 
-        <SegmentedControl
-          currentIndex={selectedTabIndex}
-          onChange={setSelectedTabIndex}
-          segmentedControlBackgroundColor="rgba(255,255,255,0.06)"
-          activeSegmentBackgroundColor="rgba(255,255,255,0.14)"
-          dividerColor="rgba(255,255,255,0.08)"
-          borderRadius={12}
-          paddingVertical={8}
-        >
-          <Text text="Status" size="xs" weight="semiBold" style={{ color: selectedTab === "status" ? "rgba(255,255,255,0.96)" : "rgba(255,255,255,0.45)", textAlign: "center" }} />
-          <Text text="Advanced" size="xs" weight="semiBold" style={{ color: selectedTab === "advanced" ? "rgba(255,255,255,0.96)" : "rgba(255,255,255,0.45)", textAlign: "center" }} />
-        </SegmentedControl>
+        {/* Battery big number */}
+        <View style={themed($batterySection)}>
+          <Text text={batteryLabel} style={[themed($batteryNumber), { color: batteryColor }]} />
+          <Text text="%" size="lg" weight="bold" style={[themed($batteryPercent), { color: batteryColor }]} />
+        </View>
+        <Text
+          text={liveDeviceState.isCharging ? "Charging" : isConnected ? "Battery" : "Last known battery"}
+          size="xxs"
+          style={[themed($batteryCaption), { color: batteryColor, opacity: 0.6 }]}
+        />
       </View>
 
-      <View>
-        {selectedTab === "status" ? (
-          <View style={themed($sectionStack)}>
-            <View style={themed($deviceStatusCard)}>
-              <View style={themed($rowBetween)}>
-                <Ionicons name="watch-outline" size={34} color="rgba(255,255,255,0.92)" />
+      {/* ─── Info rows ─── */}
+      <View style={themed($infoSection)}>
+        {liveDeviceState.firmwareVersion ? (
+          <>
+            <View style={themed($infoRow)}>
+              <Text text="Firmware" size="xs" style={themed($infoLabel)} />
+              <Text text={liveDeviceState.firmwareVersion} size="xs" weight="semiBold" style={themed($infoValue)} />
+            </View>
+            <View style={themed($divider)} />
+          </>
+        ) : null}
 
-                <View style={themed($statusValueWrap)}>
-                  <Text text={batteryLabel} size="xl" weight="bold" style={themed($batteryValue)} />
-                  <Text text={statusLabel} size="xxs" weight="bold" style={themed($statusCaption)} />
-                </View>
-              </View>
-
+        {liveDeviceState.deviceClock ? (
+          <>
+            <View style={themed($infoRow)}>
+              <Text text="Device clock" size="xs" style={themed($infoLabel)} />
               <Text
-                text={liveDeviceState.isCharging ? "Charging on wrist" : "Ready for sync"}
-                size="xxs"
+                text={liveDeviceState.deviceClock.toLocaleString([], {
+                  month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+                })}
+                size="xs"
                 weight="semiBold"
-                style={themed($statusSubtext)}
+                style={themed($infoValue)}
               />
             </View>
+            <View style={themed($divider)} />
+          </>
+        ) : null}
 
-            <SettingToggleRow
-              label="Broadcast Heart Rate"
-              description="Expose the strap as a generic heart-rate accessory."
-              value={liveDeviceState.isBroadcastHeartRateEnabled}
-              onValueChange={toggleBroadcastHeartRate}
-              disabled={!isConnected}
+        <View style={themed($infoRow)}>
+          <Text text="Last sync" size="xs" style={themed($infoLabel)} />
+          <Text text={lastSyncText} size="xs" weight="semiBold" style={themed($infoValue)} />
+        </View>
+
+        <View style={themed($divider)} />
+
+        {/* Sync action */}
+        <TouchableOpacity
+          style={themed($infoRow)}
+          onPress={syncNow}
+          disabled={!isConnected || isSyncing}
+          activeOpacity={0.6}
+        >
+          <View style={themed($syncLabel)}>
+            <Ionicons
+              name={isSyncing ? "sync" : "cloud-download-outline"}
+              size={16}
+              color={isSyncing ? colors.tint : colors.iconDim}
             />
-
-            {isConnected ? (
-              <Dialog>
-                <Dialog.Trigger asChild>
-                  <ActionCard
-                    title={primaryAction.title}
-                    description={primaryAction.description}
-                    icon={primaryAction.icon}
-                    onPress={() => {}}
-                  />
-                </Dialog.Trigger>
-                <Dialog.Content onClose={() => {}}>
-                  <Dialog.Backdrop backgroundColor="rgba(0,0,0,0.6)">
-                    <View style={themed($dialogContent)}>
-                      <Text text="Unpair Device" size="lg" weight="bold" style={themed($dialogTitle)} />
-                      <Text text="Are you sure you want to disconnect the strap? You'll need to re-pair it to sync again." size="xs" style={themed($dialogBody)} />
-                      <View style={themed($dialogButtonRow)}>
-                        <Dialog.Close asChild>
-                          <TouchableOpacity style={themed($dialogButtonCancel)}>
-                            <Text text="Cancel" size="xs" weight="semiBold" style={{ color: "rgba(255,255,255,0.9)" }} />
-                          </TouchableOpacity>
-                        </Dialog.Close>
-                        <Dialog.Close asChild>
-                          <TouchableOpacity style={themed($dialogButtonDestructive)} onPress={() => { disconnect(); Toast.show("Device disconnected", { type: "info", position: "top" }) }}>
-                            <Text text="Unpair" size="xs" weight="semiBold" style={{ color: "#fff" }} />
-                          </TouchableOpacity>
-                        </Dialog.Close>
-                      </View>
-                    </View>
-                  </Dialog.Backdrop>
-                </Dialog.Content>
-              </Dialog>
-            ) : (
-              <ActionCard
-                title={primaryAction.title}
-                description={primaryAction.description}
-                icon={primaryAction.icon}
-                onPress={primaryAction.onPress}
-              />
-            )}
-
-            <ActionCard
-              title="FIRMWARE CHECK"
-              description="Refresh alarm, battery, and device metadata from the strap."
-              icon="refresh-outline"
-              onPress={refreshStrapMetadata}
+            <Text
+              text={isSyncing ? (syncStage || "Syncing...") : "Sync now"}
+              size="xs"
+              style={themed(isSyncing ? $infoValueAccent : $infoLabel)}
             />
-
-            {!isConnected && scannedDevices.length > 0 ? (
-              <View style={themed($listCard)}>
-                <Text text="Nearby Straps" size="xxs" weight="bold" style={themed($summaryLabel)} />
-                {scannedDevices.map((device) => (
-                  <TouchableOpacity
-                    key={device.id}
-                    onPress={() => connect(device.id)}
-                    style={themed($deviceRow)}
-                  >
-                    <View style={themed($deviceMeta)}>
-                      <Text text={device.name} size="xs" weight="semiBold" style={themed($rowValue)} />
-                      <Text
-                        text={`Signal ${device.rssi} dBm`}
-                        size="xxs"
-                        style={themed($rowLabel)}
-                      />
-                    </View>
-                    <Text text="Connect" size="xs" weight="semiBold" style={themed($linkText)} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : null}
           </View>
+          {!isSyncing ? (
+            <Ionicons name="chevron-forward" size={16} color={colors.iconDim} />
+          ) : null}
+        </TouchableOpacity>
+
+        {isSyncing ? (
+          <AnimatedProgressBar
+            progress={syncProgress ? Math.min(syncProgress.chunksReceived / Math.max(syncProgress.chunksReceived + 3, 10), 0.95) : 0}
+            indeterminate={!syncProgress}
+            height={3}
+            borderRadius={2}
+            progressColor={colors.tint}
+            trackColor={colors.divider}
+          />
+        ) : null}
+      </View>
+
+      {/* ─── Bottom actions ─── */}
+      <View style={themed($bottomActions)}>
+        {/* Nearby straps */}
+        {!isConnected && scannedDevices.length > 0 ? (
+          <View style={themed($nearbySection)}>
+            {scannedDevices.map((device) => (
+              <TouchableOpacity
+                key={device.id}
+                onPress={() => connect(device.id)}
+                style={themed($nearbyRow)}
+                activeOpacity={0.6}
+              >
+                <View style={themed($nearbyMeta)}>
+                  <Text text={device.name} size="xs" weight="semiBold" style={themed($infoValue)} />
+                  <Text text={`${device.rssi} dBm`} size="xxs" style={themed($infoLabel)} />
+                </View>
+                <Text text="Connect" size="xs" weight="semiBold" style={themed($linkText)} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Connection action */}
+        {isConnected ? (
+          <Dialog>
+            <Dialog.Trigger asChild>
+              <TouchableOpacity style={themed($destructiveButton)} activeOpacity={0.8}>
+                <Text text={connectionAction.title} size="xs" weight="semiBold" style={themed($destructiveText)} />
+              </TouchableOpacity>
+            </Dialog.Trigger>
+            <Dialog.Content onClose={() => {}}>
+              <Dialog.Backdrop backgroundColor={colors.palette.overlay50}>
+                <View style={themed($dialogContent)}>
+                  <Text text="Unpair Device" size="lg" weight="bold" style={themed($infoValue)} />
+                  <Text text="Are you sure? You'll need to re-pair the strap to sync again." size="xs" style={themed($dialogBody)} />
+                  <View style={themed($dialogRow)}>
+                    <Dialog.Close asChild>
+                      <TouchableOpacity style={themed($dialogCancel)}>
+                        <Text text="Cancel" size="xs" weight="semiBold" style={{ color: colors.text }} />
+                      </TouchableOpacity>
+                    </Dialog.Close>
+                    <Dialog.Close asChild>
+                      <TouchableOpacity style={themed($dialogDestructive)} onPress={() => { disconnect(); Toast.show("Device disconnected", { type: "info", position: "top" }) }}>
+                        <Text text="Unpair" size="xs" weight="semiBold" style={{ color: colors.onSurface }} />
+                      </TouchableOpacity>
+                    </Dialog.Close>
+                  </View>
+                </View>
+              </Dialog.Backdrop>
+            </Dialog.Content>
+          </Dialog>
         ) : (
-          <View style={themed($sectionStack)}>
-            <SettingToggleRow
-              label="Realtime Heart Rate"
-              description="Keep the live heart-rate stream active while connected."
-              value={liveDeviceState.isRealtimeHeartRateEnabled}
-              onValueChange={toggleRealtimeHeartRate}
-              disabled={!isConnected}
-            />
-
-            <SettingToggleRow
-              label="Raw Data Stream"
-              description="Enable advanced packet streaming for diagnostics and export."
-              value={liveDeviceState.isRawDataStreamingEnabled}
-              onValueChange={toggleRawDataStreaming}
-              disabled={!isConnected}
-            />
-
-            <ActionCard
-              title={isSyncing ? syncStage || "SYNCING DATA" : "SYNC DATA"}
-              description="Download history from the strap, ingest it, and refresh the dashboard."
-              icon="cloud-upload-outline"
-              onPress={syncNow}
-            />
-
-            <ActionCard
-              title="SYNC INSPECTOR"
-              description="Inspect raw rows, selected nights, and rerun the backend pipeline."
-              icon="analytics-outline"
-              onPress={() => router.push("/debug-inspector")}
-            />
-
-            <View style={themed($inlineButtonRow)}>
-              <InlineButton
-                label={liveDeviceState.strapAlarmArmed ? "Disarm Alarm" : "Arm Alarm"}
-                onPress={liveDeviceState.strapAlarmArmed ? disarmAlarm : armAlarm}
-                disabled={!isConnected}
-              />
-              <InlineButton label="Test Now" onPress={testAlarm} disabled={!isConnected} />
-            </View>
-
-            {syncProgress ? (
-              <View style={themed($metricsCard)}>
-                <MetricCell label="Chunks" value={String(syncProgress.chunksReceived)} />
-                <MetricCell label="Records" value={String(syncProgress.recordsParsed)} />
-                <MetricCell label="KB" value={`${(syncProgress.totalBytes / 1024).toFixed(0)}`} />
-              </View>
-            ) : null}
-
-            {syncSummary ? (
-              <View style={themed($metricsCard)}>
-                <MetricCell label="Nights" value={String(syncSummary.nights)} />
-                <MetricCell label="Stages" value={String(syncSummary.stages)} />
-                <MetricCell label="Scores" value={String(syncSummary.scores)} />
-              </View>
-            ) : null}
-
-            {!isConnected && scannedDevices.length > 0 ? (
-              <View style={themed($listCard)}>
-                <Text text="Nearby Straps" size="xxs" weight="bold" style={themed($summaryLabel)} />
-                {scannedDevices.map((device) => (
-                  <TouchableOpacity
-                    key={device.id}
-                    onPress={() => connect(device.id)}
-                    style={themed($deviceRow)}
-                  >
-                    <View style={themed($deviceMeta)}>
-                      <Text text={device.name} size="xs" weight="semiBold" style={themed($rowValue)} />
-                      <Text
-                        text={`Signal ${device.rssi} dBm`}
-                        size="xxs"
-                        style={themed($rowLabel)}
-                      />
-                    </View>
-                    <Text text="Connect" size="xs" weight="semiBold" style={themed($linkText)} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            ) : null}
-          </View>
+          <TouchableOpacity style={themed($primaryButton)} onPress={connectionAction.onPress} activeOpacity={0.8}>
+            <Text text={connectionAction.title} size="xs" weight="semiBold" style={themed($primaryButtonText)} />
+          </TouchableOpacity>
         )}
+
+        {/* Debug link */}
+        <TouchableOpacity
+          activeOpacity={0.5}
+          onPress={() => router.push("/debug-inspector")}
+          style={themed($debugLink)}
+        >
+          <Text text="Diagnostics" size="xxs" style={themed($debugText)} />
+        </TouchableOpacity>
       </View>
     </Screen>
   )
 }
 
-function SettingToggleRow({
-  label,
-  description,
-  value,
-  onValueChange,
-  disabled,
-}: {
-  label: string
-  description: string
-  value: boolean
-  onValueChange: (value: boolean) => Promise<void>
-  disabled?: boolean
-}) {
-  const { themed } = useAppTheme()
-
-  return (
-    <View style={themed($toggleCard)}>
-      <View style={themed($toggleCopy)}>
-        <Text text={label} size="xs" weight="semiBold" style={themed($rowValue)} />
-        <Text text={description} size="xxs" style={themed($toggleDescription)} />
-      </View>
-      <View style={themed($switchWrap)}>
-        <Switch
-          disabled={disabled}
-          onValueChange={onValueChange}
-          trackColor={{ false: "rgba(255,255,255,0.14)", true: "rgba(171,204,255,0.52)" }}
-          thumbColor={value ? ACCENT : "#F5F5F5"}
-          value={value}
-        />
-      </View>
-    </View>
-  )
-}
-
-function ActionCard({
-  title,
-  description,
-  icon,
-  onPress,
-}: {
-  title: string
-  description: string
-  icon: keyof typeof Ionicons.glyphMap
-  onPress: () => void | Promise<void>
-}) {
-  const { themed } = useAppTheme()
-
-  return (
-    <TouchableOpacity activeOpacity={0.9} onPress={onPress} style={themed($actionCard)}>
-      <View style={themed($actionIcon)}>
-        <Ionicons name={icon} size={18} color="rgba(255,255,255,0.82)" />
-      </View>
-      <View style={themed($actionCopy)}>
-        <Text text={title} size="xs" weight="bold" style={themed($rowValue)} />
-        <Text text={description} size="xxs" style={themed($rowLabel)} />
-      </View>
-      <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.62)" />
-    </TouchableOpacity>
-  )
-}
-
-function InlineButton({
-  label,
-  onPress,
-  disabled,
-}: {
-  label: string
-  onPress: () => void | Promise<void>
-  disabled?: boolean
-}) {
-  const { themed } = useAppTheme()
-  return (
-    <TouchableOpacity
-      disabled={disabled}
-      onPress={onPress}
-      style={[themed($inlineButton), disabled ? themed($inlineButtonDisabled) : null]}
-    >
-      <Text text={label} size="xs" weight="semiBold" style={themed($inlineButtonText)} />
-    </TouchableOpacity>
-  )
-}
-
-function MetricCell({ label, value }: { label: string; value: string }) {
-  const { themed } = useAppTheme()
-  return (
-    <View style={themed($metricCell)}>
-      <Text text={value} size="lg" weight="bold" style={themed($metricValue)} />
-      <Text text={label} size="xxs" style={themed($metricLabel)} />
-    </View>
-  )
-}
+// ═══════════════════════ Styles ═══════════════════════
 
 const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  gap: spacing.xs,
+  flex: 1,
   paddingHorizontal: spacing.md,
-  paddingTop: 0,
-  paddingBottom: spacing.xl,
 })
 
-const $stickyChrome: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
-  backgroundColor: colors.background,
-  gap: spacing.xxs,
-  marginHorizontal: -spacing.md,
-  paddingHorizontal: spacing.md,
-  paddingTop: 0,
-  paddingBottom: spacing.xxs,
-  zIndex: 2,
-})
-
-const $headerRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+// Hero
+const $hero: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
-  flexDirection: "row",
-  justifyContent: "space-between",
-  marginBottom: 0,
-  minHeight: 34,
-})
-
-const $closeButton: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.06)",
-  borderRadius: 16,
-  height: 32,
+  flex: 1,
   justifyContent: "center",
-  width: 32,
+  gap: 8,
 })
 
-const $headerTitle: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.94)",
-  lineHeight: 34,
+const $watchCircleOuter: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  justifyContent: "center",
+  marginBottom: 8,
 })
 
-const $headerSpacer: ThemedStyle<ViewStyle> = () => ({
-  width: 32,
+const $chargingGlow: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.tint,
+  borderRadius: 56,
+  height: 112,
+  position: "absolute",
+  width: 112,
 })
 
-const $summaryBlock: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  backgroundColor: "rgba(255,255,255,0.04)",
-  borderColor: "rgba(255,255,255,0.08)",
-  borderRadius: 16,
+const $watchCircle: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  alignItems: "center",
+  backgroundColor: colors.surfaceCard,
+  borderColor: colors.surfaceCardBorder,
+  borderRadius: 48,
   borderWidth: 1,
+  height: 96,
+  justifyContent: "center",
+  width: 96,
+})
+
+const $chargingBadge: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  alignItems: "center",
+  backgroundColor: colors.tint,
+  borderRadius: 10,
+  bottom: -2,
+  height: 20,
+  justifyContent: "center",
+  position: "absolute",
+  right: -2,
+  width: 20,
+})
+
+const $deviceName: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
+})
+
+const $statusPills: ThemedStyle<ViewStyle> = () => ({
   flexDirection: "row",
-  gap: spacing.xs,
+  gap: 8,
+})
+
+const $pill: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.surfaceElevated,
+  borderRadius: 10,
+  paddingHorizontal: 10,
+  paddingVertical: 4,
+})
+
+const $pillGreen: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.statusGreen,
+})
+
+const $pillAmber: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.statusAmber,
+})
+
+const $pillDim: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.surfaceElevated,
+})
+
+const $pillTextDark: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.onPrimary,
+})
+
+const $pillTextLight: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textDim,
+})
+
+const $batterySection: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "baseline",
+  flexDirection: "row",
+  marginTop: 4,
+})
+
+const $batteryNumber: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
+  fontSize: 64,
+  fontWeight: "bold",
+  lineHeight: 72,
+})
+
+const $batteryPercent: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textMuted,
+})
+
+const $batteryCaption: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textMuted,
+})
+
+// Info rows
+const $infoSection: ThemedStyle<ViewStyle> = () => ({
+  gap: 0,
+})
+
+const $infoRow: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  flexDirection: "row",
   justifyContent: "space-between",
-  paddingHorizontal: spacing.sm,
-  paddingVertical: spacing.xs - 2,
-  minHeight: 74,
+  minHeight: 44,
 })
 
-const $summaryColumn: ThemedStyle<ViewStyle> = () => ({
+const $divider: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.divider,
+  height: 1,
+})
+
+const $syncLabel: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  flexDirection: "row",
+  gap: 8,
+})
+
+const $infoLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textMuted,
+})
+
+const $infoValue: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
+})
+
+const $infoValueAccent: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.tint,
+})
+
+// Bottom
+const $bottomActions: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  gap: 12,
+  paddingBottom: spacing.sm,
+  paddingTop: spacing.xs,
+})
+
+const $nearbySection: ThemedStyle<ViewStyle> = () => ({
+  gap: 4,
+})
+
+const $nearbyRow: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  flexDirection: "row",
+  justifyContent: "space-between",
+  minHeight: 44,
+})
+
+const $nearbyMeta: ThemedStyle<ViewStyle> = () => ({
   flex: 1,
   gap: 2,
+})
+
+const $primaryButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  alignItems: "center",
+  backgroundColor: colors.tint,
+  borderRadius: 14,
   justifyContent: "center",
+  minHeight: 48,
 })
 
-const $summaryColumnRight: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "flex-end",
-  flex: 1,
-  gap: 2,
+const $primaryButtonText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.onPrimary,
+})
+
+const $destructiveButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  alignItems: "center",
+  backgroundColor: `${colors.error}1F`,
+  borderRadius: 14,
   justifyContent: "center",
+  minHeight: 48,
 })
 
-const $eyebrow: ThemedStyle<TextStyle> = () => ({
-  color: ACCENT,
-  textTransform: "uppercase",
+const $destructiveText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.error,
 })
 
-const $summaryLabel: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.45)",
-  textTransform: "uppercase",
-})
-
-const $summaryValue: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.94)",
-  lineHeight: 26,
-})
-
-const $summaryValueSecondary: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.84)",
-  lineHeight: 18,
-  textAlign: "right",
-})
-
-const $dialogContent: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  backgroundColor: "rgba(22,22,26,0.96)",
-  borderColor: "rgba(255,255,255,0.1)",
+// Dialog
+const $dialogContent: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
+  backgroundColor: colors.background,
+  borderColor: colors.surfaceCardBorder,
   borderRadius: 20,
   borderWidth: 1,
   gap: spacing.sm,
   padding: spacing.lg,
 })
 
-const $dialogTitle: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.96)",
-})
-
-const $dialogBody: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.65)",
+const $dialogBody: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textDim,
   lineHeight: 20,
 })
 
-const $dialogButtonRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+const $dialogRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   flexDirection: "row",
   gap: spacing.sm,
   marginTop: spacing.xs,
 })
 
-const $dialogButtonCancel: ThemedStyle<ViewStyle> = () => ({
+const $dialogCancel: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.08)",
+  backgroundColor: colors.surfaceElevated,
   borderRadius: 14,
   flex: 1,
   justifyContent: "center",
   minHeight: 44,
 })
 
-const $dialogButtonDestructive: ThemedStyle<ViewStyle> = () => ({
+const $dialogDestructive: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
-  backgroundColor: "#EF4444",
+  backgroundColor: colors.error,
   borderRadius: 14,
   flex: 1,
   justifyContent: "center",
   minHeight: 44,
 })
 
-const $sectionStack: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  gap: 10,
-})
-
-const $deviceStatusCard: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  backgroundColor: "rgba(255,255,255,0.06)",
-  borderColor: "rgba(255,255,255,0.08)",
-  borderRadius: 16,
-  borderWidth: 1,
-  gap: 6,
-  minHeight: 104,
-  paddingHorizontal: spacing.sm,
-  paddingVertical: spacing.xs,
-})
-
-const $rowBetween: ThemedStyle<ViewStyle> = () => ({
+// Debug
+const $debugLink: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
-  flexDirection: "row",
-  justifyContent: "space-between",
+  paddingVertical: 4,
 })
 
-const $statusValueWrap: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "flex-end",
-  gap: 2,
+const $debugText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textMuted,
 })
 
-const $batteryValue: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.96)",
-  lineHeight: 38,
-})
-
-const $statusCaption: ThemedStyle<TextStyle> = () => ({
-  color: ACCENT,
-  textTransform: "uppercase",
-})
-
-const $statusSubtext: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.66)",
-  lineHeight: 18,
-})
-
-const $toggleCard: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  alignItems: "flex-start",
-  backgroundColor: "rgba(255,255,255,0.06)",
-  borderColor: "rgba(255,255,255,0.08)",
-  borderRadius: 16,
-  borderWidth: 1,
-  flexDirection: "row",
-  gap: spacing.xs,
-  justifyContent: "space-between",
-  paddingHorizontal: spacing.sm,
-  paddingVertical: spacing.xs - 1,
-})
-
-const $toggleCopy: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-  gap: 3,
-  paddingTop: 1,
-})
-
-const $toggleDescription: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.56)",
-  lineHeight: 18,
-})
-
-const $switchWrap: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  justifyContent: "center",
-  minHeight: 44,
-})
-
-const $actionCard: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.06)",
-  borderColor: "rgba(255,255,255,0.08)",
-  borderRadius: 16,
-  borderWidth: 1,
-  flexDirection: "row",
-  gap: spacing.xs,
-  paddingHorizontal: spacing.sm,
-  paddingVertical: spacing.xs,
-})
-
-const $actionIcon: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.06)",
-  borderRadius: 16,
-  height: 32,
-  justifyContent: "center",
-  width: 32,
-})
-
-const $actionCopy: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-  gap: 3,
-})
-
-const $inlineButtonRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  flexDirection: "row",
-  gap: spacing.sm,
-})
-
-const $inlineButton: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.08)",
-  borderRadius: 14,
-  flex: 1,
-  justifyContent: "center",
-  minHeight: 44,
-  paddingHorizontal: spacing.xs,
-})
-
-const $inlineButtonDisabled: ThemedStyle<ViewStyle> = () => ({
-  opacity: 0.4,
-})
-
-const $inlineButtonText: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.92)",
-})
-
-const $metricsCard: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  backgroundColor: "rgba(255,255,255,0.06)",
-  borderColor: "rgba(255,255,255,0.08)",
-  borderRadius: 16,
-  borderWidth: 1,
-  flexDirection: "row",
-  justifyContent: "space-between",
-  paddingHorizontal: spacing.sm,
-  paddingVertical: spacing.xs,
-})
-
-const $metricCell: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flex: 1,
-  gap: 4,
-})
-
-const $metricValue: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.96)",
-})
-
-const $metricLabel: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.5)",
-  textTransform: "uppercase",
-})
-
-const $listCard: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  backgroundColor: "rgba(255,255,255,0.06)",
-  borderColor: "rgba(255,255,255,0.08)",
-  borderRadius: 16,
-  borderWidth: 1,
-  gap: spacing.xs,
-  padding: spacing.sm,
-})
-
-const $deviceRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  alignItems: "center",
-  flexDirection: "row",
-  gap: spacing.sm,
-  justifyContent: "space-between",
-})
-
-const $deviceMeta: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-  gap: 2,
-})
-
-const $rowLabel: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.56)",
-})
-
-const $rowValue: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.94)",
-})
-
-const $linkText: ThemedStyle<TextStyle> = () => ({
-  color: ACCENT,
+const $linkText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.tint,
 })

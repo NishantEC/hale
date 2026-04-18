@@ -26,8 +26,13 @@
   },
   "ios": {
     "icon": "./assets/images/app-icon-ios.png",
-    "supportsTablet": true,
-    "bundleIdentifier": "com.app"
+    "supportsTablet": false,
+    "bundleIdentifier": "com.noopbase.noop.app",
+    "infoPlist": {
+      "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to your WHOOP strap",
+      "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to your WHOOP strap"
+    },
+    "appleTeamId": "LGMF2TG7P6"
   },
   "web": {
     "favicon": "./assets/images/app-icon-web-favicon.png",
@@ -36,6 +41,17 @@
   "plugins": [
     "expo-localization",
     "expo-font",
+    [
+      "react-native-ble-plx",
+      {
+        "isBackgroundEnabled": false,
+        "modes": [
+          "peripheral",
+          "central"
+        ],
+        "bluetoothAlwaysPermission": "This app uses Bluetooth to connect to your WHOOP strap"
+      }
+    ],
     [
       "expo-splash-screen",
       {

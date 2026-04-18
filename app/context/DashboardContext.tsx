@@ -21,9 +21,14 @@ import {
   EventNumber,
   HistoryDownloader,
   PacketType,
+  createEventForwarder,
+  RealtimeSessionForwarder,
+  ConsoleLogLineForwarder,
   ScannedDevice,
+  uint8ArrayToBase64,
   WhoopPacket,
 } from "@/services/ble"
+import type { DeviceEventPayload } from "@/services/ble"
 import {
   fetchHomeView,
   fetchResults,
@@ -63,7 +68,10 @@ type LiveDeviceState = {
   realtimeSamples: SeriesPoint[]
   strapAlarmAt: string | null
   strapAlarmArmed: boolean
+  isWorn: boolean
   lastSyncAt: string | null
+  firmwareVersion: string | null
+  deviceClock: Date | null
 }
 
 type DashboardContextValue = {
@@ -100,6 +108,9 @@ type DashboardContextValue = {
 const DashboardContext = createContext<DashboardContextValue | null>(null)
 
 const commandService = new CommandService()
+const eventForwarder = createEventForwarder()
+const consoleLogForwarder = new ConsoleLogLineForwarder()
+const realtimeForwarder = new RealtimeSessionForwarder()
 
 const emptyDeviceState: LiveDeviceState = {
   connectionState: "disconnected",
@@ -108,13 +119,16 @@ const emptyDeviceState: LiveDeviceState = {
   isCharging: false,
   isBusy: false,
   isRealtimeHeartRateEnabled: true,
-  isBroadcastHeartRateEnabled: false,
-  isRawDataStreamingEnabled: false,
+  isBroadcastHeartRateEnabled: true,
+  isRawDataStreamingEnabled: true,
   realtimeHeartRate: null,
   realtimeSamples: [],
   strapAlarmAt: null,
   strapAlarmArmed: false,
+  isWorn: true,
   lastSyncAt: null,
+  firmwareVersion: null,
+  deviceClock: null,
 }
 
 function todayKey() {
@@ -139,23 +153,6 @@ function dayKeyForDate(date: Date) {
   return `${year}-${month}-${day}`
 }
 
-function normalizeBatteryPercent(raw: number) {
-  if (raw <= 0) return 0
-  if (raw <= 100) return raw
-  if (raw <= 1_000) return raw / 10
-  if (raw >= 3_000 && raw <= 4_300) {
-    return Math.max(0, Math.min(100, ((raw - 3_300) / (4_200 - 3_300)) * 100))
-  }
-  if (raw <= 10_000) return raw / 100
-  if (raw <= 100_000) return raw / 1_000
-  return null
-}
-
-function parseUint16LE(data: Uint8Array, offset: number) {
-  if (offset + 1 >= data.length) return null
-  return data[offset] | (data[offset + 1] << 8)
-}
-
 function parseUint32LE(data: Uint8Array, offset: number) {
   if (offset + 3 >= data.length) return null
   return (
@@ -166,21 +163,64 @@ function parseUint32LE(data: Uint8Array, offset: number) {
   )
 }
 
+function readUint16LE(data: Uint8Array, offset: number) {
+  if (offset + 1 >= data.length) return null
+  return data[offset] | (data[offset + 1] << 8)
+}
+
+function normalizeBatteryRaw(raw: number): number | null {
+  if (raw <= 100) return raw                              // direct percent
+  if (raw <= 1000) return Math.round(raw / 10)            // tenths of percent
+  if (raw >= 3000 && raw <= 4300) {                       // millivolts → percent
+    return Math.round(Math.max(0, Math.min(100, ((raw - 3300) / 900) * 100)))
+  }
+  if (raw <= 10000) return Math.round(raw / 100)          // hundredths
+  if (raw <= 100000) return Math.round(raw / 1000)        // thousandths
+  return null
+}
+
 function parseBatteryLevel(packet: WhoopPacket) {
-  if (packet.command !== CommandNumber.GetBatteryLevel || packet.data.length === 0) return null
+  if (packet.command !== CommandNumber.GetBatteryLevel || packet.data.length < 2) return null
 
-  const fixedCandidates = [parseUint16LE(packet.data, 2), parseUint16LE(packet.data, 0)]
-    .map((value) => (value == null ? null : normalizeBatteryPercent(value)))
-    .filter((value): value is number => value != null)
+  // Try offset 0 first (battery percent), then offset 2 (may hold different metric).
+  // Both are 16-bit LE values in tenths-of-percent or other fixed-point format.
+  // Uses same normalization as Swift DashboardCommandService.parseBatteryLevel.
+  const rawAt0 = readUint16LE(packet.data, 0)
+  const normAt0 = rawAt0 != null ? normalizeBatteryRaw(rawAt0) : null
 
-  if (fixedCandidates.length > 0) return Math.round(fixedCandidates[0])
+  if (packet.data.length >= 4) {
+    const rawAt2 = readUint16LE(packet.data, 2)
+    const normAt2 = rawAt2 != null ? normalizeBatteryRaw(rawAt2) : null
+    // Prefer the smaller plausible value — the actual battery % is typically lower
+    // than auxiliary metrics encoded in other bytes.
+    if (normAt0 != null && normAt2 != null) return Math.min(normAt0, normAt2)
+    return normAt2 ?? normAt0
+  }
 
-  const byteCandidates = Array.from(packet.data)
-    .filter((value) => value <= 100)
-    .sort((left, right) => right - left)
+  return normAt0
+}
 
-  const bestByte = byteCandidates.find((value) => value >= 2) ?? byteCandidates[0]
-  return bestByte ?? null
+function parseVersionInfo(packet: WhoopPacket): string | null {
+  if (packet.command !== CommandNumber.ReportVersionInfo) return null
+  // Payload: 3 bytes padding + 16 x uint32 LE values
+  // Harvard = values[0..3] joined by ".", Boylston = values[4..7]
+  if (packet.data.length < 3 + 8 * 4) return null
+  const values: number[] = []
+  for (let i = 0; i < 8; i++) {
+    const v = parseUint32LE(packet.data, 3 + i * 4)
+    if (v == null) return null
+    values.push(v)
+  }
+  const harvard = values.slice(0, 4).join(".")
+  const boylston = values.slice(4, 8).join(".")
+  return `${harvard} / ${boylston}`
+}
+
+function parseDeviceClock(packet: WhoopPacket): Date | null {
+  if (packet.command !== CommandNumber.GetClock || packet.data.length < 6) return null
+  const unix = parseUint32LE(packet.data, 2)
+  if (unix == null || unix === 0) return null
+  return new Date(unix * 1000)
 }
 
 function parseScheduledAlarm(packet: WhoopPacket, now = new Date()) {
@@ -398,6 +438,13 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
       strain: metric?.strainScore != null ? `${metric.strainScore.toFixed(0)}` : "--",
       skinTempDelta:
         metric?.skinTempDeltaCelsius != null ? `${metric.skinTempDeltaCelsius.toFixed(1)}C` : "--",
+      recoveryIndex: (metric as any)?.recoveryIndex != null ? `${Math.round((metric as any).recoveryIndex)}` : "--",
+      trainingLoad: (metric as any)?.trainingLoadRatio != null ? `${(metric as any).trainingLoadRatio.toFixed(2)}` : "--",
+      trainingLoadRiskZone: (metric as any)?.trainingLoadRiskZone ?? "--",
+      spo2Dips: (metric as any)?.spo2DipCount != null ? `${(metric as any).spo2DipCount}` : "--",
+      activityFeed: [],
+      totalActiveMinutes: "--",
+      activityCount: 0,
     },
     confidence: {
       confidence: score?.confidence ?? "Low",
@@ -637,25 +684,15 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       await bleManager.writeCommand(commandService.buildGetBatteryLevel())
       await bleManager.writeCommand(commandService.buildGetHelloHarvard())
       await bleManager.writeCommand(commandService.buildGetScheduledAlarm())
-      await bleManager.writeCommand(
-        commandService.buildToggleRealtimeHR(liveDeviceState.isRealtimeHeartRateEnabled),
-      )
-      await bleManager.writeCommand(
-        commandService.buildToggleGenericHRProfile(liveDeviceState.isBroadcastHeartRateEnabled),
-      )
-      await bleManager.writeCommand(
-        liveDeviceState.isRawDataStreamingEnabled
-          ? commandService.buildStartRawData()
-          : commandService.buildStopRawData(),
-      )
+      await bleManager.writeCommand(commandService.buildReportVersionInfo())
+      await bleManager.writeCommand(commandService.buildGetClock())
+      await bleManager.writeCommand(commandService.buildToggleRealtimeHR(true))
+      await bleManager.writeCommand(commandService.buildToggleGenericHRProfile(true))
+      await bleManager.writeCommand(commandService.buildStartRawData())
     } catch {
       // Keep device refresh best-effort to avoid interrupting screen load.
     }
-  }, [
-    liveDeviceState.isBroadcastHeartRateEnabled,
-    liveDeviceState.isRawDataStreamingEnabled,
-    liveDeviceState.isRealtimeHeartRateEnabled,
-  ])
+  }, [])
 
   const clearError = useCallback(() => setError(null), [])
 
@@ -721,6 +758,12 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
         totalBytes: current?.totalBytes ?? 0,
       }))
 
+      // Mark sync time as soon as we finish downloading from strap,
+      // regardless of whether backend upload succeeds.
+      const lastSyncAt = new Date().toISOString()
+      await AsyncStorage.setItem(LAST_SYNC_KEY, lastSyncAt)
+      setLiveDeviceState((current) => ({ ...current, lastSyncAt }))
+
       if (records.length > 0) {
         setSyncStage(`Uploading ${records.length} records…`)
         const ingestResult = await ingestHistoricalRecords(records)
@@ -740,9 +783,6 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
         })
       }
 
-      const lastSyncAt = new Date().toISOString()
-      await AsyncStorage.setItem(LAST_SYNC_KEY, lastSyncAt)
-      setLiveDeviceState((current) => ({ ...current, lastSyncAt }))
       await refreshDashboard()
     } catch (nextError: any) {
       setError(nextError?.message ?? "Sync failed")
@@ -786,6 +826,11 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
           realtimeSamples: enabled ? current.realtimeSamples : [],
         }))
         await persistDevicePreference(REALTIME_HR_KEY, enabled)
+        if (enabled) {
+          realtimeForwarder.startSession(bleManager.getDeviceId() || 'unknown')
+        } else {
+          realtimeForwarder.endSession()
+        }
       } catch (nextError: any) {
         setError(nextError?.message ?? "Failed to toggle realtime heart rate")
       }
@@ -826,6 +871,11 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
         )
         setLiveDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: enabled }))
         await persistDevicePreference(RAW_STREAM_KEY, enabled)
+        if (enabled) {
+          realtimeForwarder.startSession(bleManager.getDeviceId() || 'unknown')
+        } else {
+          realtimeForwarder.endSession()
+        }
       } catch (nextError: any) {
         setError(nextError?.message ?? "Failed to toggle raw data stream")
       }
@@ -990,6 +1040,10 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       })
 
       if (connectionState === "ready") {
+        // Start all telemetry forwarders
+        eventForwarder.start()
+        realtimeForwarder.startSession(bleManager.getDeviceId() || 'unknown')
+        consoleLogForwarder.start(bleManager.getDeviceId() || 'unknown')
         refreshDeviceState().catch(() => undefined)
         maybeAutoSync().catch(() => undefined)
       }
@@ -1035,15 +1089,25 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
         }))
       }
 
+      if (packet.type === PacketType.CommandResponse) {
+        const version = parseVersionInfo(packet)
+        if (version != null) {
+          setLiveDeviceState((current) => ({ ...current, firmwareVersion: version }))
+        }
+        const clock = parseDeviceClock(packet)
+        if (clock != null) {
+          setLiveDeviceState((current) => ({ ...current, deviceClock: clock }))
+        }
+        // Also parse isWorn from HelloHarvard (offset 116)
+        if (packet.command === CommandNumber.GetHelloHarvard && packet.data.length > 116) {
+          setLiveDeviceState((current) => ({ ...current, isWorn: packet.data[116] !== 0 }))
+        }
+      }
+
       if (packet.type === PacketType.Event) {
-        if (packet.command === EventNumber.BatteryLevel) {
-          const battery = Array.from(packet.data)
-            .filter((value) => value <= 100)
-            .sort((left, right) => right - left)[0]
-          if (battery != null) {
-            setLiveDeviceState((current) => ({ ...current, batteryLevel: battery }))
-          }
-        } else if (packet.command === EventNumber.ChargingOn) {
+        // BatteryLevel events ignored — Swift app doesn't parse them either.
+        // Battery level is read from GetBatteryLevel command responses only.
+        if (packet.command === EventNumber.ChargingOn) {
           setLiveDeviceState((current) => ({ ...current, isCharging: true }))
         } else if (packet.command === EventNumber.ChargingOff) {
           setLiveDeviceState((current) => ({ ...current, isCharging: false }))
@@ -1062,7 +1126,21 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
           setLiveDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: true }))
         } else if (packet.command === EventNumber.RawDataCollectionOff) {
           setLiveDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: false }))
+        } else if (packet.command === EventNumber.WristOn) {
+          setLiveDeviceState((current) => ({ ...current, isWorn: true }))
+        } else if (packet.command === EventNumber.WristOff) {
+          setLiveDeviceState((current) => ({ ...current, isWorn: false }))
         }
+
+        // Forward all device events to backend telemetry
+        const deviceId = bleManager.getDeviceId() || 'unknown';
+        eventForwarder.push({
+          deviceId,
+          eventNumber: packet.command,
+          eventName: EventNumber[packet.command] ?? `unknown_${packet.command}`,
+          rawPayload: packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
+          capturedAt: new Date().toISOString(),
+        });
       }
 
       const realtimeHeartRate = parseRealtimeHeartRate(packet)
@@ -1073,12 +1151,64 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
           realtimeHeartRate,
           realtimeSamples: [...current.realtimeSamples.slice(-39), sample],
         }))
+
+        // Forward realtime HR to backend telemetry
+        realtimeForwarder.pushHR(
+          realtimeHeartRate,
+          packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
+          sample.timestamp,
+        );
+      }
+
+      // Parse IMU data packets
+      if (
+        packet.type === PacketType.RealtimeIMUStream ||
+        packet.type === PacketType.HistoricalIMUStream
+      ) {
+        // IMU packets are received but not forwarded yet — log count for debugging
+        console.log(`[IMU] Received ${packet.type === PacketType.RealtimeIMUStream ? 'realtime' : 'historical'} IMU packet (${packet.data.length} bytes)`);
+      }
+
+      // Parse and forward console output from the strap
+      if (packet.type === PacketType.ConsoleLogs && packet.data.length > 7) {
+        const raw = packet.data.slice(7);
+        // Filter out magic bytes [0x34, 0x00, 0x01]
+        const filtered: number[] = [];
+        for (let i = 0; i < raw.length; i++) {
+          if (i + 2 < raw.length && raw[i] === 0x34 && raw[i + 1] === 0x00 && raw[i + 2] === 0x01) {
+            i += 2;
+            continue;
+          }
+          filtered.push(raw[i]);
+        }
+        if (filtered.length > 0) {
+          const text = new TextDecoder().decode(new Uint8Array(filtered));
+          consoleLogForwarder.push(text);
+        }
+      }
+
+      // Forward raw sensor data to backend telemetry
+      if (packet.type === PacketType.RealtimeRawData && packet.data.length > 0) {
+        realtimeForwarder.pushRaw(
+          null,
+          uint8ArrayToBase64(packet.data),
+          new Date().toISOString(),
+        );
       }
     })
+
+    // Periodic auto-sync every 15 minutes while connected
+    const syncTimer = setInterval(() => {
+      maybeAutoSync().catch(() => undefined)
+    }, 15 * 60 * 1000)
 
     return () => {
       unsubscribeState()
       unsubscribePackets()
+      clearInterval(syncTimer)
+      eventForwarder.stop()
+      realtimeForwarder.endSession()
+      consoleLogForwarder.stop()
     }
   }, [maybeAutoSync, refreshDeviceState])
 

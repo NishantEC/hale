@@ -9,7 +9,6 @@ import { TrendsScreen } from "@/screens/TrendsScreen"
 import { useAppTheme } from "@/theme/context"
 
 const Tab = createBottomTabNavigator()
-const ACCENT = "#C3E0FF"
 
 const TAB_CONFIG = {
   Home: { icon: "home-outline", activeIcon: "home", label: "Home" },
@@ -19,7 +18,7 @@ const TAB_CONFIG = {
 
 export function MainNavigator() {
   const {
-    theme: { colors },
+    theme: { colors, isDark },
   } = useAppTheme()
 
   return (
@@ -28,15 +27,15 @@ export function MainNavigator() {
         const config = TAB_CONFIG[route.name as keyof typeof TAB_CONFIG]
 
         return {
-          tabBarActiveTintColor: ACCENT,
-          tabBarInactiveTintColor: "rgba(255,255,255,0.72)",
+          tabBarActiveTintColor: colors.tint,
+          tabBarInactiveTintColor: colors.textDim,
           tabBarLabelStyle: {
             fontSize: 11,
             fontWeight: "600",
           },
           tabBarStyle: {
             backgroundColor: "transparent",
-            borderTopColor: "rgba(255,255,255,0.08)",
+            borderTopColor: colors.border,
             borderTopWidth: Platform.OS === "ios" ? 0.6 : 1,
             elevation: 0,
             position: "absolute",
@@ -44,9 +43,9 @@ export function MainNavigator() {
           tabBarBackground: () =>
             Platform.OS === "ios" ? (
               <BlurView
-                tint="systemChromeMaterialDark"
+                tint={isDark ? "systemChromeMaterialDark" : "systemChromeMaterial"}
                 intensity={80}
-                style={{ flex: 1, backgroundColor: "rgba(12,12,16,0.28)" }}
+                style={{ flex: 1, backgroundColor: colors.tabBarBlur }}
               />
             ) : (
               <View style={{ flex: 1, backgroundColor: colors.background }} />
@@ -59,7 +58,7 @@ export function MainNavigator() {
             />
           ),
           headerShown: false,
-          sceneStyle: { backgroundColor: "#0A0A0C" },
+          sceneStyle: { backgroundColor: colors.screenBackground },
           tabBarLabel: config.label,
         }
       }}

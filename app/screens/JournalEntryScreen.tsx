@@ -4,22 +4,27 @@ import {
   Dimensions,
   SafeAreaView,
   ScrollView,
-  StyleSheet,
   TextInput,
+  TextStyle,
   TouchableOpacity,
   View,
+  ViewStyle,
 } from "react-native"
 import { useNavigation } from "@react-navigation/native"
 
 import { Text } from "@/components/Text"
+import { Toast } from "@/components/reactx/toast"
 import { JOURNAL_FACTORS, FactorDefinition } from "@/constants/journalFactors"
 import { createJournalEntry } from "@/services/api/noopClient"
+import { useAppTheme } from "@/theme/context"
+import type { ThemedStyle } from "@/theme/types"
 
 const SCREEN_WIDTH = Dimensions.get("window").width
 const TILE_WIDTH = (SCREEN_WIDTH - 40 - 24) / 3
 
 export function JournalEntryScreen() {
   const navigation = useNavigation()
+  const { themed, theme: { colors } } = useAppTheme()
 
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [value, setValue] = useState<number | null>(null)
@@ -52,6 +57,7 @@ export function JournalEntryScreen() {
         intensity: value!,
         note: note.trim() || undefined,
       })
+      Toast.show(`${selectedFactor?.label ?? "Factor"} logged`, { type: "success", position: "top" })
       navigation.goBack()
     } catch (e: any) {
       setError(e.message ?? "Failed to save")
@@ -61,27 +67,27 @@ export function JournalEntryScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text preset="bold" size="xl" style={styles.white}>
+    <SafeAreaView style={themed($container)}>
+      <View style={$header}>
+        <Text preset="bold" size="xl" style={{ color: colors.onSurface }}>
           Log Factor
         </Text>
         <TouchableOpacity
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <Ionicons name="close" size={24} color="rgba(255,255,255,0.6)" />
+          <Ionicons name="close" size={24} color={colors.textDim} />
         </TouchableOpacity>
       </View>
 
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        style={$scrollView}
+        contentContainerStyle={$scrollContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Factor Grid */}
-        <View style={styles.factorGrid}>
+        <View style={$factorGrid}>
           {JOURNAL_FACTORS.map((factor) => {
             const isSelected = selectedTag === factor.tag
             return (
@@ -89,17 +95,17 @@ export function JournalEntryScreen() {
                 key={factor.tag}
                 onPress={() => handleSelectFactor(factor)}
                 style={[
-                  styles.factorTile,
+                  themed($factorTile),
                   isSelected && {
                     borderWidth: 2,
                     borderColor: factor.color,
-                    backgroundColor: "rgba(255,255,255,0.13)",
+                    backgroundColor: colors.surfaceElevated,
                   },
                 ]}
                 activeOpacity={0.75}
               >
                 <Ionicons name={factor.icon} size={28} color={factor.color} />
-                <Text size="xxs" weight="medium" style={styles.factorLabel}>
+                <Text size="xxs" weight="medium" style={{ color: colors.textDim }}>
                   {factor.label}
                 </Text>
               </TouchableOpacity>
@@ -113,22 +119,22 @@ export function JournalEntryScreen() {
             <FactorInput factor={selectedFactor} value={value} onChange={setValue} />
 
             <TextInput
-              style={styles.noteInput}
+              style={themed($noteInput)}
               placeholder="Add a note (optional)"
-              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholderTextColor={colors.textMuted}
               value={note}
               onChangeText={setNote}
             />
 
             {error && (
-              <Text size="xs" style={styles.errorText}>
+              <Text size="xs" style={{ color: colors.error, marginTop: 8 }}>
                 {error}
               </Text>
             )}
 
             <TouchableOpacity
               style={[
-                styles.saveButton,
+                $saveButton,
                 {
                   backgroundColor: selectedFactor.color,
                   opacity: canSave ? 1 : 0.4,
@@ -138,7 +144,7 @@ export function JournalEntryScreen() {
               disabled={!canSave}
               activeOpacity={0.8}
             >
-              <Text size="md" weight="bold" style={styles.white}>
+              <Text size="md" weight="bold" style={{ color: colors.onSurface }}>
                 {saving ? "Saving..." : `Log ${selectedFactor.label}`}
               </Text>
             </TouchableOpacity>
@@ -146,8 +152,8 @@ export function JournalEntryScreen() {
         )}
 
         {!selectedFactor && (
-          <TouchableOpacity style={[styles.saveButton, styles.saveButtonDisabled]} disabled>
-            <Text size="md" weight="bold" style={styles.white}>
+          <TouchableOpacity style={[$saveButton, themed($saveButtonDisabled)]} disabled>
+            <Text size="md" weight="bold" style={{ color: colors.onSurface }}>
               Select a factor
             </Text>
           </TouchableOpacity>
@@ -166,14 +172,15 @@ function FactorInput({
   value: number | null
   onChange: (v: number) => void
 }) {
+  const { themed, theme: { colors } } = useAppTheme()
   const { input, color } = factor
 
   if (input.kind === "toggle") {
     return (
-      <View style={styles.inputSection}>
-        <View style={styles.toggleRow}>
+      <View style={$inputSection}>
+        <View style={$toggleRow}>
           <Ionicons name="checkmark-circle" size={24} color={color} />
-          <Text size="sm" weight="medium" style={styles.dimText}>
+          <Text size="sm" weight="medium" style={{ color: colors.textDim }}>
             Will be logged
           </Text>
         </View>
@@ -183,11 +190,11 @@ function FactorInput({
 
   if (input.kind === "quantity") {
     return (
-      <View style={styles.inputSection}>
-        <Text size="sm" weight="semiBold" style={styles.white}>
+      <View style={$inputSection}>
+        <Text size="sm" weight="semiBold" style={{ color: colors.onSurface }}>
           How many {input.unit}?
         </Text>
-        <View style={styles.quantityRow}>
+        <View style={$quantityRow}>
           {Array.from({ length: input.max }, (_, i) => i + 1).map((n) => {
             const isSelected = value === n
             return (
@@ -195,15 +202,15 @@ function FactorInput({
                 key={n}
                 onPress={() => onChange(n)}
                 style={[
-                  styles.quantityChip,
-                  isSelected ? { backgroundColor: color } : styles.quantityChipUnselected,
+                  $quantityChip,
+                  isSelected ? { backgroundColor: color } : themed($quantityChipUnselected),
                 ]}
                 activeOpacity={0.75}
               >
                 <Text
                   size="sm"
                   weight="bold"
-                  style={{ color: isSelected ? "#fff" : "rgba(255,255,255,0.5)" }}
+                  style={{ color: isSelected ? colors.onSurface : colors.textDim }}
                 >
                   {n}
                 </Text>
@@ -217,8 +224,8 @@ function FactorInput({
 
   if (input.kind === "scale") {
     return (
-      <View style={styles.inputSection}>
-        <View style={styles.scaleRow}>
+      <View style={$inputSection}>
+        <View style={$scaleRow}>
           {input.labels.map((label, i) => {
             const scaleValue = i + 1
             const isSelected = value === scaleValue
@@ -227,17 +234,17 @@ function FactorInput({
                 key={label}
                 onPress={() => onChange(scaleValue)}
                 style={[
-                  styles.scaleChip,
+                  $scaleChip,
                   isSelected
                     ? { backgroundColor: color }
-                    : styles.scaleChipUnselected,
+                    : themed($scaleChipUnselected),
                 ]}
                 activeOpacity={0.75}
               >
                 <Text
                   size="xs"
                   weight="bold"
-                  style={{ color: isSelected ? "#fff" : "rgba(255,255,255,0.55)" }}
+                  style={{ color: isSelected ? colors.onSurface : colors.textDim }}
                 >
                   {label}
                 </Text>
@@ -252,112 +259,111 @@ function FactorInput({
   return null
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#06070A",
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  white: {
-    color: "#fff",
-  },
-  dimText: {
-    color: "rgba(255,255,255,0.5)",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
-    paddingBottom: 40,
-  },
-  factorGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 12,
-  },
-  factorTile: {
-    width: TILE_WIDTH,
-    aspectRatio: 1,
-    backgroundColor: "rgba(255,255,255,0.085)",
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  factorLabel: {
-    color: "rgba(255,255,255,0.7)",
-    textAlign: "center",
-  },
-  inputSection: {
-    marginTop: 28,
-    gap: 14,
-  },
-  // Toggle
-  toggleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  // Quantity
-  quantityRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  quantityChip: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  quantityChipUnselected: {
-    backgroundColor: "transparent",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  // Scale
-  scaleRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  scaleChip: {
-    flex: 1,
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  scaleChipUnselected: {
-    backgroundColor: "rgba(255,255,255,0.085)",
-  },
-  noteInput: {
-    marginTop: 24,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 14,
-    padding: 14,
-    color: "#fff",
-    fontSize: 15,
-  },
-  errorText: {
-    color: "#F87171",
-    marginTop: 8,
-  },
-  saveButton: {
-    marginTop: 28,
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  saveButtonDisabled: {
-    backgroundColor: "rgba(255,255,255,0.1)",
-    opacity: 0.4,
-  },
+// ── Themed styles (depend on theme colors) ──────────────────────────
+
+const $container: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  flex: 1,
+  backgroundColor: colors.screenBackground,
+})
+
+const $header: ViewStyle = {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  paddingHorizontal: 20,
+  paddingTop: 16,
+}
+
+const $scrollView: ViewStyle = {
+  flex: 1,
+}
+
+const $scrollContent: ViewStyle = {
+  paddingHorizontal: 20,
+  paddingTop: 24,
+  paddingBottom: 40,
+}
+
+const $factorGrid: ViewStyle = {
+  flexDirection: "row",
+  flexWrap: "wrap",
+  gap: 12,
+}
+
+const $factorTile: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  width: TILE_WIDTH,
+  aspectRatio: 1,
+  backgroundColor: colors.surfaceElevated,
+  borderRadius: 16,
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 8,
+})
+
+const $inputSection: ViewStyle = {
+  marginTop: 28,
+  gap: 14,
+}
+
+const $toggleRow: ViewStyle = {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 8,
+}
+
+const $quantityRow: ViewStyle = {
+  flexDirection: "row",
+  flexWrap: "wrap",
+  gap: 10,
+}
+
+const $quantityChip: ViewStyle = {
+  width: 44,
+  height: 44,
+  borderRadius: 22,
+  alignItems: "center",
+  justifyContent: "center",
+}
+
+const $quantityChipUnselected: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: "transparent",
+  borderWidth: 2,
+  borderColor: colors.surfaceCardBorder,
+})
+
+const $scaleRow: ViewStyle = {
+  flexDirection: "row",
+  gap: 10,
+}
+
+const $scaleChip: ViewStyle = {
+  flex: 1,
+  borderRadius: 14,
+  paddingVertical: 14,
+  alignItems: "center",
+}
+
+const $scaleChipUnselected: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.surfaceElevated,
+})
+
+const $noteInput: ThemedStyle<TextStyle> = ({ colors }) => ({
+  marginTop: 24,
+  backgroundColor: colors.surfaceSubtle,
+  borderRadius: 14,
+  padding: 14,
+  color: colors.onSurface,
+  fontSize: 15,
+})
+
+const $saveButton: ViewStyle = {
+  marginTop: 28,
+  borderRadius: 16,
+  paddingVertical: 16,
+  alignItems: "center",
+}
+
+const $saveButtonDisabled: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.surfaceElevated,
+  opacity: 0.4,
 })

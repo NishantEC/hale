@@ -1,0 +1,254 @@
+import { FC, useCallback, useEffect, useState } from "react"
+import { ActivityIndicator, TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
+
+import { Screen } from "@/components/Screen"
+import { Text } from "@/components/Text"
+import { useDashboard } from "@/context/DashboardContext"
+import {
+  DebugOverview,
+  DebugSleepNight,
+  fetchDebugOverview,
+  fetchDebugSleepNight,
+  INSPECTOR_WEB_URL,
+  runDebugPipeline,
+} from "@/services/api/noopClient"
+import { useAppTheme } from "@/theme/context"
+import type { ThemedStyle } from "@/theme/types"
+import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
+
+function formatTimestamp(value?: string | null) {
+  if (!value) return "--"
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+
+export const DebugInspectorScreen: FC = () => {
+  const { themed, theme: { colors } } = useAppTheme()
+  const { selectedDate, refreshDashboard, syncNow } = useDashboard()
+  const [overview, setOverview] = useState<DebugOverview | null>(null)
+  const [sleepNight, setSleepNight] = useState<DebugSleepNight | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [banner, setBanner] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  const refreshInspector = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const [nextOverview, nextSleepNight] = await Promise.all([
+        fetchDebugOverview(selectedDate),
+        fetchDebugSleepNight(selectedDate),
+      ])
+      setOverview(nextOverview)
+      setSleepNight(nextSleepNight)
+    } catch (nextError: any) {
+      setError(nextError?.message || "Failed to load sync inspector data.")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [selectedDate])
+
+  useEffect(() => {
+    void refreshInspector()
+  }, [refreshInspector])
+
+  const handleSync = useCallback(async () => {
+    setBanner("Running mobile sync…")
+    await syncNow()
+    await refreshDashboard()
+    await refreshInspector()
+    setBanner("Mobile sync completed.")
+  }, [refreshDashboard, refreshInspector, syncNow])
+
+  const handleRunPipeline = useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const result = await runDebugPipeline(selectedDate)
+      setBanner(
+        `Pipeline reran. Detections ${result.runResult.computed.sleepDetections ?? 0}, stages ${result.runResult.computed.sleepStages ?? 0}.`,
+      )
+      await refreshDashboard()
+      await refreshInspector()
+    } catch (nextError: any) {
+      setError(nextError?.message || "Pipeline rerun failed.")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [refreshDashboard, refreshInspector, selectedDate])
+
+  return (
+    <Screen
+      preset="scroll"
+      safeAreaEdges={["top", "bottom"]}
+      contentContainerStyle={themed($container)}
+    >
+      <View style={themed($header)}>
+        <Text text="Sync Inspector" size="lg" weight="semiBold" />
+        <Text
+          text={`Selected day ${overview?.selectedDateTitle ?? "Today"} · ${overview?.selectedDateSubtitle ?? ""}`}
+          size="xs"
+          style={themed($subtle)}
+        />
+      </View>
+
+      {error ? (
+        <View style={themed($errorBanner)}>
+          <Text text={error} size="xs" weight="semiBold" />
+        </View>
+      ) : null}
+
+      {banner ? (
+        <View style={themed($infoBanner)}>
+          <Text text={banner} size="xs" weight="semiBold" />
+        </View>
+      ) : null}
+
+      <View style={themed($buttonRow)}>
+        <ActionButton label={isLoading ? "Refreshing…" : "Refresh"} onPress={() => void refreshInspector()} />
+        <ActionButton label="Run Sync Now" onPress={() => void handleSync()} />
+      </View>
+      <View style={themed($buttonRow)}>
+        <ActionButton label="Run Pipeline Now" onPress={() => void handleRunPipeline()} />
+        <ActionButton label="Open Web Inspector" onPress={() => openLinkInBrowser(INSPECTOR_WEB_URL)} />
+      </View>
+
+      {isLoading && !overview ? (
+        <View style={themed($loadingWrap)}>
+          <ActivityIndicator color={colors.tint} />
+        </View>
+      ) : null}
+
+      <View style={themed($metricsRow)}>
+        <MetricTile label="Raw rows" value={`${overview?.counts.rawRecordCount ?? 0}`} />
+        <MetricTile label="Detections" value={`${overview?.counts.sleepDetectionCount ?? 0}`} />
+        <MetricTile label="Stages" value={`${overview?.counts.sleepStageCount ?? 0}`} />
+      </View>
+
+      <View style={themed($card)}>
+        <Text text="Overview" size="sm" weight="semiBold" />
+        <KeyValue label="Selection mode" value={overview?.selectionMode ?? "--"} />
+        <KeyValue label="Selected night" value={overview?.selectedNightDate ?? "--"} />
+        <KeyValue label="Reason" value={overview?.selectionReason ?? "--"} />
+        <KeyValue label="Earliest raw" value={formatTimestamp(overview?.earliestRawTimestamp)} />
+        <KeyValue label="Latest raw" value={formatTimestamp(overview?.latestRawTimestamp)} />
+        <KeyValue label="Pipeline state" value={overview?.lastPipelineRunStatus ?? "--"} />
+      </View>
+
+      <View style={themed($card)}>
+        <Text text="Selected Night" size="sm" weight="semiBold" />
+        <KeyValue label="Mode" value={sleepNight?.selectionMode ?? "--"} />
+        <KeyValue
+          label="Night date"
+          value={sleepNight?.selectedNightDate ? formatTimestamp(sleepNight.selectedNightDate) : "--"}
+        />
+        <KeyValue
+          label="Detection"
+          value={
+            sleepNight?.selectedDetection
+              ? `${sleepNight.selectedDetection.durationHours.toFixed(2)}h · confidence ${sleepNight.selectedDetection.confidence.toFixed(2)}`
+              : "--"
+          }
+        />
+        <KeyValue
+          label="Stage totals"
+          value={
+            sleepNight?.stageTotals
+              ? `Awake ${sleepNight.stageTotals.awakeMinutes}m · Light ${sleepNight.stageTotals.lightMinutes}m · Deep ${sleepNight.stageTotals.deepMinutes}m · REM ${sleepNight.stageTotals.remMinutes}m`
+              : "--"
+          }
+        />
+        <KeyValue label="Epochs" value={`${sleepNight?.epochTimelineCount ?? 0}`} />
+      </View>
+    </Screen>
+  )
+}
+
+const ActionButton = ({ label, onPress }: { label: string; onPress: () => void }) => {
+  const { theme: { colors } } = useAppTheme()
+  return (
+    <TouchableOpacity onPress={onPress} style={{ flex: 1 }}>
+      <View style={{ backgroundColor: colors.surfaceSubtle, borderWidth: 1, borderColor: colors.surfaceCardBorder, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 14, alignItems: "center" }}>
+        <Text text={label} size="xs" weight="semiBold" />
+      </View>
+    </TouchableOpacity>
+  )
+}
+
+const MetricTile = ({ label, value }: { label: string; value: string }) => {
+  const { theme: { colors } } = useAppTheme()
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.surfaceCard, borderWidth: 1, borderColor: colors.surfaceCardBorder, borderRadius: 18, padding: 14, gap: 6 }}>
+      <Text text={label} size="xxs" style={{ color: colors.textDim }} />
+      <Text text={value} size="lg" weight="bold" />
+    </View>
+  )
+}
+
+const KeyValue = ({ label, value }: { label: string; value: string }) => {
+  const { theme: { colors } } = useAppTheme()
+  return (
+    <View style={{ gap: 4 }}>
+      <Text text={label} size="xxs" weight="bold" style={{ color: colors.textDim }} />
+      <Text text={value} size="xs" style={{ color: colors.text }} />
+    </View>
+  )
+}
+
+const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  paddingHorizontal: spacing.lg,
+  paddingVertical: spacing.md,
+  gap: spacing.md,
+})
+
+const $header: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  gap: spacing.xs,
+})
+
+const $subtle: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textDim,
+})
+
+const $buttonRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  flexDirection: "row",
+  gap: spacing.sm,
+})
+
+const $metricsRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  flexDirection: "row",
+  gap: spacing.sm,
+})
+
+const $card: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
+  backgroundColor: colors.surfaceCard,
+  borderRadius: 22,
+  borderWidth: 1,
+  borderColor: colors.surfaceCardBorder,
+  padding: spacing.md,
+  gap: spacing.sm,
+})
+
+const $errorBanner: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  backgroundColor: "rgba(255,96,96,0.16)",
+  borderRadius: 16,
+  paddingHorizontal: spacing.md,
+  paddingVertical: spacing.sm,
+})
+
+const $infoBanner: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  backgroundColor: "rgba(171,204,255,0.16)",
+  borderRadius: 16,
+  paddingHorizontal: spacing.md,
+  paddingVertical: spacing.sm,
+})
+
+const $loadingWrap: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  paddingVertical: spacing.lg,
+  alignItems: "center",
+})

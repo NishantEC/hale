@@ -4,7 +4,6 @@ import {
   FlatList,
   RefreshControl,
   SafeAreaView,
-  StyleSheet,
   TouchableOpacity,
   View,
   ViewStyle,
@@ -20,9 +19,8 @@ import {
   deleteJournalEntry,
   JournalEntryResponse,
 } from "@/services/api/noopClient"
-
-const BACKGROUND = "#06070A"
-const CARD_BG = "rgba(255,255,255,0.085)"
+import { useAppTheme } from "@/theme/context"
+import { ThemedStyle } from "@/theme/types"
 
 function todayKey() {
   const now = new Date()
@@ -40,6 +38,7 @@ function formatTime(ts: string) {
 
 export function JournalHistoryScreen() {
   const navigation = useNavigation()
+  const { themed, theme: { colors } } = useAppTheme()
   const [entries, setEntries] = useState<JournalEntryResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -99,18 +98,18 @@ export function JournalHistoryScreen() {
     }
 
     return (
-      <View style={styles.entryRow}>
+      <View style={themed($entryRow)}>
         {/* Icon circle */}
-        <View style={[styles.iconCircle, { backgroundColor: color + "20" }]}>
+        <View style={[themed($iconCircle), { backgroundColor: color + "20" }]}>
           <Ionicons name={iconName} size={18} color={color} />
         </View>
 
         {/* Middle */}
-        <View style={styles.entryMiddle}>
-          <Text size="sm" weight="semiBold" style={styles.factorLabel}>
+        <View style={themed($entryMiddle)}>
+          <Text size="sm" weight="semiBold" style={themed($factorLabel)}>
             {label}
           </Text>
-          <View style={styles.dotNoteRow}>
+          <View style={themed($dotNoteRow)}>
             {detail && (
               <Text size="xxs" weight="medium" style={{ color }}>
                 {detail}
@@ -119,7 +118,7 @@ export function JournalHistoryScreen() {
             {!!item.note && (
               <Text
                 size="xxs"
-                style={styles.notePreview}
+                style={themed($notePreview)}
                 numberOfLines={1}
               >
                 {item.note}
@@ -129,15 +128,15 @@ export function JournalHistoryScreen() {
         </View>
 
         {/* Right: time + delete */}
-        <View style={styles.entryRight}>
-          <Text size="xxs" style={styles.timeText}>
+        <View style={themed($entryRight)}>
+          <Text size="xxs" style={themed($timeText)}>
             {formatTime(item.timestamp)}
           </Text>
           <TouchableOpacity
             onPress={() => handleDelete(item.id)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="trash-outline" size={16} color="rgba(255,255,255,0.3)" />
+            <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
       </View>
@@ -146,12 +145,12 @@ export function JournalHistoryScreen() {
 
   function renderEmpty() {
     return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="journal-outline" size={48} color="rgba(255,255,255,0.15)" />
-        <Text size="md" weight="medium" style={styles.emptyTitle}>
+      <View style={themed($emptyContainer)}>
+        <Ionicons name="journal-outline" size={48} color={colors.iconDim} />
+        <Text size="md" weight="medium" style={themed($emptyTitle)}>
           No entries today
         </Text>
-        <Text size="xs" style={styles.emptySubtitle}>
+        <Text size="xs" style={themed($emptySubtitle)}>
           Tap + on the home screen to log a factor
         </Text>
       </View>
@@ -159,13 +158,13 @@ export function JournalHistoryScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={themed($container)}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={themed($header)}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={24} color="rgba(255,255,255,0.8)" />
+          <Ionicons name="chevron-back" size={24} color={colors.text} />
         </TouchableOpacity>
-        <Text size="xl" weight="bold" style={styles.headerTitle}>
+        <Text size="xl" weight="bold" style={themed($headerTitle)}>
           Journal
         </Text>
       </View>
@@ -175,13 +174,13 @@ export function JournalHistoryScreen() {
         data={entries}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={themed($listContent)}
         ListEmptyComponent={loading ? null : renderEmpty}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            tintColor="rgba(255,255,255,0.4)"
+            tintColor={colors.textMuted}
           />
         }
       />
@@ -189,91 +188,88 @@ export function JournalHistoryScreen() {
   )
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BACKGROUND,
-  } as ViewStyle,
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-  } as ViewStyle,
-  headerTitle: {
-    color: "#ffffff",
-  } as TextStyle,
-  listContent: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    gap: 10,
-  },
-  entryRow: {
-    backgroundColor: CARD_BG,
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  } as ViewStyle,
-  iconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-  } as ViewStyle,
-  entryMiddle: {
-    flex: 1,
-    gap: 4,
-  } as ViewStyle,
-  factorLabel: {
-    color: "#ffffff",
-  } as TextStyle,
-  dotNoteRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  } as ViewStyle,
-  dotsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  } as ViewStyle,
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  } as ViewStyle,
-  dotFilled: {} as ViewStyle,
-  dotEmpty: {
-    backgroundColor: "transparent",
-    borderWidth: 1,
-  } as ViewStyle,
-  notePreview: {
-    flex: 1,
-    color: "rgba(255,255,255,0.4)",
-  } as TextStyle,
-  entryRight: {
-    alignItems: "flex-end",
-    gap: 6,
-  } as ViewStyle,
-  timeText: {
-    color: "rgba(255,255,255,0.4)",
-  } as TextStyle,
-  emptyContainer: {
-    alignItems: "center",
-    paddingTop: 60,
-  } as ViewStyle,
-  emptyTitle: {
-    color: "rgba(255,255,255,0.4)",
-    marginTop: 12,
-  } as TextStyle,
-  emptySubtitle: {
-    color: "rgba(255,255,255,0.25)",
-    marginTop: 4,
-  } as TextStyle,
+const $container: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  flex: 1,
+  backgroundColor: colors.screenBackground,
+})
+
+const $header: ThemedStyle<ViewStyle> = () => ({
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 12,
+  paddingHorizontal: 20,
+  paddingTop: 16,
+  paddingBottom: 12,
+})
+
+const $headerTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.onSurface,
+})
+
+const $listContent: ThemedStyle<ViewStyle> = () => ({
+  paddingHorizontal: 20,
+  paddingTop: 12,
+  gap: 10,
+})
+
+const $entryRow: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.surfaceElevated,
+  borderRadius: 16,
+  paddingHorizontal: 16,
+  paddingVertical: 14,
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 12,
+})
+
+const $iconCircle: ThemedStyle<ViewStyle> = () => ({
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  alignItems: "center",
+  justifyContent: "center",
+})
+
+const $entryMiddle: ThemedStyle<ViewStyle> = () => ({
+  flex: 1,
+  gap: 4,
+})
+
+const $factorLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.onSurface,
+})
+
+const $dotNoteRow: ThemedStyle<ViewStyle> = () => ({
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 8,
+})
+
+const $notePreview: ThemedStyle<TextStyle> = ({ colors }) => ({
+  flex: 1,
+  color: colors.textMuted,
+})
+
+const $entryRight: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "flex-end",
+  gap: 6,
+})
+
+const $timeText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textMuted,
+})
+
+const $emptyContainer: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  paddingTop: 60,
+})
+
+const $emptyTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textMuted,
+  marginTop: 12,
+})
+
+const $emptySubtitle: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textMuted,
+  marginTop: 4,
 })

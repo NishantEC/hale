@@ -33,9 +33,6 @@ import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopCl
 
 import { getDaySwipeAction, shouldLockHomeScroll } from "./HomeScreen.utils"
 
-const ACCENT = "#C3E0FF"
-const HOME_BACKGROUND = "#06070A"
-
 function dateFromKey(key: string) {
   const [year, month, day] = key.split("-").map(Number)
   return new Date(year, month - 1, day, 12, 0, 0, 0)
@@ -76,7 +73,7 @@ function formatSelectedDateTitle(dateKey: string) {
 }
 
 export const HomeScreen: FC = () => {
-  const { themed } = useAppTheme()
+  const { themed, theme: { colors } } = useAppTheme()
   const navigation = useNavigation<any>()
   const {
     selectedDate,
@@ -126,6 +123,10 @@ export const HomeScreen: FC = () => {
     ? "Live"
     : homeView?.cards.liveHeartRate.subtitle ?? "Offline"
   const isHomeViewPending = !homeView || homeView.selectedDate !== selectedDate
+  const hasFailedLoad = useRef(false)
+  if (error) hasFailedLoad.current = true
+  if (homeView) hasFailedLoad.current = false
+  const isHomeViewLoading = isHomeViewPending && !hasFailedLoad.current
   const contentKey = isHomeViewPending ? `loading-${selectedDate}` : homeView?.selectedDate ?? selectedDate
   const selectedDateTitle = useMemo(() => formatSelectedDateTitle(selectedDate), [selectedDate])
 
@@ -201,9 +202,9 @@ export const HomeScreen: FC = () => {
           <Svg style={$glowPrimarySvg} viewBox="0 0 600 600">
             <Defs>
               <RadialGradient id="glowPrimary" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor="#4D9FFF" stopOpacity={0.18} />
-                <Stop offset="30%" stopColor="#2B7AE8" stopOpacity={0.09} />
-                <Stop offset="100%" stopColor="#06070A" stopOpacity={0} />
+                <Stop offset="0%" stopColor={colors.glowPrimary} stopOpacity={0.18} />
+                <Stop offset="30%" stopColor={colors.glowPrimaryFade} stopOpacity={0.09} />
+                <Stop offset="100%" stopColor={colors.glowBackground} stopOpacity={0} />
               </RadialGradient>
             </Defs>
             <Ellipse cx="300" cy="300" rx="300" ry="300" fill="url(#glowPrimary)" />
@@ -212,9 +213,9 @@ export const HomeScreen: FC = () => {
           <Svg style={$glowSecondarySvg} viewBox="0 0 540 540">
             <Defs>
               <RadialGradient id="glowSecondary" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor="#4D9FFF" stopOpacity={0.12} />
-                <Stop offset="35%" stopColor="#2B7AE8" stopOpacity={0.05} />
-                <Stop offset="100%" stopColor="#06070A" stopOpacity={0} />
+                <Stop offset="0%" stopColor={colors.glowPrimary} stopOpacity={0.12} />
+                <Stop offset="35%" stopColor={colors.glowPrimaryFade} stopOpacity={0.05} />
+                <Stop offset="100%" stopColor={colors.glowBackground} stopOpacity={0} />
               </RadialGradient>
             </Defs>
             <Ellipse cx="270" cy="270" rx="270" ry="270" fill="url(#glowSecondary)" />
@@ -230,7 +231,7 @@ export const HomeScreen: FC = () => {
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={refreshDashboard}
-                tintColor={ACCENT}
+                tintColor={colors.tint}
               />
             ),
             scrollEnabled: !isHorizontalDaySwipeActive,
@@ -252,7 +253,7 @@ export const HomeScreen: FC = () => {
           </View>
 
           <View style={themed($dayContentWrap)}>
-            {isHomeViewPending ? (
+            {isHomeViewLoading ? (
               <Animated.View
                 key={contentKey}
                 entering={FadeIn.duration(90)}
@@ -298,7 +299,7 @@ export const HomeScreen: FC = () => {
                 <View style={themed($myDayHeader)}>
                   <Text text="My Day" size="xxl" weight="bold" style={themed($myDayTitle)} />
                   <TouchableOpacity style={themed($plusButton)} onPress={() => navigateTo("JournalEntry", "journal-entry")}>
-                    <Ionicons name="add" size={26} color="#09090B" />
+                    <Ionicons name="add" size={26} color={colors.onPrimary} />
                   </TouchableOpacity>
                 </View>
 
@@ -339,12 +340,12 @@ function DateSwitcher({
   onPrevious: () => void
   onNext: () => void
 }) {
-  const { themed } = useAppTheme()
+  const { themed, theme: { colors } } = useAppTheme()
 
   return (
     <View style={themed($dateSwitcher)}>
       <TouchableOpacity style={themed($switcherButton)} onPress={onPrevious}>
-        <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.9)" />
+        <Ionicons name="chevron-back" size={20} color={colors.text} />
       </TouchableOpacity>
       <Animated.Text
         key={title}
@@ -355,7 +356,7 @@ function DateSwitcher({
         {title}
       </Animated.Text>
       <TouchableOpacity style={themed($switcherButton)} onPress={onNext}>
-        <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.9)" />
+        <Ionicons name="chevron-forward" size={20} color={colors.text} />
       </TouchableOpacity>
     </View>
   )
@@ -372,7 +373,7 @@ function DevicePill({
   isConnected: boolean
   onPress: () => void
 }) {
-  const { themed } = useAppTheme()
+  const { themed, theme: { colors } } = useAppTheme()
 
   return (
     <TouchableOpacity style={themed($devicePill)} onPress={onPress}>
@@ -380,10 +381,10 @@ function DevicePill({
         <Ionicons
           name="watch-outline"
           size={18}
-          color={isConnected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)"}
+          color={isConnected ? colors.text : colors.textDim}
         />
         {isCharging ? (
-          <Ionicons name="flash" size={9} color="#5BE37A" style={themed($chargeBolt)} />
+          <Ionicons name="flash" size={9} color={colors.statusGreen} style={themed($chargeBolt)} />
         ) : null}
       </View>
       <Text text={batteryLabel} size="xs" weight="bold" style={themed($devicePillText)} />
@@ -392,12 +393,12 @@ function DevicePill({
 }
 
 function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
-  const { themed } = useAppTheme()
+  const { themed, theme } = useAppTheme()
 
   return (
     <Shimmer
       isLoading
-      preset="dark"
+      preset={theme.isDark ? "dark" : "neutral"}
       duration={1200}
       style={StyleSheet.flatten([themed($skeletonBlock), style]) as ViewStyle}
     />
@@ -430,10 +431,6 @@ function HomeDaySkeleton() {
   )
 }
 
-const RING_COLOR_SLEEP = "#A78BFA"
-const RING_COLOR_RECOVERY = "#34D399"
-const RING_COLOR_STRAIN = "#F59E0B"
-
 function PrimaryMetricsList({
   items,
 }: {
@@ -446,7 +443,7 @@ function PrimaryMetricsList({
     onPress: () => void
   }>
 }) {
-  const { themed } = useAppTheme()
+  const { themed, theme: { colors, isDark } } = useAppTheme()
 
   const recovery = items.find((i) => i.id === "recovery")
   const pills = items.filter((i) => i.id !== "recovery")
@@ -459,8 +456,8 @@ function PrimaryMetricsList({
   }, [ringPercent, ringProgressSV])
 
   const blobColor = (id: string) => {
-    if (id === "sleep") return "#A78BFA" // purple
-    return "#FF541B" // orange like reference
+    if (id === "sleep") return colors.ringSleep
+    return colors.ringStrain
   }
 
   return (
@@ -471,45 +468,35 @@ function PrimaryMetricsList({
         onPress={recovery?.onPress}
         style={$ringContainer}
       >
-        <Glow
-          color={RING_COLOR_RECOVERY}
-          secondaryColor="#2B7AE8"
-          size={6}
-          style="breathe"
-          duration={4000}
-          intensity={0.35}
-          radius={74}
-        >
-          <CircularProgress
-            progress={ringProgressSV}
-            size={148}
-            strokeWidth={12}
-            progressCircleColor={RING_COLOR_RECOVERY}
-            outerCircleColor="rgba(255,255,255,0.08)"
-            backgroundColor="transparent"
-            gap={0}
-            renderIcon={() => (
-              <View style={$ringCenterContent}>
-                <View style={$ringValueRow}>
-                  <RollingCounter
-                    value={ringPercent}
-                    height={36}
-                    width={22}
-                    fontSize={32}
-                    color="#fff"
-                  />
-                  <Text text="%" size="lg" weight="bold" style={$ringPercentSign} />
-                </View>
-                <Text
-                  text="Recovery"
-                  size="xxs"
-                  weight="medium"
-                  style={$ringLabel}
+        <CircularProgress
+          progress={ringProgressSV}
+          size={148}
+          strokeWidth={6}
+          progressCircleColor={colors.ringRecovery}
+          outerCircleColor={colors.surfaceElevated}
+          backgroundColor="transparent"
+          gap={0}
+          renderIcon={() => (
+            <View style={$ringCenterContent}>
+              <View style={$ringValueRow}>
+                <RollingCounter
+                  value={ringPercent}
+                  height={36}
+                  width={22}
+                  fontSize={32}
+                  color={colors.onSurface}
                 />
+                <Text text="%" size="lg" weight="bold" style={themed($ringPercentSign)} />
               </View>
-            )}
-          />
-        </Glow>
+              <Text
+                text="Recovery"
+                size="xxs"
+                weight="medium"
+                style={themed($ringLabel)}
+              />
+            </View>
+          )}
+        />
       </TouchableOpacity>
 
       {/* Right: stacked glass cards */}
@@ -525,7 +512,7 @@ function PrimaryMetricsList({
             >
               <View style={$glassCardClip}>
                 {/* Dark card base */}
-                <View style={$glassCardBase} />
+                <View style={themed($glassCardBase)} />
 
                 {/* Color blob – top-right only */}
                 <Svg style={$glassBlob} viewBox="0 0 200 200">
@@ -542,21 +529,21 @@ function PrimaryMetricsList({
 
                 {/* Frost / blur overlay */}
                 {Platform.OS === "ios" ? (
-                  <BlurView intensity={74} tint="dark" style={$glassBlurOverlay} />
+                  <BlurView intensity={74} tint={isDark ? "dark" : "light"} style={$glassBlurOverlay} />
                 ) : (
-                  <View style={[$glassBlurOverlay, { backgroundColor: "rgba(6,7,10,0.45)" }]} />
+                  <View style={[$glassBlurOverlay, { backgroundColor: colors.cardBase }]} />
                 )}
 
                 {/* Subtle border overlay */}
-                <View style={$glassBorder} />
+                <View style={themed($glassBorder)} />
 
                 {/* Content */}
                 <View style={$glassCardContent}>
                   <View style={$glassCardTop}>
-                    <Text text={item.label} size="xs" weight="medium" style={$glassCardLabel} />
-                    <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.5)" />
+                    <Text text={item.label} size="xs" weight="medium" style={themed($glassCardLabel)} />
+                    <Ionicons name="chevron-forward" size={16} color={colors.iconDim} />
                   </View>
-                  <Text text={item.value} size="xxl" weight="bold" style={$glassCardValue} />
+                  <Text text={item.value} size="xxl" weight="bold" style={themed($glassCardValue)} />
                 </View>
               </View>
             </TouchableOpacity>
@@ -577,6 +564,7 @@ function chipDetail(factor: (typeof JOURNAL_FACTORS)[number] | undefined, intens
 }
 
 function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
+  const { themed, theme: { colors } } = useAppTheme()
   if (entries.length === 0) return null
 
   return (
@@ -588,13 +576,13 @@ function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
     >
       {entries.map((entry, index) => {
         const factor = JOURNAL_FACTORS.find((f) => f.tag === entry.factorTag)
-        const color = factor?.color ?? "#60A5FA"
+        const color = factor?.color ?? colors.tint
         const detail = chipDetail(factor, entry.intensity)
         return (
           <Animated.View
             key={entry.id}
             entering={FadeIn.delay(index * 60).duration(200)}
-            style={[$chip, { borderLeftColor: color, borderLeftWidth: 3 }]}
+            style={[themed($chip), { borderLeftColor: color, borderLeftWidth: 3 }]}
           >
             <Ionicons
               name={(factor?.icon ?? "ellipse-outline") as keyof typeof Ionicons.glyphMap}
@@ -605,13 +593,13 @@ function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
               text={factor?.label ?? entry.factorTag}
               size="xxs"
               weight="medium"
-              style={{ color: "#fff" }}
+              style={{ color: colors.text }}
             />
             {detail && (
               <Text
                 text={detail}
                 size="xxs"
-                style={{ color: "rgba(255,255,255,0.5)" }}
+                style={{ color: colors.textDim }}
               />
             )}
           </Animated.View>
@@ -630,16 +618,16 @@ function HomeActionRow({
   icon: keyof typeof Ionicons.glyphMap
   onPress: () => void
 }) {
-  const { themed } = useAppTheme()
+  const { themed, theme: { colors } } = useAppTheme()
 
   return (
     <TouchableOpacity activeOpacity={0.9} style={themed($actionRow)} onPress={onPress}>
       <View style={themed($actionIconWrap)}>
-        <Ionicons name={icon} size={22} color="rgba(255,255,255,0.86)" />
+        <Ionicons name={icon} size={22} color={colors.iconDefault} />
       </View>
       <Text text={title} size="lg" weight="semiBold" style={themed($actionTitle)} />
       <View style={{ flex: 1 }} />
-      <Ionicons name="chevron-forward" size={24} color="rgba(255,255,255,0.82)" />
+      <Ionicons name="chevron-forward" size={24} color={colors.iconDefault} />
     </TouchableOpacity>
   )
 }
@@ -651,8 +639,8 @@ const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   paddingTop: 18,
 })
 
-const $screenWrap: ThemedStyle<ViewStyle> = () => ({
-  backgroundColor: HOME_BACKGROUND,
+const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.screenBackground,
   flex: 1,
 })
 
@@ -686,10 +674,10 @@ const $topStrip: ThemedStyle<ViewStyle> = () => ({
   marginBottom: 6,
 })
 
-const $dateSwitcher: ThemedStyle<ViewStyle> = () => ({
+const $dateSwitcher: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.05)",
-  borderColor: "rgba(255,255,255,0.08)",
+  backgroundColor: colors.surfaceSubtle,
+  borderColor: colors.surfaceCardBorder,
   borderRadius: 999,
   borderWidth: 1,
   flexDirection: "row",
@@ -697,17 +685,17 @@ const $dateSwitcher: ThemedStyle<ViewStyle> = () => ({
   paddingVertical: 4,
 })
 
-const $switcherButton: ThemedStyle<ViewStyle> = () => ({
+const $switcherButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.04)",
+  backgroundColor: colors.surfaceCard,
   borderRadius: 999,
   height: 26,
   justifyContent: "center",
   width: 26,
 })
 
-const $switcherTitle: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.95)",
+const $switcherTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
   fontSize: 13,
   lineHeight: 16,
   minWidth: 82,
@@ -738,17 +726,17 @@ const $chargeBolt: ThemedStyle<TextStyle> = () => ({
   top: -4,
 })
 
-const $devicePillText: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.92)",
+const $devicePillText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
   fontSize: 18,
   lineHeight: 22,
   minWidth: 34,
   textAlign: "center",
 })
 
-const $skeletonBlock: ThemedStyle<ViewStyle> = () => ({
-  backgroundColor: "rgba(255,255,255,0.12)",
-  borderColor: "rgba(255,255,255,0.05)",
+const $skeletonBlock: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.surfaceElevated,
+  borderColor: colors.surfaceSubtle,
   borderWidth: 1,
 })
 
@@ -813,15 +801,15 @@ const $ringValueRow: ViewStyle = {
   flexDirection: "row",
 }
 
-const $ringPercentSign: TextStyle = {
-  color: "#fff",
+const $ringPercentSign: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.onSurface,
   marginLeft: 1,
-}
+})
 
-const $ringLabel: TextStyle = {
-  color: "rgba(255,255,255,0.55)",
+const $ringLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textDim,
   marginTop: 2,
-}
+})
 
 const $pillStack: ViewStyle = {
   flex: 1,
@@ -849,10 +837,10 @@ const $glassCardClip: ViewStyle = {
   flex: 1,
 }
 
-const $glassCardBase: ViewStyle = {
+const $glassCardBase: ThemedStyle<ViewStyle> = ({ colors }) => ({
   ...StyleSheet.absoluteFillObject,
-  backgroundColor: "rgba(20,20,25,0.92)",
-}
+  backgroundColor: colors.cardBase,
+})
 
 const $glassBlob: ViewStyle = {
   height: 120,
@@ -866,12 +854,12 @@ const $glassBlurOverlay: ViewStyle = {
   ...StyleSheet.absoluteFillObject,
 }
 
-const $glassBorder: ViewStyle = {
+const $glassBorder: ThemedStyle<ViewStyle> = ({ colors }) => ({
   ...StyleSheet.absoluteFillObject,
-  borderColor: "rgba(255,255,255,0.08)",
+  borderColor: colors.surfaceCardBorder,
   borderRadius: 22,
   borderWidth: 1,
-}
+})
 
 const $glassCardContent: ViewStyle = {
   flex: 1,
@@ -886,18 +874,18 @@ const $glassCardTop: ViewStyle = {
   justifyContent: "space-between",
 }
 
-const $glassCardLabel: TextStyle = {
-  color: "rgba(255,255,255,0.65)",
+const $glassCardLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textDim,
   letterSpacing: 0.3,
-}
+})
 
-const $glassCardValue: TextStyle = {
-  color: "#fff",
+const $glassCardValue: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.onSurface,
   fontVariant: ["tabular-nums"],
   fontSize: 28,
   lineHeight: 34,
   marginTop: 4,
-}
+})
 
 const $myDayHeader: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
@@ -906,13 +894,13 @@ const $myDayHeader: ThemedStyle<ViewStyle> = () => ({
   marginTop: 28,
 })
 
-const $myDayTitle: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.98)",
+const $myDayTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
 })
 
-const $plusButton: ThemedStyle<ViewStyle> = () => ({
+const $plusButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.96)",
+  backgroundColor: colors.tint,
   borderRadius: 999,
   height: 64,
   justifyContent: "center",
@@ -923,10 +911,10 @@ const $actionList: ThemedStyle<ViewStyle> = () => ({
   gap: 20,
 })
 
-const $actionRow: ThemedStyle<ViewStyle> = () => ({
+const $actionRow: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.085)",
-  borderColor: "rgba(255,255,255,0.06)",
+  backgroundColor: colors.surfaceElevated,
+  borderColor: colors.divider,
   borderRadius: 22,
   borderWidth: 1,
   flexDirection: "row",
@@ -940,8 +928,8 @@ const $actionIconWrap: ThemedStyle<ViewStyle> = () => ({
   width: 28,
 })
 
-const $actionTitle: ThemedStyle<TextStyle> = () => ({
-  color: "rgba(255,255,255,0.94)",
+const $actionTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
 })
 
 const $chipScroll: ViewStyle = {
@@ -953,12 +941,12 @@ const $chipScrollContent: ViewStyle = {
   gap: 8,
 }
 
-const $chip: ViewStyle = {
+const $chip: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
-  backgroundColor: "rgba(255,255,255,0.085)",
+  backgroundColor: colors.surfaceElevated,
   borderRadius: 12,
   flexDirection: "row",
   gap: 6,
   paddingHorizontal: 12,
   paddingVertical: 8,
-}
+})

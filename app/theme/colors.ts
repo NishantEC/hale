@@ -36,50 +36,54 @@ const palette = {
 } as const
 
 export const colors = {
-  /**
-   * The palette is available to use, but prefer using the name.
-   * This is only included for rare, one-off cases. Try to use
-   * semantic names as much as possible.
-   */
   palette,
-  /**
-   * A helper for making something see-thru.
-   */
   transparent: "rgba(0, 0, 0, 0)",
-  /**
-   * The default text color in many components.
-   */
   text: palette.neutral800,
-  /**
-   * Secondary text information.
-   */
   textDim: palette.neutral600,
-  /**
-   * The default color of the screen background.
-   */
+  textMuted: palette.neutral500,
   background: palette.neutral200,
-  /**
-   * The default border color.
-   */
+  /** Deeper background for full-screen scenes (home, sleep detail). */
+  screenBackground: "#F0EDE8",
   border: palette.neutral400,
-  /**
-   * The main tinting color.
-   */
   tint: palette.primary500,
-  /**
-   * The inactive tinting color.
-   */
   tintInactive: palette.neutral300,
-  /**
-   * A subtle color used for lines.
-   */
   separator: palette.neutral300,
-  /**
-   * Error messages.
-   */
   error: palette.angry500,
-  /**
-   * Error Background.
-   */
   errorBackground: palette.angry100,
+
+  // Surfaces
+  surfaceCard: "rgba(0, 0, 0, 0.035)",
+  surfaceCardBorder: "rgba(0, 0, 0, 0.06)",
+  surfaceElevated: "rgba(0, 0, 0, 0.05)",
+  surfaceSubtle: "rgba(0, 0, 0, 0.03)",
+  cardBase: "rgba(255, 255, 255, 0.92)",
+  tabBarBlur: "rgba(247, 247, 249, 0.72)",
+  divider: "rgba(0, 0, 0, 0.06)",
+
+  // Icons
+  iconDefault: "rgba(0, 0, 0, 0.72)",
+  iconDim: "rgba(0, 0, 0, 0.38)",
+
+  // On-surface / on-primary
+  onPrimary: "#FFFFFF",
+  onSurface: "#000000",
+
+  // Status
+  statusGreen: "#16A34A",
+  statusAmber: "#D97706",
+  statusRed: "#DC2626",
+
+  // Metric rings
+  ringSleep: "#7C3AED",
+  ringRecovery: "#16A34A",
+  ringStrain: "#D97706",
+
+  // Glow SVG
+  glowPrimary: palette.primary500,
+  glowPrimaryFade: palette.primary400,
+  glowBackground: palette.neutral200,
+
+  // Switch track
+  switchTrackOff: "rgba(0, 0, 0, 0.14)",
+  switchTrackOn: "rgba(199, 101, 66, 0.42)",
 } as const
