@@ -18,7 +18,7 @@ import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, { FadeIn, FadeInRight, FadeOut, FadeOutLeft, useSharedValue, withTiming, Easing } from "react-native-reanimated"
 
-import { Screen } from "@/components/Screen"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { Text } from "@/components/Text"
 import { CircularProgress } from "@/components/reactx/circular-progress"
 import { Glow } from "@/components/reactx/glow"
@@ -221,22 +221,18 @@ export const HomeScreen: FC = () => {
             <Ellipse cx="270" cy="270" rx="270" ry="270" fill="url(#glowSecondary)" />
           </Svg>
         </View>
-        <Screen
-          backgroundColor="transparent"
-          preset="scroll"
-          safeAreaEdges={["top"]}
-          contentContainerStyle={themed($container)}
-          ScrollViewProps={{
-            refreshControl: (
+        <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+          <ScrollView
+            contentContainerStyle={themed($container)}
+            refreshControl={
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={refreshDashboard}
                 tintColor={colors.tint}
               />
-            ),
-            scrollEnabled: !isHorizontalDaySwipeActive,
-          }}
-        >
+            }
+            scrollEnabled={!isHorizontalDaySwipeActive}
+          >
           <View style={themed($topStrip)}>
             <DateSwitcher
               title={selectedDateTitle}
@@ -325,7 +321,8 @@ export const HomeScreen: FC = () => {
               </Animated.View>
             )}
           </View>
-        </Screen>
+          </ScrollView>
+        </SafeAreaView>
       </View>
     </PanGestureHandler>
   )
