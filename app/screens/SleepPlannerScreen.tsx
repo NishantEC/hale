@@ -13,8 +13,8 @@ import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
 import { SleepViewModel } from "@/services/api/noopClient"
-import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
+import { LOCAL_THEME, themed } from "@/utils/localTheme"
 
 function wrapMinutes(minutes: number) {
   const fullDay = 24 * 60
@@ -31,7 +31,7 @@ function formatClockMinutes(minutes: number) {
 }
 
 export const SleepPlannerScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   const { sleepView, liveDeviceState, saveSleepPlan, armAlarm, disarmAlarm } = useDashboard()
 
   const updatePlanner = useCallback(
@@ -265,7 +265,7 @@ export const SleepPlannerScreen: FC = () => {
 }
 
 function StepButton({ label, onPress }: { label: string; onPress: () => void }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   return (
     <TouchableOpacity style={themed($stepBtn)} onPress={onPress}>
       <Text text={label} size="sm" weight="bold" style={themed($stepBtnText)} />
