@@ -37,6 +37,12 @@ import { setViewCache } from "./services/db/repositories/viewCache"
 import { SyncService } from "./services/sync/SyncService"
 import { drainOnce } from "./services/sync/uplinkDrainer"
 import { pullDownlink } from "./services/sync/downlinkPuller"
+import { sweepRetention } from "./services/sync/retentionSweeper"
+import {
+  DEFAULT_RAW_RETENTION_DAYS,
+  SETTING_RAW_RETENTION_DAYS,
+  getSetting,
+} from "./services/db/repositories/settings"
 import { ThemeProvider } from "./theme/context"
 import { customFontsToLoad } from "./theme/typography"
 import { loadDateFnsLocale } from "./utils/formatDate"
@@ -138,8 +144,15 @@ export function App() {
       intervalMs: 15_000,
     })
     svc.start()
-    const sub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void svc.refresh()
+    const sub = AppState.addEventListener("change", async (state) => {
+      if (state !== "active") return
+      await svc.refresh()
+      try {
+        const raw = Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) || DEFAULT_RAW_RETENTION_DAYS
+        if (raw > 0) await sweepRetention(db, { rawDays: raw })
+      } catch (err) {
+        console.warn("[sync] retention sweep failed", err)
+      }
     })
     return () => {
       svc.stop()
