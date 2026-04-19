@@ -19,6 +19,7 @@ if (__DEV__) {
 import "./utils/gestureHandler"
 
 import { useEffect, useState } from "react"
+import { AppState } from "react-native"
 import { useFonts } from "expo-font"
 import * as Linking from "expo-linking"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
@@ -30,6 +31,18 @@ import { DashboardProvider } from "./context/DashboardContext"
 import { initI18n } from "./i18n"
 import { AppNavigator } from "./navigators/AppNavigator"
 import { useNavigationPersistence } from "./navigators/navigationUtilities"
+import { apiGet, apiPost } from "./services/api/noopClient"
+import { openDatabase, runMigrations } from "./services/db"
+import { setViewCache } from "./services/db/repositories/viewCache"
+import { SyncService } from "./services/sync/SyncService"
+import { drainOnce } from "./services/sync/uplinkDrainer"
+import { pullDownlink } from "./services/sync/downlinkPuller"
+import { sweepRetention } from "./services/sync/retentionSweeper"
+import {
+  DEFAULT_RAW_RETENTION_DAYS,
+  SETTING_RAW_RETENTION_DAYS,
+  getSetting,
+} from "./services/db/repositories/settings"
 import { ThemeProvider } from "./theme/context"
 import { customFontsToLoad } from "./theme/typography"
 import { loadDateFnsLocale } from "./utils/formatDate"
@@ -72,6 +85,7 @@ export function App() {
 
   const [areFontsLoaded, fontLoadError] = useFonts(customFontsToLoad)
   const [isI18nInitialized, setIsI18nInitialized] = useState(false)
+  const [isDbReady, setIsDbReady] = useState(false)
 
   useEffect(() => {
     initI18n()
@@ -79,13 +93,85 @@ export function App() {
       .then(() => loadDateFnsLocale())
   }, [])
 
+  useEffect(() => {
+    runMigrations()
+      .then(() => setIsDbReady(true))
+      .catch((err) => {
+        console.error("[db] migration failed", err)
+        setIsDbReady(true)
+      })
+  }, [])
+
+  useEffect(() => {
+    if (!isDbReady) return
+    const db = openDatabase()
+    const svc = new SyncService({
+      drainFn: () =>
+        drainOnce(db, {
+          post: (tableName, payloads) =>
+            apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
+          batchSize: 200,
+        }),
+      pullFn: async () => {
+        await pullDownlink(db, {
+          apiGet: async (path) => apiGet(path),
+          tables: [
+            "daily_metrics",
+            "daily_scores",
+            "sleep_detections",
+            "sleep_stages",
+            "night_features",
+            "signal_samples",
+            "activity_detections",
+            "baseline_profile",
+            "sleep_plans",
+          ],
+        })
+        const today = new Date().toISOString().slice(0, 10)
+        try {
+          const [home, sleep, trends] = await Promise.all([
+            apiGet(`/views/home?date=${today}`),
+            apiGet(`/views/sleep?date=${today}`),
+            apiGet(`/views/trends?days=30`),
+          ])
+          await setViewCache(db, "home", today, home)
+          await setViewCache(db, "sleep", today, sleep)
+          await setViewCache(db, "trends", "30d", trends)
+        } catch (err) {
+          console.warn("[sync] view cache refresh failed", err)
+        }
+      },
+      intervalMs: 15_000,
+    })
+    svc.start()
+    const sub = AppState.addEventListener("change", async (state) => {
+      if (state !== "active") return
+      await svc.refresh()
+      try {
+        const raw = Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) || DEFAULT_RAW_RETENTION_DAYS
+        if (raw > 0) await sweepRetention(db, { rawDays: raw })
+      } catch (err) {
+        console.warn("[sync] retention sweep failed", err)
+      }
+    })
+    return () => {
+      svc.stop()
+      sub.remove()
+    }
+  }, [isDbReady])
+
   // Before we show the app, we have to wait for our state to be ready.
   // In the meantime, don't render anything. This will be the background
   // color set in native by rootView's background color.
   // In iOS: application:didFinishLaunchingWithOptions:
   // In Android: https://stackoverflow.com/a/45838109/204044
   // You can replace with your own loading component if you wish.
-  if (!isNavigationStateRestored || !isI18nInitialized || (!areFontsLoaded && !fontLoadError)) {
+  if (
+    !isNavigationStateRestored ||
+    !isI18nInitialized ||
+    !isDbReady ||
+    (!areFontsLoaded && !fontLoadError)
+  ) {
     return null
   }
 

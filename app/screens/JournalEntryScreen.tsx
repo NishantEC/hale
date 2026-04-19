@@ -16,6 +16,8 @@ import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { JOURNAL_FACTORS, FactorDefinition } from "@/constants/journalFactors"
 import { createJournalEntry } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { insertJournalEntry } from "@/services/db/repositories/journalEntry"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
 
@@ -52,11 +54,28 @@ export function JournalEntryScreen() {
     setSaving(true)
     setError(null)
     try {
-      await createJournalEntry({
+      const now = Date.now()
+      const id = `journal-${now}-${Math.random().toString(36).slice(2, 8)}`
+      const db = openDatabase()
+      // Write local-first; drainer handles backend sync.
+      await insertJournalEntry(db, {
+        id,
+        timestamp: now,
         factorTag: selectedTag!,
         intensity: value!,
-        note: note.trim() || undefined,
+        note: note.trim(),
+        createdAt: now,
       })
+      // Best-effort direct POST for immediate backend visibility.
+      try {
+        await createJournalEntry({
+          factorTag: selectedTag!,
+          intensity: value!,
+          note: note.trim() || undefined,
+        })
+      } catch (postErr) {
+        console.warn("[journal] direct POST failed — drainer will retry", postErr)
+      }
       Toast.show(`${selectedFactor?.label ?? "Factor"} logged`, { type: "success", position: "top" })
       navigation.goBack()
     } catch (e: any) {

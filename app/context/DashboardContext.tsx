@@ -36,6 +36,11 @@ import {
   HomeViewModel,
   ingestHistoricalRecords,
   PipelineResults,
+} from "../services/api/noopClient"
+import { openDatabase } from "../services/db"
+import { getViewCache, setViewCache } from "../services/db/repositories/viewCache"
+import { historicalRecordToRawRow, ingestBleRecords } from "../services/sync/bleIngest"
+import {
   runPipeline,
   setSessionToken,
   SeriesPoint,
@@ -645,6 +650,20 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       setIsRefreshing(true)
     }
     setError(null)
+
+    // 1) Instant render from local cache if available.
+    try {
+      const db = openDatabase()
+      const [cachedHome, cachedSleep] = await Promise.all([
+        getViewCache<HomeViewModel>(db, "home", selectedDate),
+        getViewCache<SleepViewModel>(db, "sleep", selectedDate),
+      ])
+      if (cachedHome) setHomeView(cachedHome)
+      if (cachedSleep) setSleepView(cachedSleep)
+    } catch (cacheErr) {
+      console.warn("[dashboard] cache read failed", cacheErr)
+    }
+
     try {
       const [nextHomeView, nextSleepView] = await Promise.all([
         fetchHomeView(selectedDate),
@@ -652,6 +671,14 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       ])
       setHomeView(nextHomeView)
       setSleepView(nextSleepView)
+      // 2) Refresh cache with fresh backend values for offline next time.
+      try {
+        const db = openDatabase()
+        await setViewCache(db, "home", selectedDate, nextHomeView)
+        await setViewCache(db, "sleep", selectedDate, nextSleepView)
+      } catch (cacheWriteErr) {
+        console.warn("[dashboard] cache write failed", cacheWriteErr)
+      }
     } catch (nextError: any) {
       if (isViewsApiUnavailable(nextError)) {
         try {
@@ -765,20 +792,26 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       setLiveDeviceState((current) => ({ ...current, lastSyncAt }))
 
       if (records.length > 0) {
+        setSyncStage(`Writing ${records.length} records locally…`)
+        const db = openDatabase()
+        const mapped = records.map(historicalRecordToRawRow)
+        await ingestBleRecords(db, mapped)
+
         setSyncStage(`Uploading ${records.length} records…`)
+        // Best-effort direct POST for immediate pipeline UX. If it fails,
+        // the outbound_queue drainer will retry the rows we already wrote
+        // locally above. Verbose logging so sync failures are debuggable.
         console.log("[syncNow] Uploading", records.length, "records to /pipeline/ingest")
-        let ingestResult
         try {
-          ingestResult = await ingestHistoricalRecords(records)
+          const ingestResult = await ingestHistoricalRecords(records)
           console.log("[syncNow] Ingest response:", JSON.stringify(ingestResult))
+          if ((ingestResult.sensorRecords ?? 0) <= 0) {
+            console.warn(
+              `[syncNow] Backend stored 0 sensor records from ${records.length} uploaded. Response: ${JSON.stringify(ingestResult)} — drainer will retry.`,
+            )
+          }
         } catch (postErr: any) {
-          console.log("[syncNow] Ingest POST threw:", postErr?.message ?? postErr)
-          throw postErr
-        }
-        if ((ingestResult.sensorRecords ?? 0) <= 0) {
-          throw new Error(
-            `Backend stored 0 sensor records from ${records.length} uploaded. Response: ${JSON.stringify(ingestResult)}`,
-          )
+          console.warn("[sync] direct ingest failed — drainer will retry", postErr?.message ?? postErr)
         }
 
         setSyncStage("Running pipeline…")

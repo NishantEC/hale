@@ -10,6 +10,8 @@ import { Text } from "@/components/Text"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
 import { fetchTrendsView, TrendsViewModel, SeriesPoint } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { getViewCache, setViewCache } from "@/services/db/repositories/viewCache"
 import { isAuthenticated } from "@/services/api/noopClient"
 
 // Each trend card: distinct data that can't be seen from a single day
@@ -89,11 +91,27 @@ export const TrendsScreen: FC = () => {
   const load = useCallback(async () => {
     if (!isAuthenticated()) return
     setLoading(true)
+
+    // Render from local cache first for instant open + offline resilience.
+    try {
+      const db = openDatabase()
+      const cached = await getViewCache<TrendsViewModel>(db, "trends", "30d")
+      if (cached) setTrends(cached)
+    } catch (err) {
+      console.warn("[trends] cache read failed", err)
+    }
+
     try {
       const data = await fetchTrendsView(30)
       setTrends(data)
+      try {
+        const db = openDatabase()
+        await setViewCache(db, "trends", "30d", data)
+      } catch (cacheErr) {
+        console.warn("[trends] cache write failed", cacheErr)
+      }
     } catch {
-      // Silently fail — shows empty state
+      // Silently fail — keep whatever cached data we showed
     } finally {
       setLoading(false)
     }

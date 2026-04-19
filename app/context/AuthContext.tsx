@@ -1,5 +1,8 @@
-import { createContext, FC, PropsWithChildren, useCallback, useContext, useMemo } from "react"
+import { createContext, FC, PropsWithChildren, useCallback, useContext, useEffect, useMemo } from "react"
 import { useMMKVString } from "react-native-mmkv"
+
+import { setActiveUserId } from "@/services/db/session"
+import { wipeDatabaseForLogout } from "@/services/db/wipe"
 
 export type AuthContextType = {
   isAuthenticated: boolean
@@ -19,9 +22,22 @@ export const AuthProvider: FC<PropsWithChildren<AuthProviderProps>> = ({ childre
   const [authToken, setAuthToken] = useMMKVString("AuthProvider.authToken")
   const [authEmail, setAuthEmail] = useMMKVString("AuthProvider.authEmail")
 
+  // Stamp the SQLite session userId whenever auth state changes.
+  // Uses authEmail as the stable per-user key for local scoping
+  // (the backend maps email → uuid on its own side).
+  useEffect(() => {
+    if (authToken && authEmail) {
+      setActiveUserId(authEmail)
+    } else {
+      setActiveUserId(null)
+    }
+  }, [authToken, authEmail])
+
   const logout = useCallback(() => {
     setAuthToken(undefined)
     setAuthEmail("")
+    // Wipe local SQLite so re-login with a different user doesn't leak data.
+    void wipeDatabaseForLogout().catch((err) => console.warn("[auth] db wipe failed", err))
   }, [setAuthEmail, setAuthToken])
 
   const validationError = useMemo(() => {
