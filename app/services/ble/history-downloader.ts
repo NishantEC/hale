@@ -1,5 +1,5 @@
 import { PacketType, MetadataType, CommandNumber, WhoopPacket, HistoricalRecord, DownloadProgress, CMD_FROM_STRAP_UUID, DATA_FROM_STRAP_UUID } from './packet-types';
-import { parseHistoricalPacket } from './history-parser';
+import { parseHistoricalPacketBatch } from './history-parser';
 import { bleManager } from './ble-manager';
 import { CommandService } from './command-service';
 
@@ -168,20 +168,20 @@ export class HistoryDownloader {
     const packets = this.dataBuffer;
     this.dataBuffer = [];
 
-    let parseFailures = 0;
+    let emptyPackets = 0;
     const seqCounts: Record<number, number> = {};
     const records: HistoricalRecord[] = [];
     for (const packet of packets) {
       const seq = packet.sequence;
       seqCounts[seq] = (seqCounts[seq] ?? 0) + 1;
-      const rec = parseHistoricalPacket(packet);
-      if (rec) records.push(rec);
-      else parseFailures++;
+      const batch = parseHistoricalPacketBatch(packet);
+      if (batch.length === 0) emptyPackets++;
+      records.push(...batch);
     }
     this.allRecords.push(...records);
     console.log(
-      '[HistoryDownloader] Parsed', records.length, 'of', packets.length,
-      'packets (', parseFailures, 'rejected). Seq counts:',
+      '[HistoryDownloader] Parsed', records.length, 'records from',
+      packets.length, 'packets (', emptyPackets, 'empty). Seq counts:',
       JSON.stringify(seqCounts),
       'Running total:', this.allRecords.length,
     );

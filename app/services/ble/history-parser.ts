@@ -89,55 +89,104 @@ export function parseHistoricalRecord(
   };
 }
 
-export function parseHistoricalPacket(packet: WhoopPacket): HistoricalRecord | null {
-  if (packet.type !== PacketType.HistoricalData) return null;
+const GENERIC_RECORD_SIZE = 24;
 
-  const data = new Uint8Array(packet.data);
-  const isV12V24 = (packet.sequence === 12 || packet.sequence === 24) && data.length >= MIN_V12V24_SIZE;
-
-  if (!isV12V24 && data.length < 24) return null;
-
-  const view = new DataView(data.buffer, data.byteOffset, Math.min(data.length, 256));
+function parseV12V24Record(data: Uint8Array, offset: number): HistoricalRecord | null {
+  if (data.length - offset < MIN_V12V24_SIZE) return null;
+  const view = new DataView(data.buffer, data.byteOffset + offset, MIN_V12V24_SIZE);
   const unixSeconds = view.getUint32(4, true);
   if (unixSeconds < 1577836800 || unixSeconds > 1893456000) return null;
-
   const subseconds = view.getUint16(8, true);
-  const timestamp = new Date(unixSeconds * 1000 + Math.floor((subseconds / 65536) * 1000));
-  const sequenceNumber = view.getUint32(0, true);
-  const heartRate = view.getUint8(14);
   const rrCount = Math.min(view.getUint8(15), 4);
-
   const rrIntervals: number[] = [];
   for (let i = 0; i < rrCount; i++) {
     const rr = view.getUint16(16 + i * 2, true);
     if (rr > 0 && rr < 3000) rrIntervals.push(rr);
   }
-
-  const gravityX = isV12V24 && data.length >= 45 ? view.getFloat32(33, true) : 0;
-  const gravityY = isV12V24 && data.length >= 45 ? view.getFloat32(37, true) : 0;
-  const gravityZ = isV12V24 && data.length >= 45 ? view.getFloat32(41, true) : 0;
-
   return {
-    sequenceNumber,
-    timestamp,
+    sequenceNumber: view.getUint32(0, true),
+    timestamp: new Date(unixSeconds * 1000 + Math.floor((subseconds / 65536) * 1000)),
     subseconds,
-    heartRate,
+    heartRate: view.getUint8(14),
     rrIntervals,
-    gravityX,
-    gravityY,
-    gravityZ,
-    skinContact: isV12V24 && data.length >= 49 ? view.getUint8(48) !== 0 : false,
-    spo2Red: isV12V24 && data.length >= 63 ? view.getUint16(61, true) : 0,
-    spo2IR: isV12V24 && data.length >= 65 ? view.getUint16(63, true) : 0,
-    skinTempRaw: isV12V24 && data.length >= 67 ? view.getUint16(65, true) : 0,
-    respRateRaw: isV12V24 && data.length >= 75 ? view.getUint16(73, true) : 0,
-    ppgGreen: isV12V24 && data.length >= 28 ? view.getUint16(26, true) : 0,
-    ppgRedIr: isV12V24 && data.length >= 30 ? view.getUint16(28, true) : 0,
-    ambientLight: isV12V24 && data.length >= 69 ? view.getUint16(67, true) : 0,
-    ledDrive1: isV12V24 && data.length >= 71 ? view.getUint16(69, true) : 0,
-    ledDrive2: isV12V24 && data.length >= 73 ? view.getUint16(71, true) : 0,
-    signalQuality: isV12V24 && data.length >= 77 ? view.getUint16(75, true) : 0,
+    gravityX: view.getFloat32(33, true),
+    gravityY: view.getFloat32(37, true),
+    gravityZ: view.getFloat32(41, true),
+    skinContact: view.getUint8(48) !== 0,
+    spo2Red: view.getUint16(61, true),
+    spo2IR: view.getUint16(63, true),
+    skinTempRaw: view.getUint16(65, true),
+    respRateRaw: view.getUint16(73, true),
+    ppgGreen: view.getUint16(26, true),
+    ppgRedIr: view.getUint16(28, true),
+    ambientLight: view.getUint16(67, true),
+    ledDrive1: view.getUint16(69, true),
+    ledDrive2: view.getUint16(71, true),
+    signalQuality: view.getUint16(75, true),
   };
+}
+
+function parseGenericRecord(data: Uint8Array, offset: number): HistoricalRecord | null {
+  if (data.length - offset < GENERIC_RECORD_SIZE) return null;
+  const view = new DataView(data.buffer, data.byteOffset + offset, GENERIC_RECORD_SIZE);
+  const unixSeconds = view.getUint32(4, true);
+  if (unixSeconds < 1577836800 || unixSeconds > 1893456000) return null;
+  const subseconds = view.getUint16(8, true);
+  const rrCount = Math.min(view.getUint8(15), 4);
+  const rrIntervals: number[] = [];
+  for (let i = 0; i < rrCount; i++) {
+    const rr = view.getUint16(16 + i * 2, true);
+    if (rr > 0 && rr < 3000) rrIntervals.push(rr);
+  }
+  return {
+    sequenceNumber: view.getUint32(0, true),
+    timestamp: new Date(unixSeconds * 1000 + Math.floor((subseconds / 65536) * 1000)),
+    subseconds,
+    heartRate: view.getUint8(14),
+    rrIntervals,
+    gravityX: 0,
+    gravityY: 0,
+    gravityZ: 0,
+    skinContact: false,
+    spo2Red: 0,
+    spo2IR: 0,
+    skinTempRaw: 0,
+    respRateRaw: 0,
+    ppgGreen: 0,
+    ppgRedIr: 0,
+    ambientLight: 0,
+    ledDrive1: 0,
+    ledDrive2: 0,
+    signalQuality: 0,
+  };
+}
+
+// Parses ALL records contained in a single HistoricalData packet. Each
+// packet from the strap holds 1+ records packed back-to-back:
+//   seq ∈ {12, 24} → 77-byte V12/V24 full-sensor records
+//   seq otherwise  → 24-byte V7/V9/V18 generic (HR+RR only) records
+// The old implementation returned one record per packet, dropping the
+// rest of the buffer. For a 1917-byte generic packet that's ~79→1.
+export function parseHistoricalPacketBatch(packet: WhoopPacket): HistoricalRecord[] {
+  if (packet.type !== PacketType.HistoricalData) return [];
+  const data = new Uint8Array(packet.data);
+  const isV12V24 = packet.sequence === 12 || packet.sequence === 24;
+  const stride = isV12V24 ? MIN_V12V24_SIZE : GENERIC_RECORD_SIZE;
+  const parse = isV12V24 ? parseV12V24Record : parseGenericRecord;
+  const out: HistoricalRecord[] = [];
+  let offset = 0;
+  while (offset + stride <= data.length) {
+    const rec = parse(data, offset);
+    if (rec) out.push(rec);
+    offset += stride;
+  }
+  return out;
+}
+
+// Back-compat single-record entry point (deprecated — returns first record only).
+export function parseHistoricalPacket(packet: WhoopPacket): HistoricalRecord | null {
+  const batch = parseHistoricalPacketBatch(packet);
+  return batch.length > 0 ? batch[0] : null;
 }
 
 /**
