@@ -9,9 +9,11 @@ import {
   DebugSleepNight,
   fetchDebugOverview,
   fetchDebugSleepNight,
+  forceLogout,
   INSPECTOR_WEB_URL,
   runDebugPipeline,
 } from "@/services/api/noopClient"
+import { useAuth } from "@/context/AuthContext"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
 import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
@@ -29,6 +31,7 @@ function formatTimestamp(value?: string | null) {
 export const DebugInspectorScreen: FC = () => {
   const { themed, theme: { colors } } = useAppTheme()
   const { selectedDate, refreshDashboard, syncNow } = useDashboard()
+  const { logout } = useAuth()
   const [overview, setOverview] = useState<DebugOverview | null>(null)
   const [sleepNight, setSleepNight] = useState<DebugSleepNight | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -117,6 +120,9 @@ export const DebugInspectorScreen: FC = () => {
       <View style={themed($buttonRow)}>
         <ActionButton label="Run Pipeline Now" onPress={() => void handleRunPipeline()} />
         <ActionButton label="Open Web Inspector" onPress={() => openLinkInBrowser(INSPECTOR_WEB_URL)} />
+      </View>
+      <View style={themed($buttonRow)}>
+        <ActionButton label="Log Out" onPress={() => void forceLogout().then(() => logout())} />
       </View>
 
       {isLoading && !overview ? (

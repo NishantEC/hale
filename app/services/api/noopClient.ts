@@ -1,5 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MMKV } from 'react-native-mmkv';
 import { HistoricalRecord } from '../ble/packet-types';
+
+// Shared MMKV store used by AuthContext. Clearing these keys from
+// here on a 401 signs the user out in-app, not just in our local
+// HTTP layer.
+const mmkv = new MMKV();
 
 const DEFAULT_BASE_URL = 'https://c861-49-207-192-31.ngrok-free.app';
 const BASE_URL =
@@ -330,6 +336,20 @@ export interface DebugViewsRecompute {
 async function clearSession() {
   sessionToken = null;
   await AsyncStorage.removeItem('sessionToken');
+  // Also clear the MMKV keys AuthContext watches, so a 401 actually
+  // signs the user out in the UI (not just in our local fetch layer).
+  try {
+    mmkv.delete('AuthProvider.authToken');
+    mmkv.delete('AuthProvider.authEmail');
+  } catch {
+    // best effort
+  }
+}
+
+// Called from the UI "Log Out" button to force a sign-out without
+// needing to wait for a 401 response.
+export async function forceLogout() {
+  await clearSession();
 }
 
 export function setSessionToken(token?: string | null) {
