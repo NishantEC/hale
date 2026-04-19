@@ -3,7 +3,6 @@ import { StyleSheet, View, ViewStyle } from "react-native"
 import { Bar, CartesianChart } from "victory-native"
 
 import { Text } from "@/components/Text"
-import { useAppTheme } from "@/theme/context"
 
 type Point = {
   timestamp: string
@@ -29,7 +28,7 @@ export function BarSeriesChart({
   referenceValue,
   emptyLabel = "No chart data",
 }: BarSeriesChartProps) {
-  const { theme: { colors } } = useAppTheme()
+  const colors = { tint: "#C76542", textMuted: "rgba(255,255,255,0.6)" }
   const resolvedFill = fill ?? colors.tint
 
   const chartData = useMemo(
