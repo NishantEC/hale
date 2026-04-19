@@ -12,6 +12,7 @@ import {
   sleepPlans,
 } from "../schema"
 import { getActiveUserId } from "../session"
+import { notifyTable } from "../observable"
 
 // Upserts backend-derived rows into their mirror tables. Always stamps
 // _origin='backend' so the conflict policy (backend wins over local)
@@ -38,6 +39,7 @@ async function upsertMany(db: NoopDatabase, table: any, rows: any[]): Promise<vo
         set: { ...row, ...mirror, _origin: "backend" },
       })
   }
+  notifyTable(table._ ? String(table._.name) : "unknown")
 }
 
 export const upsertDailyMetrics = (db: NoopDatabase, rows: any[]) =>

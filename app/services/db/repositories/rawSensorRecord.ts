@@ -2,6 +2,7 @@ import { and, asc, eq, gte, lte } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
 import { rawSensorRecords } from "../schema"
 import { getActiveUserId } from "../session"
+import { notifyTable } from "../observable"
 
 export interface RawSensorRecordInput {
   id: string
@@ -37,6 +38,7 @@ export async function insertRawSensorRecord(
     _origin: "local",
     userId,
   })
+  notifyTable("raw_sensor_records")
 }
 
 export async function listRawSensorRecordsByDateRange(

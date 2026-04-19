@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
 import { viewCache } from "../schema"
 import { getActiveUserId } from "../session"
+import { notifyTable } from "../observable"
 
 export async function setViewCache(
   db: NoopDatabase,
@@ -23,6 +24,7 @@ export async function setViewCache(
       target: [viewCache.viewName, viewCache.date, viewCache.userId],
       set: { payload: JSON.stringify(payload), updatedAt: Date.now() },
     })
+  notifyTable("view_cache")
 }
 
 export async function getViewCache<T>(
