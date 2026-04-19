@@ -1,6 +1,7 @@
 import { FC, useCallback, useEffect, useState } from "react"
 import { ActivityIndicator, TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
 
+import { LocalDbDiagnostics } from "@/components/LocalDbDiagnostics"
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
@@ -97,6 +98,8 @@ export const DebugInspectorScreen: FC = () => {
           style={themed($subtle)}
         />
       </View>
+
+      <LocalDbDiagnostics />
 
       {error ? (
         <View style={themed($errorBanner)}>
