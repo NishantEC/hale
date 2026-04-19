@@ -8,8 +8,13 @@ import { GlassCard } from "@/components/GlassCard"
 import { ScrollView } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Text } from "@/components/Text"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+const PALETTE = {
+  text: "#FFFFFF",
+  textDim: "rgba(255,255,255,0.72)",
+  tint: "#C76542",
+  statusGreen: "#16A34A",
+  statusRed: "#DC2626",
+}
 import { fetchTrendsView, TrendsViewModel, SeriesPoint } from "@/services/api/noopClient"
 import { isAuthenticated } from "@/services/api/noopClient"
 
@@ -82,7 +87,8 @@ const TREND_CARDS: Array<{
 ]
 
 export const TrendsScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = PALETTE
+  const themed = <T,>(s: T): T => s
   const { width } = useWindowDimensions()
   const [trends, setTrends] = useState<TrendsViewModel | null>(null)
   const [loading, setLoading] = useState(false)
@@ -227,52 +233,39 @@ function SummaryPill({
 
 // ── Styles ───────────────────────────────────────────────
 
-const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  paddingHorizontal: spacing.lg,
-  paddingVertical: spacing.xl,
+const $container: ViewStyle = {
+  paddingHorizontal: 24,
+  paddingVertical: 32,
   gap: 16,
   paddingBottom: 100,
-})
+}
 
-const $heading: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
+const $heading: TextStyle = { color: PALETTE.text }
 
-const $subtitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-  marginBottom: 8,
-})
+const $subtitle: TextStyle = { color: PALETTE.textDim, marginBottom: 8 }
 
-const $summaryRow: ThemedStyle<ViewStyle> = () => ({
+const $summaryRow: ViewStyle = {
   flexDirection: "row",
   gap: 12,
   marginBottom: 8,
-})
+}
 
-const $card: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  gap: spacing.sm,
-})
+const $card: ViewStyle = { gap: 12 }
 
-const $cardHeader: ThemedStyle<ViewStyle> = () => ({
+const $cardHeader: ViewStyle = {
   flexDirection: "row",
   alignItems: "center",
   gap: 10,
-})
+}
 
-const $cardTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
+const $cardTitle: TextStyle = { color: PALETTE.text }
 
-const $emptyChart: ThemedStyle<ViewStyle> = () => ({
+const $emptyChart: ViewStyle = {
   height: 120,
   alignItems: "center",
   justifyContent: "center",
-})
+}
 
-const $emptyText: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-})
+const $emptyText: TextStyle = { color: PALETTE.textDim }
 
-const $cardSubtitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-})
+const $cardSubtitle: TextStyle = { color: PALETTE.textDim }
