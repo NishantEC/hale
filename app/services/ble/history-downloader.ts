@@ -83,9 +83,13 @@ export class HistoryDownloader {
     this.resetIdleTimer();
 
     // Metadata packets: type === Metadata (49)
-    // The metadata subtype can be in data[0] OR in the command field
+    // The metadata subtype is the `command` byte of the framed packet:
+    //   HistoryStart=1, HistoryEnd=2, HistoryComplete=3
+    // data[0] is the first byte of the metadata payload (unix_u32_LE), not
+    // the subtype — reading from data[0] was the bug that made every batch
+    // ACK get skipped, leaving the strap waiting forever.
     if (packet.type === PacketType.Metadata) {
-      const metaType = packet.data.length > 0 ? packet.data[0] : packet.command;
+      const metaType = packet.command;
 
       if (metaType === MetadataType.HistoryStart) {
         // Download starting — no action
