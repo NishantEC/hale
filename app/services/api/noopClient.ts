@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { HistoricalRecord } from '../ble/packet-types';
 
-const DEFAULT_BASE_URL = 'https://4c2c-2a09-bac1-36e0-1468-00-243-a9.ngrok-free.app';
+const DEFAULT_BASE_URL = 'https://541a-49-207-192-31.ngrok-free.app';
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   process.env.EXPO_PUBLIC_BACKEND_URL ||
