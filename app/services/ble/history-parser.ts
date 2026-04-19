@@ -161,29 +161,26 @@ function parseGenericRecord(data: Uint8Array, offset: number): HistoricalRecord 
   };
 }
 
-// Parses ALL records contained in a single HistoricalData packet. Each
-// packet from the strap holds 1+ records packed back-to-back:
-//   seq ∈ {12, 24} → 77-byte V12/V24 full-sensor records
-//   seq otherwise  → 24-byte V7/V9/V18 generic (HR+RR only) records
-// The old implementation returned one record per packet, dropping the
-// rest of the buffer. For a 1917-byte generic packet that's ~79→1.
+// Each HistoricalData BLE packet decodes to exactly ONE sensor reading
+// — matches the openWhoop-2 reference (decoder.py:164 decode_historical
+// returns a single HistoryReading, not a list). The packet's 1917+
+// bytes of tail data aren't a concatenation of records; they're the
+// packet's framed sensor fields plus padding.
+//
+// An earlier iteration of this file walked the buffer at a fixed stride
+// and emitted "ghost" records whenever the offset 4 bytes happened to
+// look like a 2020–2030 unix timestamp. That inflated counts but
+// corrupted every trailing record with garbage offsets.
 export function parseHistoricalPacketBatch(packet: WhoopPacket): HistoricalRecord[] {
   if (packet.type !== PacketType.HistoricalData) return [];
   const data = new Uint8Array(packet.data);
   const isV12V24 = packet.sequence === 12 || packet.sequence === 24;
-  const stride = isV12V24 ? MIN_V12V24_SIZE : GENERIC_RECORD_SIZE;
-  const parse = isV12V24 ? parseV12V24Record : parseGenericRecord;
-  const out: HistoricalRecord[] = [];
-  let offset = 0;
-  while (offset + stride <= data.length) {
-    const rec = parse(data, offset);
-    if (rec) out.push(rec);
-    offset += stride;
-  }
-  return out;
+  const rec = isV12V24
+    ? parseV12V24Record(data, 0)
+    : parseGenericRecord(data, 0);
+  return rec ? [rec] : [];
 }
 
-// Back-compat single-record entry point (deprecated — returns first record only).
 export function parseHistoricalPacket(packet: WhoopPacket): HistoricalRecord | null {
   const batch = parseHistoricalPacketBatch(packet);
   return batch.length > 0 ? batch[0] : null;

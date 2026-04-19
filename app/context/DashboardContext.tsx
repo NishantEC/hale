@@ -766,12 +766,23 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
 
       if (records.length > 0) {
         setSyncStage(`Uploading ${records.length} records…`)
-        const ingestResult = await ingestHistoricalRecords(records)
+        console.log("[syncNow] Uploading", records.length, "records to /pipeline/ingest")
+        let ingestResult
+        try {
+          ingestResult = await ingestHistoricalRecords(records)
+          console.log("[syncNow] Ingest response:", JSON.stringify(ingestResult))
+        } catch (postErr: any) {
+          console.log("[syncNow] Ingest POST threw:", postErr?.message ?? postErr)
+          throw postErr
+        }
         if ((ingestResult.sensorRecords ?? 0) <= 0) {
-          throw new Error("Backend stored 0 sensor records. Check the ingest path.")
+          throw new Error(
+            `Backend stored 0 sensor records from ${records.length} uploaded. Response: ${JSON.stringify(ingestResult)}`,
+          )
         }
 
         setSyncStage("Running pipeline…")
+        console.log("[syncNow] Running pipeline on backend")
         await runPipeline()
 
         setSyncStage("Refreshing views…")
