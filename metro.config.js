@@ -28,4 +28,7 @@ config.resolver.unstable_conditionNames = ["require", "default", "browser"]
 // such as Firebase that use the extension cjs.
 config.resolver.sourceExts.push("cjs")
 
+// Drizzle expo-sqlite migrations import the generated `.sql` bundle directly.
+config.resolver.sourceExts.push("sql")
+
 module.exports = config
