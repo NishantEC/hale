@@ -90,13 +90,21 @@ export class HistoryDownloader {
     // ACK get skipped, leaving the strap waiting forever.
     if (packet.type === PacketType.Metadata) {
       const metaType = packet.command;
+      console.log(
+        '[HistoryDownloader] Metadata subtype=', metaType,
+        'dataLen=', packet.data.length,
+      );
 
       if (metaType === MetadataType.HistoryStart) {
-        // Download starting — no action
+        console.log('[HistoryDownloader] HistoryStart received');
         return;
       }
 
       if (metaType === MetadataType.HistoryEnd) {
+        console.log(
+          '[HistoryDownloader] HistoryEnd received — buffer has',
+          this.dataBuffer.length, 'packets to parse',
+        );
         this.parseBufferedData();
         this.chunksReceived++;
         this.emitProgress('receiving');
@@ -123,6 +131,12 @@ export class HistoryDownloader {
 
     // Historical data packets
     if (packet.type === PacketType.HistoricalData) {
+      if (!this.hasReceivedAnyData) {
+        console.log(
+          '[HistoryDownloader] First HistoricalData arrived — seq=',
+          packet.sequence, 'dataLen=', packet.data.length,
+        );
+      }
       this.hasReceivedAnyData = true;
       this.dataBuffer.push(packet);
       this.totalBytes += packet.data.length;
@@ -154,11 +168,23 @@ export class HistoryDownloader {
     const packets = this.dataBuffer;
     this.dataBuffer = [];
 
-    const records = packets
-      .map((packet) => parseHistoricalPacket(packet))
-      .filter((record): record is HistoricalRecord => record != null);
+    let parseFailures = 0;
+    const seqCounts: Record<number, number> = {};
+    const records: HistoricalRecord[] = [];
+    for (const packet of packets) {
+      const seq = packet.sequence;
+      seqCounts[seq] = (seqCounts[seq] ?? 0) + 1;
+      const rec = parseHistoricalPacket(packet);
+      if (rec) records.push(rec);
+      else parseFailures++;
+    }
     this.allRecords.push(...records);
-    console.log('[HistoryDownloader] Parsed', records.length, 'records, total:', this.allRecords.length);
+    console.log(
+      '[HistoryDownloader] Parsed', records.length, 'of', packets.length,
+      'packets (', parseFailures, 'rejected). Seq counts:',
+      JSON.stringify(seqCounts),
+      'Running total:', this.allRecords.length,
+    );
     this.emitProgress('parsing');
   }
 
