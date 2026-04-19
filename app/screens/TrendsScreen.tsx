@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { Chart, Host } from "@expo/ui/swift-ui"
 
 import { GlassCard } from "@/components/GlassCard"
-import { Screen } from "@/components/Screen"
+import { ScrollView } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { Text } from "@/components/Text"
 import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
@@ -104,14 +105,11 @@ export const TrendsScreen: FC = () => {
   const chartWidth = width - 72
 
   return (
-    <Screen
-      preset="scroll"
-      safeAreaEdges={["top"]}
-      contentContainerStyle={themed($container)}
-      ScrollViewProps={{
-        refreshControl: <RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.tint} />,
-      }}
-    >
+    <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+      <ScrollView
+        contentContainerStyle={themed($container)}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.tint} />}
+      >
       <Text text="Trends" preset="heading" style={themed($heading)} />
       <Text
         text={trends ? `${trends.days}-day window · ${trends.dataPoints} nights` : "Pull to refresh"}
@@ -190,7 +188,8 @@ export const TrendsScreen: FC = () => {
           </GlassCard>
         )
       })}
-    </Screen>
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
