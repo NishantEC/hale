@@ -18,29 +18,43 @@ export async function sweepRetention(db: NoopDatabase, opts: SweepOptions): Prom
   if (opts.rawDays <= 0) return // 0 or negative = keep forever
   const cutoff = Date.now() - opts.rawDays * MS_PER_DAY
 
-  // raw_sensor_records / realtime_samples use `timestamp`
-  for (const t of [rawSensorRecords, realtimeSamples]) {
-    await db
-      .delete(t)
-      .where(
-        and(
-          eq((t as any).userId, userId),
-          isNotNull((t as any)._syncedAt),
-          lt((t as any).timestamp, cutoff),
-        ),
-      )
-  }
+  await db
+    .delete(rawSensorRecords)
+    .where(
+      and(
+        eq(rawSensorRecords.userId, userId),
+        isNotNull(rawSensorRecords._syncedAt),
+        lt(rawSensorRecords.timestamp, cutoff),
+      ),
+    )
 
-  // device_events / console_logs use `capturedAt`
-  for (const t of [deviceEvents, consoleLogs]) {
-    await db
-      .delete(t)
-      .where(
-        and(
-          eq((t as any).userId, userId),
-          isNotNull((t as any)._syncedAt),
-          lt((t as any).capturedAt, cutoff),
-        ),
-      )
-  }
+  await db
+    .delete(realtimeSamples)
+    .where(
+      and(
+        eq(realtimeSamples.userId, userId),
+        isNotNull(realtimeSamples._syncedAt),
+        lt(realtimeSamples.capturedAt, cutoff),
+      ),
+    )
+
+  await db
+    .delete(deviceEvents)
+    .where(
+      and(
+        eq(deviceEvents.userId, userId),
+        isNotNull(deviceEvents._syncedAt),
+        lt(deviceEvents.capturedAt, cutoff),
+      ),
+    )
+
+  await db
+    .delete(consoleLogs)
+    .where(
+      and(
+        eq(consoleLogs.userId, userId),
+        isNotNull(consoleLogs._syncedAt),
+        lt(consoleLogs.capturedAt, cutoff),
+      ),
+    )
 }
