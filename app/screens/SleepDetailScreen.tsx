@@ -22,8 +22,8 @@ import { SleepHeartRateChart } from "@/components/SleepHeartRateChart"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import { useAppTheme } from "@/theme/context"
 import type { ThemedStyle } from "@/theme/types"
+import { LOCAL_THEME, themed } from "@/utils/localTheme"
 
 const KEY_METRIC_LABELS = ["Efficiency", "Resting HR", "HRV (RMSSD)", "Interruptions"]
 const ADVANCED_METRIC_LABELS = [
@@ -45,7 +45,7 @@ function scoreQuality(score: number): string {
 }
 
 export const SleepDetailScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   const route = useRoute<any>()
   const { width } = useWindowDimensions()
   const {

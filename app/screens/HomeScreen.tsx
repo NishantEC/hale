@@ -26,7 +26,7 @@ import { RollingCounter } from "@/components/reactx/rolling-counter"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import { useAppTheme } from "@/theme/context"
+import { LOCAL_THEME, themed } from "@/utils/localTheme"
 import type { ThemedStyle } from "@/theme/types"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
 import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopClient"
@@ -73,7 +73,7 @@ function formatSelectedDateTitle(dateKey: string) {
 }
 
 export const HomeScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   const navigation = useNavigation<any>()
   const {
     selectedDate,
@@ -337,7 +337,7 @@ function DateSwitcher({
   onPrevious: () => void
   onNext: () => void
 }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
 
   return (
     <View style={themed($dateSwitcher)}>
@@ -370,7 +370,7 @@ function DevicePill({
   isConnected: boolean
   onPress: () => void
 }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
 
   return (
     <TouchableOpacity style={themed($devicePill)} onPress={onPress}>
@@ -390,7 +390,7 @@ function DevicePill({
 }
 
 function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
-  const { themed, theme } = useAppTheme()
+  const theme = LOCAL_THEME
 
   return (
     <Shimmer
@@ -403,7 +403,7 @@ function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
 }
 
 function HomeDaySkeleton() {
-  const { themed } = useAppTheme()
+  // themed helper is imported from @/utils/localTheme
 
   return (
     <View style={themed($homeDaySkeleton)}>
@@ -440,7 +440,8 @@ function PrimaryMetricsList({
     onPress: () => void
   }>
 }) {
-  const { themed, theme: { colors, isDark } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
+  const isDark = LOCAL_THEME.isDark
 
   const recovery = items.find((i) => i.id === "recovery")
   const pills = items.filter((i) => i.id !== "recovery")
@@ -561,7 +562,7 @@ function chipDetail(factor: (typeof JOURNAL_FACTORS)[number] | undefined, intens
 }
 
 function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   if (entries.length === 0) return null
 
   return (
@@ -615,7 +616,7 @@ function HomeActionRow({
   icon: keyof typeof Ionicons.glyphMap
   onPress: () => void
 }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
 
   return (
     <TouchableOpacity activeOpacity={0.9} style={themed($actionRow)} onPress={onPress}>
