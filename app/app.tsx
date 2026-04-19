@@ -24,6 +24,9 @@ import * as Linking from "expo-linking"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { KeyboardProvider } from "react-native-keyboard-controller"
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context"
+import { TamaguiProvider } from "tamagui"
+
+import tamaguiConfig from "../tamagui.config"
 
 import { AuthProvider } from "./context/AuthContext"
 import { DashboardProvider } from "./context/DashboardContext"
@@ -98,19 +101,21 @@ export function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <KeyboardProvider>
-          <AuthProvider>
-            <DashboardProvider>
-              <ThemeProvider>
-                <AppNavigator
-                  linking={linking}
-                  initialState={initialNavigationState}
-                  onStateChange={onNavigationStateChange}
-                />
-              </ThemeProvider>
-            </DashboardProvider>
-          </AuthProvider>
-        </KeyboardProvider>
+        <TamaguiProvider config={tamaguiConfig} defaultTheme="dark">
+          <KeyboardProvider>
+            <AuthProvider>
+              <DashboardProvider>
+                <ThemeProvider>
+                  <AppNavigator
+                    linking={linking}
+                    initialState={initialNavigationState}
+                    onStateChange={onNavigationStateChange}
+                  />
+                </ThemeProvider>
+              </DashboardProvider>
+            </AuthProvider>
+          </KeyboardProvider>
+        </TamaguiProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )
