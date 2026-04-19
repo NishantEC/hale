@@ -373,7 +373,10 @@ async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQ
         }
         throw new Error(text.slice(0, 180));
       } else {
-        throw new Error('Server returned a non-JSON response.');
+        const prefix = text.slice(0, 120).replace(/\s+/g, ' ');
+        throw new Error(
+          `Server returned a non-JSON response for ${path} (status ${res.status}, content-type "${contentType}"): ${prefix}`,
+        );
       }
     }
 
