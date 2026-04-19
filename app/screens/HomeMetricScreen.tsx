@@ -1,16 +1,15 @@
 import { FC, ReactNode, useMemo } from "react"
-import { TextStyle, View, ViewStyle, useWindowDimensions } from "react-native"
+import { ScrollView, useWindowDimensions } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { useRoute } from "@react-navigation/native"
 
 import { BarSeriesChart } from "@/components/BarSeriesChart"
 import { DetailScreenHeader } from "@/components/DetailScreenHeader"
 import { GlassCard } from "@/components/GlassCard"
 import { InlineLineChart } from "@/components/InlineLineChart"
-import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
+import { XStack, YStack } from "@/components/tamagui-primitives"
 import { useDashboard } from "@/context/DashboardContext"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
 
 const METRIC_OPTIONS = [
   "sleep",
@@ -36,9 +35,9 @@ export const HomeMetricScreen: FC = () => {
   const route = useRoute<any>()
   const metricParam = route.params?.metric as string | string[] | undefined
   const metric = resolveMetric(metricParam)
-  const { themed, theme: { colors } } = useAppTheme()
   const { width } = useWindowDimensions()
   const { homeView, sleepView, liveDeviceState } = useDashboard()
+  const accent = "#C76542"
 
   const content = useMemo(() => {
     if (!homeView) {
@@ -59,7 +58,7 @@ export const HomeMetricScreen: FC = () => {
               points={sleepView.durationTrend.samples}
               width={width - 72}
               height={120}
-              fill={colors.tint}
+              fill={accent}
               referenceValue={sleepView.durationTrend.targetHours}
             />
           ) : null,
@@ -70,12 +69,7 @@ export const HomeMetricScreen: FC = () => {
           title: metric === "readiness" ? "Readiness" : "Recovery",
           subtitle: "Daily balance and confidence-backed recovery readiness.",
           chart: (
-            <InlineLineChart
-              points={homeView.trendSummary.samples}
-              width={width - 72}
-              height={120}
-              stroke={colors.tint}
-            />
+            <InlineLineChart points={homeView.trendSummary.samples} width={width - 72} height={120} stroke={accent} />
           ),
         }
       case "strain":
@@ -83,12 +77,7 @@ export const HomeMetricScreen: FC = () => {
           title: "Strain",
           subtitle: "Daily load score on a 0 to 21 strain scale.",
           chart: (
-            <InlineLineChart
-              points={homeView.strainTrend}
-              width={width - 72}
-              height={120}
-              stroke={colors.tint}
-            />
+            <InlineLineChart points={homeView.strainTrend} width={width - 72} height={120} stroke={accent} />
           ),
         }
       case "stress":
@@ -96,12 +85,7 @@ export const HomeMetricScreen: FC = () => {
           title: "Stress",
           subtitle: "RR-derived stress trend from available high-quality signal.",
           chart: (
-            <InlineLineChart
-              points={homeView.stressTrend}
-              width={width - 72}
-              height={120}
-              stroke={colors.tint}
-            />
+            <InlineLineChart points={homeView.stressTrend} width={width - 72} height={120} stroke={accent} />
           ),
         }
       case "loadPressure":
@@ -109,12 +93,7 @@ export const HomeMetricScreen: FC = () => {
           title: "Load Pressure",
           subtitle: "Recent load pressure and daily balance context.",
           chart: (
-            <InlineLineChart
-              points={homeView.trendSummary.samples}
-              width={width - 72}
-              height={120}
-              stroke={colors.tint}
-            />
+            <InlineLineChart points={homeView.trendSummary.samples} width={width - 72} height={120} stroke={accent} />
           ),
         }
       case "liveHeartRate":
@@ -129,110 +108,68 @@ export const HomeMetricScreen: FC = () => {
               points={liveDeviceState.realtimeSamples}
               width={width - 72}
               height={120}
-              stroke={colors.tint}
+              stroke={accent}
             />
           ),
         }
       case "activities":
       default:
-        return {
-          title: "Today's Activities",
-          subtitle: "Current load and stress summary for activity planning.",
-          chart: null,
-        }
+        return { title: "Today's Activities", subtitle: "Current load and stress summary for activity planning.", chart: null }
     }
   }, [homeView, liveDeviceState.connectionState, liveDeviceState.realtimeSamples, metric, sleepView, width])
 
   return (
-    <Screen preset="scroll" safeAreaEdges={["top"]} contentContainerStyle={themed($container)}>
-      <DetailScreenHeader title={content.title} subtitle={content.subtitle} />
+    <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+      <ScrollView contentContainerStyle={{ gap: 16, paddingHorizontal: 24, paddingVertical: 24 }}>
+        <DetailScreenHeader title={content.title} subtitle={content.subtitle} />
 
-      <GlassCard style={themed($card)}>
-        <Text text="Overview" size="xxs" weight="bold" style={themed($subtitle)} />
-      </GlassCard>
+        <GlassCard style={{ gap: 12 }}>
+          <Text text="Overview" size="xxs" weight="bold" style={{ opacity: 0.7 }} />
+        </GlassCard>
 
-      {content.chart ? <GlassCard style={themed($card)}>{content.chart}</GlassCard> : null}
+        {content.chart ? <GlassCard style={{ gap: 12 }}>{content.chart}</GlassCard> : null}
 
-      <GlassCard style={themed($card)}>
-        {metric === "activities" ? (
-          <View style={themed($metricList)}>
-            <MetricRow label="Stress" value={homeView?.activities.stress ?? "--"} />
-            <MetricRow label="SpO₂" value={homeView?.activities.spo2 ?? "--"} />
-            <MetricRow label="Skin Temp" value={homeView?.activities.skinTemp ?? "--"} />
-            <MetricRow label="Skin Temp Delta" value={homeView?.activities.skinTempDelta ?? "--"} />
-            <MetricRow label="Strain" value={homeView?.activities.strain ?? "--"} />
-            <MetricRow label="Recovery Index" value={homeView?.activities.recoveryIndex ?? "--"} />
-            <MetricRow label="Training Load" value={homeView?.activities.trainingLoad ?? "--"} />
-            <MetricRow label="Load Risk" value={homeView?.activities.trainingLoadRiskZone ?? "--"} />
-            <MetricRow label="SpO₂ Dips" value={homeView?.activities.spo2Dips ?? "--"} />
-          </View>
-        ) : metric === "readiness" || metric === "recovery" ? (
-          <View style={themed($metricList)}>
-            <MetricRow label="Confidence" value={homeView?.confidence.confidence ?? "--"} />
-            <MetricRow label="Pipeline" value={homeView?.confidence.pipelineStatus ?? "--"} />
-            <MetricRow label="Source" value={homeView?.confidence.sourceBlend ?? "--"} />
-            <MetricRow label="Storage" value={homeView?.confidence.storageMode ?? "--"} />
-            <MetricRow label="Persistence" value={homeView?.confidence.persistenceHealth ?? "--"} />
-          </View>
-        ) : (
-          <View style={themed($metricList)}>
-            <MetricRow label="Selected day" value={homeView?.selectedDateSubtitle ?? "--"} />
-            <MetricRow label="Daily Balance" value={homeView?.todayOverview.dailyBalance ?? "--"} />
-            <MetricRow label="Load Pressure" value={homeView?.todayOverview.loadPressure ?? "--"} />
-            <MetricRow label="Sleep Reserve" value={homeView?.todayOverview.sleepReserve ?? "--"} />
-            <MetricRow label="Confidence" value={homeView?.todayOverview.confidence ?? "--"} />
-          </View>
-        )}
-      </GlassCard>
-    </Screen>
+        <GlassCard style={{ gap: 12 }}>
+          {metric === "activities" ? (
+            <YStack gap={10}>
+              <MetricRow label="Stress" value={homeView?.activities.stress ?? "--"} />
+              <MetricRow label="SpO₂" value={homeView?.activities.spo2 ?? "--"} />
+              <MetricRow label="Skin Temp" value={homeView?.activities.skinTemp ?? "--"} />
+              <MetricRow label="Skin Temp Delta" value={homeView?.activities.skinTempDelta ?? "--"} />
+              <MetricRow label="Strain" value={homeView?.activities.strain ?? "--"} />
+              <MetricRow label="Recovery Index" value={homeView?.activities.recoveryIndex ?? "--"} />
+              <MetricRow label="Training Load" value={homeView?.activities.trainingLoad ?? "--"} />
+              <MetricRow label="Load Risk" value={homeView?.activities.trainingLoadRiskZone ?? "--"} />
+              <MetricRow label="SpO₂ Dips" value={homeView?.activities.spo2Dips ?? "--"} />
+            </YStack>
+          ) : metric === "readiness" || metric === "recovery" ? (
+            <YStack gap={10}>
+              <MetricRow label="Confidence" value={homeView?.confidence.confidence ?? "--"} />
+              <MetricRow label="Pipeline" value={homeView?.confidence.pipelineStatus ?? "--"} />
+              <MetricRow label="Source" value={homeView?.confidence.sourceBlend ?? "--"} />
+              <MetricRow label="Storage" value={homeView?.confidence.storageMode ?? "--"} />
+              <MetricRow label="Persistence" value={homeView?.confidence.persistenceHealth ?? "--"} />
+            </YStack>
+          ) : (
+            <YStack gap={10}>
+              <MetricRow label="Selected day" value={homeView?.selectedDateSubtitle ?? "--"} />
+              <MetricRow label="Daily Balance" value={homeView?.todayOverview.dailyBalance ?? "--"} />
+              <MetricRow label="Load Pressure" value={homeView?.todayOverview.loadPressure ?? "--"} />
+              <MetricRow label="Sleep Reserve" value={homeView?.todayOverview.sleepReserve ?? "--"} />
+              <MetricRow label="Confidence" value={homeView?.todayOverview.confidence ?? "--"} />
+            </YStack>
+          )}
+        </GlassCard>
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
 function MetricRow({ label, value }: { label: string; value: string }) {
-  const { themed } = useAppTheme()
   return (
-    <View style={themed($rowBetween)}>
-      <Text text={label} size="xs" style={themed($rowLabel)} />
-      <Text text={value} size="xs" weight="semiBold" style={themed($rowValue)} />
-    </View>
+    <XStack alignItems="center" justifyContent="space-between" gap={12}>
+      <Text text={label} size="xs" style={{ opacity: 0.7 }} />
+      <Text text={value} size="xs" weight="semiBold" style={{ flexShrink: 1, textAlign: "right" }} />
+    </XStack>
   )
 }
-
-const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  gap: spacing.md,
-  paddingHorizontal: spacing.lg,
-  paddingVertical: spacing.lg,
-})
-
-const $card: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  gap: spacing.sm,
-})
-
-const $title: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
-
-const $subtitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-})
-
-const $metricList: ThemedStyle<ViewStyle> = () => ({
-  gap: 10,
-})
-
-const $rowBetween: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flexDirection: "row",
-  justifyContent: "space-between",
-  gap: 12,
-})
-
-const $rowLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-})
-
-const $rowValue: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-  flexShrink: 1,
-  textAlign: "right",
-})
