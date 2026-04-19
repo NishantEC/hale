@@ -1,6 +1,8 @@
 import { createContext, FC, PropsWithChildren, useCallback, useContext, useMemo } from "react"
 import { useMMKVString } from "react-native-mmkv"
 
+import { wipeDatabaseForLogout } from "@/services/db/wipe"
+
 export type AuthContextType = {
   isAuthenticated: boolean
   authToken?: string
@@ -22,6 +24,8 @@ export const AuthProvider: FC<PropsWithChildren<AuthProviderProps>> = ({ childre
   const logout = useCallback(() => {
     setAuthToken(undefined)
     setAuthEmail("")
+    // Wipe local SQLite so re-login with a different user doesn't leak data.
+    void wipeDatabaseForLogout().catch((err) => console.warn("[auth] db wipe failed", err))
   }, [setAuthEmail, setAuthToken])
 
   const validationError = useMemo(() => {
