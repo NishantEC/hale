@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, Index, UpdateDateColumn } from 'typeorm';
 
 @Entity('sleep_stages')
 @Index(['userId', 'nightDate'])
@@ -38,4 +38,7 @@ export class SleepStage {
 
   @Column('int', { default: 1 })
   epochMinutes: number;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

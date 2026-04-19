@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, Index, UpdateDateColumn } from 'typeorm';
 
 @Entity('daily_scores')
 @Index(['userId', 'dayDate'])
@@ -29,4 +29,7 @@ export class DailyScore {
 
   @Column('text', { default: '' })
   detail: string;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

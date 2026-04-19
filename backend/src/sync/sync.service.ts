@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import { SleepDetection } from '../sleep/entities/sleep-detection.entity.js';
 import { SleepStage } from '../sleep/entities/sleep-stage.entity.js';
 import { NightFeature } from '../sleep/entities/night-feature.entity.js';
 import { DailyScore } from '../wellness/entities/daily-score.entity.js';
 import { DailyMetric } from '../wellness/entities/daily-metric.entity.js';
 import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
+import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 import { JournalEntry } from '../journal/journal-entry.entity.js';
 import { SleepPlan } from '../plans/sleep-plan.entity.js';
 import { BaselineProfile } from '../plans/baseline-profile.entity.js';
@@ -33,7 +34,58 @@ export class SyncService {
     private sleepPlanRepo: Repository<SleepPlan>,
     @InjectRepository(BaselineProfile)
     private baselineProfileRepo: Repository<BaselineProfile>,
+    @InjectRepository(ActivityDetection)
+    private activityDetectionRepo: Repository<ActivityDetection>,
   ) {}
+
+  // Per-table incremental pull keyed on updatedAt. The app's downlinkPuller
+  // walks this with since=lastSyncAt, reads updatedAt from each row, and
+  // advances its cursor to the max returned. hasMore signals when more rows
+  // exist past the limit so the caller can page.
+  async pullSince(
+    userId: string,
+    tableName: string,
+    sinceMs: number,
+    limit: number,
+  ): Promise<{ rows: any[]; hasMore: boolean }> {
+    const repo = this.pickRepo(tableName);
+    if (!repo) return { rows: [], hasMore: false };
+    const sinceDate = new Date(sinceMs);
+    const rows = await repo.find({
+      where: { userId, updatedAt: MoreThan(sinceDate) },
+      order: { updatedAt: 'ASC' },
+      take: limit + 1,
+    });
+    const hasMore = rows.length > limit;
+    return { rows: rows.slice(0, limit), hasMore };
+  }
+
+  private pickRepo(tableName: string): Repository<any> | null {
+    switch (tableName) {
+      case 'daily_metrics':
+        return this.dailyMetricRepo;
+      case 'daily_scores':
+        return this.dailyScoreRepo;
+      case 'sleep_detections':
+        return this.sleepDetectionRepo;
+      case 'sleep_stages':
+        return this.sleepStageRepo;
+      case 'night_features':
+        return this.nightFeatureRepo;
+      case 'signal_samples':
+        return this.signalSampleRepo;
+      case 'activity_detections':
+        return this.activityDetectionRepo;
+      case 'baseline_profile':
+        return this.baselineProfileRepo;
+      case 'sleep_plans':
+        return this.sleepPlanRepo;
+      case 'journal_entries':
+        return this.journalEntryRepo;
+      default:
+        return null;
+    }
+  }
 
   async push(userId: string, dto: PushSyncDto) {
     const counts: Record<string, number> = {};

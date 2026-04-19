@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, Index, UpdateDateColumn } from 'typeorm';
 
 @Entity('night_features')
 @Index(['userId', 'nightDate'])
@@ -41,4 +41,7 @@ export class NightFeature {
 
   @Column({ default: 'Unknown' })
   sourceBlend: string;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, Index, UpdateDateColumn } from 'typeorm';
 
 @Entity('sleep_detections')
 @Index(['userId', 'nightDate'])
@@ -35,4 +35,7 @@ export class SleepDetection {
 
   @Column('double precision', { default: 0 })
   confidence: number;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

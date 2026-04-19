@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { Entity, Column, PrimaryGeneratedColumn, Index, UpdateDateColumn } from 'typeorm';
 
 @Entity('signal_samples')
 @Index(['userId', 'timestamp'])
@@ -26,4 +26,7 @@ export class SignalSample {
 
   @Column('double precision', { nullable: true })
   qualityScore: number;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
