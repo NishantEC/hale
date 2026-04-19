@@ -19,6 +19,7 @@ if (__DEV__) {
 import "./utils/gestureHandler"
 
 import { useEffect, useState } from "react"
+import { AppState } from "react-native"
 import { useFonts } from "expo-font"
 import * as Linking from "expo-linking"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
@@ -30,7 +31,10 @@ import { DashboardProvider } from "./context/DashboardContext"
 import { initI18n } from "./i18n"
 import { AppNavigator } from "./navigators/AppNavigator"
 import { useNavigationPersistence } from "./navigators/navigationUtilities"
-import { runMigrations } from "./services/db"
+import { apiPost } from "./services/api/noopClient"
+import { openDatabase, runMigrations } from "./services/db"
+import { SyncService } from "./services/sync/SyncService"
+import { drainOnce } from "./services/sync/uplinkDrainer"
 import { ThemeProvider } from "./theme/context"
 import { customFontsToLoad } from "./theme/typography"
 import { loadDateFnsLocale } from "./utils/formatDate"
@@ -89,6 +93,31 @@ export function App() {
         setIsDbReady(true)
       })
   }, [])
+
+  useEffect(() => {
+    if (!isDbReady) return
+    const db = openDatabase()
+    const svc = new SyncService({
+      drainFn: () =>
+        drainOnce(db, {
+          post: (tableName, payloads) =>
+            apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
+          batchSize: 200,
+        }),
+      pullFn: async () => {
+        // Filled in by Phase 3 (downlinkPuller).
+      },
+      intervalMs: 15_000,
+    })
+    svc.start()
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void svc.refresh()
+    })
+    return () => {
+      svc.stop()
+      sub.remove()
+    }
+  }, [isDbReady])
 
   // Before we show the app, we have to wait for our state to be ready.
   // In the meantime, don't render anything. This will be the background
