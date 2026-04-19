@@ -36,6 +36,10 @@ import {
   HomeViewModel,
   ingestHistoricalRecords,
   PipelineResults,
+} from "../services/api/noopClient"
+import { openDatabase } from "../services/db"
+import { historicalRecordToRawRow, ingestBleRecords } from "../services/sync/bleIngest"
+import {
   runPipeline,
   setSessionToken,
   SeriesPoint,
@@ -765,10 +769,18 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       setLiveDeviceState((current) => ({ ...current, lastSyncAt }))
 
       if (records.length > 0) {
+        setSyncStage(`Writing ${records.length} records locally…`)
+        const db = openDatabase()
+        const mapped = records.map(historicalRecordToRawRow)
+        await ingestBleRecords(db, mapped)
+
         setSyncStage(`Uploading ${records.length} records…`)
-        const ingestResult = await ingestHistoricalRecords(records)
-        if ((ingestResult.sensorRecords ?? 0) <= 0) {
-          throw new Error("Backend stored 0 sensor records. Check the ingest path.")
+        // Best-effort: still POST for immediate-pipeline UX. Even if this
+        // fails, the drainer will catch up from the outbound_queue.
+        try {
+          await ingestHistoricalRecords(records)
+        } catch (postErr) {
+          console.warn("[sync] direct ingest failed — drainer will retry", postErr)
         }
 
         setSyncStage("Running pipeline…")
