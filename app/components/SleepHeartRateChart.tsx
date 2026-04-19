@@ -3,7 +3,6 @@ import { StyleSheet, View } from "react-native"
 import Svg, { Rect } from "react-native-svg"
 
 import { InlineLineChart } from "@/components/InlineLineChart"
-import { useAppTheme } from "@/theme/context"
 
 type Sample = {
   timestamp: string
@@ -36,7 +35,7 @@ export function SleepHeartRateChart({
   width,
   height = 168,
 }: SleepHeartRateChartProps) {
-  const { theme: { colors } } = useAppTheme()
+  const colors = { tint: "#C76542" }
 
   const overlays = useMemo(() => {
     if (epochs.length === 0) return []
