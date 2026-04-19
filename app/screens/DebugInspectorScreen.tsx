@@ -1,7 +1,7 @@
 import { FC, useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
+import { ActivityIndicator, ScrollView, TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 
-import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
 import {
@@ -84,11 +84,8 @@ export const DebugInspectorScreen: FC = () => {
   }, [refreshDashboard, refreshInspector, selectedDate])
 
   return (
-    <Screen
-      preset="scroll"
-      safeAreaEdges={["top", "bottom"]}
-      contentContainerStyle={themed($container)}
-    >
+    <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+      <ScrollView contentContainerStyle={themed($container)}>
       <View style={themed($header)}>
         <Text text="Sync Inspector" size="lg" weight="semiBold" />
         <Text
@@ -166,7 +163,8 @@ export const DebugInspectorScreen: FC = () => {
         />
         <KeyValue label="Epochs" value={`${sleepNight?.epochTimelineCount ?? 0}`} />
       </View>
-    </Screen>
+      </ScrollView>
+    </SafeAreaView>
   )
 }
 
