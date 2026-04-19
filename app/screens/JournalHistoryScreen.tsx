@@ -19,8 +19,14 @@ import {
   deleteJournalEntry,
   JournalEntryResponse,
 } from "@/services/api/noopClient"
-import { useAppTheme } from "@/theme/context"
-import { ThemedStyle } from "@/theme/types"
+const PALETTE = {
+  screenBackground: "#F0EDE8",
+  onSurface: "#000000",
+  surfaceElevated: "rgba(0,0,0,0.05)",
+  textMuted: "#978F8A",
+  text: "#191015",
+  iconDim: "rgba(0,0,0,0.38)",
+}
 
 function todayKey() {
   const now = new Date()
@@ -38,7 +44,8 @@ function formatTime(ts: string) {
 
 export function JournalHistoryScreen() {
   const navigation = useNavigation()
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = PALETTE
+  const themed = <T,>(s: T): T => s
   const [entries, setEntries] = useState<JournalEntryResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -188,88 +195,39 @@ export function JournalHistoryScreen() {
   )
 }
 
-const $container: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  flex: 1,
-  backgroundColor: colors.screenBackground,
-})
-
-const $header: ThemedStyle<ViewStyle> = () => ({
+const $container: ViewStyle = { flex: 1, backgroundColor: PALETTE.screenBackground }
+const $header: ViewStyle = {
   flexDirection: "row",
   alignItems: "center",
   gap: 12,
   paddingHorizontal: 20,
   paddingTop: 16,
   paddingBottom: 12,
-})
-
-const $headerTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.onSurface,
-})
-
-const $listContent: ThemedStyle<ViewStyle> = () => ({
-  paddingHorizontal: 20,
-  paddingTop: 12,
-  gap: 10,
-})
-
-const $entryRow: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  backgroundColor: colors.surfaceElevated,
+}
+const $headerTitle: TextStyle = { color: PALETTE.onSurface }
+const $listContent: ViewStyle = { paddingHorizontal: 20, paddingTop: 12, gap: 10 }
+const $entryRow: ViewStyle = {
+  backgroundColor: PALETTE.surfaceElevated,
   borderRadius: 16,
   paddingHorizontal: 16,
   paddingVertical: 14,
   flexDirection: "row",
   alignItems: "center",
   gap: 12,
-})
-
-const $iconCircle: ThemedStyle<ViewStyle> = () => ({
+}
+const $iconCircle: ViewStyle = {
   width: 36,
   height: 36,
   borderRadius: 18,
   alignItems: "center",
   justifyContent: "center",
-})
-
-const $entryMiddle: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-  gap: 4,
-})
-
-const $factorLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.onSurface,
-})
-
-const $dotNoteRow: ThemedStyle<ViewStyle> = () => ({
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 8,
-})
-
-const $notePreview: ThemedStyle<TextStyle> = ({ colors }) => ({
-  flex: 1,
-  color: colors.textMuted,
-})
-
-const $entryRight: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "flex-end",
-  gap: 6,
-})
-
-const $timeText: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-})
-
-const $emptyContainer: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  paddingTop: 60,
-})
-
-const $emptyTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-  marginTop: 12,
-})
-
-const $emptySubtitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-  marginTop: 4,
-})
+}
+const $entryMiddle: ViewStyle = { flex: 1, gap: 4 }
+const $factorLabel: TextStyle = { color: PALETTE.onSurface }
+const $dotNoteRow: ViewStyle = { flexDirection: "row", alignItems: "center", gap: 8 }
+const $notePreview: TextStyle = { flex: 1, color: PALETTE.textMuted }
+const $entryRight: ViewStyle = { alignItems: "flex-end", gap: 6 }
+const $timeText: TextStyle = { color: PALETTE.textMuted }
+const $emptyContainer: ViewStyle = { alignItems: "center", paddingTop: 60 }
+const $emptyTitle: TextStyle = { color: PALETTE.textMuted, marginTop: 12 }
+const $emptySubtitle: TextStyle = { color: PALETTE.textMuted, marginTop: 4 }
