@@ -22,8 +22,7 @@ import { SleepHeartRateChart } from "@/components/SleepHeartRateChart"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import type { ThemedStyle } from "@/theme/types"
-import { LOCAL_THEME, themed } from "@/utils/localTheme"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 const KEY_METRIC_LABELS = ["Efficiency", "Resting HR", "HRV (RMSSD)", "Interruptions"]
 const ADVANCED_METRIC_LABELS = [

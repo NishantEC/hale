@@ -17,8 +17,7 @@ import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Dialog } from "@/components/reactx/dialog"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import { LOCAL_THEME, themed } from "@/utils/localTheme"
-import type { ThemedStyle } from "@/theme/types"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 export const DeviceSettingsScreen: FC = () => {
   const colors = LOCAL_THEME.colors

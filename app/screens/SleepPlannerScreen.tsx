@@ -13,8 +13,7 @@ import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
 import { SleepViewModel } from "@/services/api/noopClient"
-import type { ThemedStyle } from "@/theme/types"
-import { LOCAL_THEME, themed } from "@/utils/localTheme"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 function wrapMinutes(minutes: number) {
   const fullDay = 24 * 60

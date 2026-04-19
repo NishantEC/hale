@@ -93,3 +93,6 @@ export const LOCAL_THEME = {
 
 export const themed: any = (styleOrFn: any) =>
   typeof styleOrFn === "function" ? styleOrFn(LOCAL_THEME) : styleOrFn
+
+export type ThemedStyle<T> = (theme: typeof LOCAL_THEME) => T
+export type ThemedStyleArray<T> = Array<T | ThemedStyle<T>>
