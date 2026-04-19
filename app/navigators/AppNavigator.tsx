@@ -9,7 +9,6 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack"
 
 import Config from "@/config"
 import { useAuth } from "@/context/AuthContext"
-import { ErrorBoundary } from "@/screens/ErrorScreen/ErrorBoundary"
 import { DeviceSettingsScreen } from "@/screens/DeviceSettingsScreen"
 import { DebugInspectorScreen } from "@/screens/DebugInspectorScreen"
 import { HomeDetailsScreen } from "@/screens/HomeDetailsScreen"
@@ -100,9 +99,7 @@ export const AppNavigator = (props: NavigationProps) => {
 
   return (
     <NavigationContainer ref={navigationRef} theme={navigationTheme} {...props}>
-      <ErrorBoundary catchErrors={Config.catchErrors}>
-        <AppStack />
-      </ErrorBoundary>
+      <AppStack />
     </NavigationContainer>
   )
 }
