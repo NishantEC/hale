@@ -18,7 +18,7 @@ import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, { FadeIn, FadeInRight, FadeOut, FadeOutLeft, useSharedValue, withTiming, Easing } from "react-native-reanimated"
 
-import { Screen } from "@/components/Screen"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { Text } from "@/components/Text"
 import { CircularProgress } from "@/components/reactx/circular-progress"
 import { Glow } from "@/components/reactx/glow"
@@ -26,8 +26,7 @@ import { RollingCounter } from "@/components/reactx/rolling-counter"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
 import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopClient"
 
@@ -73,7 +72,7 @@ function formatSelectedDateTitle(dateKey: string) {
 }
 
 export const HomeScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   const navigation = useNavigation<any>()
   const {
     selectedDate,
@@ -221,22 +220,18 @@ export const HomeScreen: FC = () => {
             <Ellipse cx="270" cy="270" rx="270" ry="270" fill="url(#glowSecondary)" />
           </Svg>
         </View>
-        <Screen
-          backgroundColor="transparent"
-          preset="scroll"
-          safeAreaEdges={["top"]}
-          contentContainerStyle={themed($container)}
-          ScrollViewProps={{
-            refreshControl: (
+        <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+          <ScrollView
+            contentContainerStyle={themed($container)}
+            refreshControl={
               <RefreshControl
                 refreshing={isRefreshing}
                 onRefresh={refreshDashboard}
                 tintColor={colors.tint}
               />
-            ),
-            scrollEnabled: !isHorizontalDaySwipeActive,
-          }}
-        >
+            }
+            scrollEnabled={!isHorizontalDaySwipeActive}
+          >
           <View style={themed($topStrip)}>
             <DateSwitcher
               title={selectedDateTitle}
@@ -325,7 +320,8 @@ export const HomeScreen: FC = () => {
               </Animated.View>
             )}
           </View>
-        </Screen>
+          </ScrollView>
+        </SafeAreaView>
       </View>
     </PanGestureHandler>
   )
@@ -340,7 +336,7 @@ function DateSwitcher({
   onPrevious: () => void
   onNext: () => void
 }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
 
   return (
     <View style={themed($dateSwitcher)}>
@@ -373,7 +369,7 @@ function DevicePill({
   isConnected: boolean
   onPress: () => void
 }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
 
   return (
     <TouchableOpacity style={themed($devicePill)} onPress={onPress}>
@@ -393,7 +389,7 @@ function DevicePill({
 }
 
 function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
-  const { themed, theme } = useAppTheme()
+  const theme = LOCAL_THEME
 
   return (
     <Shimmer
@@ -406,7 +402,7 @@ function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
 }
 
 function HomeDaySkeleton() {
-  const { themed } = useAppTheme()
+  // themed helper is imported from @/utils/localTheme
 
   return (
     <View style={themed($homeDaySkeleton)}>
@@ -443,7 +439,8 @@ function PrimaryMetricsList({
     onPress: () => void
   }>
 }) {
-  const { themed, theme: { colors, isDark } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
+  const isDark = LOCAL_THEME.isDark
 
   const recovery = items.find((i) => i.id === "recovery")
   const pills = items.filter((i) => i.id !== "recovery")
@@ -564,7 +561,7 @@ function chipDetail(factor: (typeof JOURNAL_FACTORS)[number] | undefined, intens
 }
 
 function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   if (entries.length === 0) return null
 
   return (
@@ -618,7 +615,7 @@ function HomeActionRow({
   icon: keyof typeof Ionicons.glyphMap
   onPress: () => void
 }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
 
   return (
     <TouchableOpacity activeOpacity={0.9} style={themed($actionRow)} onPress={onPress}>

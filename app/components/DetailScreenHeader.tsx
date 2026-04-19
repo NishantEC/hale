@@ -2,11 +2,8 @@ import { FC, ReactNode } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import { router } from "expo-router"
 import { useNavigation } from "@react-navigation/native"
-import { TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
-
-import { Text } from "@/components/Text"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { TouchableOpacity } from "react-native"
+import { XStack, YStack, Paragraph } from "./tamagui-primitives"
 
 type DetailScreenHeaderProps = {
   title: string
@@ -17,7 +14,6 @@ type DetailScreenHeaderProps = {
 
 export const DetailScreenHeader: FC<DetailScreenHeaderProps> = ({ title, subtitle, rightAction }) => {
   const navigation = useNavigation<any>()
-  const { themed, theme: { colors } } = useAppTheme()
 
   const handleBack = () => {
     if (navigation.canGoBack?.()) {
@@ -28,52 +24,30 @@ export const DetailScreenHeader: FC<DetailScreenHeaderProps> = ({ title, subtitl
   }
 
   return (
-    <View style={themed($container)}>
-      <TouchableOpacity activeOpacity={0.85} onPress={handleBack} style={themed($backButton)}>
-        <Ionicons name="chevron-back" size={22} color={colors.text} />
+    <XStack alignItems="center" justifyContent="space-between" minHeight={56} marginBottom={12}>
+      <TouchableOpacity activeOpacity={0.85} onPress={handleBack}>
+        <XStack
+          alignItems="center"
+          justifyContent="center"
+          width={36}
+          height={36}
+          borderRadius={18}
+          borderWidth={1}
+          backgroundColor="rgba(255,255,255,0.04)"
+          borderColor="rgba(255,255,255,0.08)"
+        >
+          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+        </XStack>
       </TouchableOpacity>
-      <View style={themed($copyBlock)}>
-        <Text text={title} size="sm" weight="semiBold" style={themed($title)} />
-        {subtitle ? <Text text={subtitle} size="xs" style={themed($subtitle)} /> : null}
-      </View>
-      {rightAction ?? <View style={themed($spacer)} />}
-    </View>
+      <YStack flex={1} alignItems="center" gap={2}>
+        <Paragraph fontWeight="600">{title}</Paragraph>
+        {subtitle ? (
+          <Paragraph fontSize={12} color="rgba(255,255,255,0.6)">
+            {subtitle}
+          </Paragraph>
+        ) : null}
+      </YStack>
+      {rightAction ?? <XStack width={36} />}
+    </XStack>
   )
 }
-
-const $container: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flexDirection: "row",
-  justifyContent: "space-between",
-  minHeight: 56,
-  marginBottom: 12,
-})
-
-const $backButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  backgroundColor: colors.surfaceSubtle,
-  borderColor: colors.surfaceCardBorder,
-  borderRadius: 18,
-  borderWidth: 1,
-  height: 36,
-  justifyContent: "center",
-  width: 36,
-})
-
-const $copyBlock: ThemedStyle<ViewStyle> = () => ({
-  flex: 1,
-  gap: 2,
-  alignItems: "center",
-})
-
-const $title: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
-
-const $subtitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-})
-
-const $spacer: ThemedStyle<ViewStyle> = () => ({
-  width: 36,
-})

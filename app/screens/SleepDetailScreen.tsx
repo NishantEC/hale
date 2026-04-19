@@ -3,12 +3,14 @@ import { Ionicons } from "@expo/vector-icons"
 import {
   LayoutAnimation,
   RefreshControl,
+  ScrollView,
   TextStyle,
   TouchableOpacity,
   View,
   ViewStyle,
   useWindowDimensions,
 } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { useRoute } from "@react-navigation/native"
 import { router } from "expo-router"
 
@@ -16,13 +18,11 @@ import { BarSeriesChart } from "@/components/BarSeriesChart"
 import { DetailScreenHeader } from "@/components/DetailScreenHeader"
 import { HypnogramChart } from "@/components/HypnogramChart"
 import { InlineLineChart } from "@/components/InlineLineChart"
-import { Screen } from "@/components/Screen"
 import { SleepHeartRateChart } from "@/components/SleepHeartRateChart"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 const KEY_METRIC_LABELS = ["Efficiency", "Resting HR", "HRV (RMSSD)", "Interruptions"]
 const ADVANCED_METRIC_LABELS = [
@@ -44,7 +44,7 @@ function scoreQuality(score: number): string {
 }
 
 export const SleepDetailScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   const route = useRoute<any>()
   const { width } = useWindowDimensions()
   const {
@@ -113,17 +113,13 @@ export const SleepDetailScreen: FC = () => {
   if (!sleepView || sleepView.emptyState.isEmpty) {
     return (
       <View style={themed($screenWrap)}>
-        <Screen
-          backgroundColor="transparent"
-          preset="scroll"
-          safeAreaEdges={["top"]}
-          contentContainerStyle={themed($container)}
-          ScrollViewProps={{
-            refreshControl: (
+        <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+          <ScrollView
+            contentContainerStyle={themed($container)}
+            refreshControl={
               <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={colors.tint} />
-            ),
-          }}
-        >
+            }
+          >
           {NavBar}
           <View style={themed($emptyState)}>
             <Text
@@ -138,7 +134,8 @@ export const SleepDetailScreen: FC = () => {
               style={themed($mutedCenter)}
             />
           </View>
-        </Screen>
+          </ScrollView>
+        </SafeAreaView>
       </View>
     )
   }
@@ -157,17 +154,13 @@ export const SleepDetailScreen: FC = () => {
 
   return (
     <View style={themed($screenWrap)}>
-      <Screen
-        backgroundColor="transparent"
-        preset="scroll"
-        safeAreaEdges={["top"]}
-        contentContainerStyle={themed($container)}
-        ScrollViewProps={{
-          refreshControl: (
+      <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+        <ScrollView
+          contentContainerStyle={themed($container)}
+          refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={colors.tint} />
-          ),
-        }}
-      >
+          }
+        >
         {/* 1. Nav Bar — [back]  [date centered]  [alarm icon] */}
         {NavBar}
 
@@ -311,7 +304,8 @@ export const SleepDetailScreen: FC = () => {
           </View>
         )}
 
-      </Screen>
+        </ScrollView>
+      </SafeAreaView>
     </View>
   )
 }

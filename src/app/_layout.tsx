@@ -7,24 +7,21 @@ import "@/utils/gestureHandler"
 import { useEffect, useState } from "react"
 import { ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
 import { Stack } from "expo-router"
-import { useFonts } from "expo-font"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { KeyboardProvider } from "react-native-keyboard-controller"
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context"
+import { TamaguiProvider } from "tamagui"
 
+import tamaguiConfig from "../../tamagui.config"
 import { AuthProvider } from "@/context/AuthContext"
 import { ToastProviderWithViewport } from "@/components/reactx/toast"
 import { DashboardProvider } from "@/context/DashboardContext"
 import { initI18n } from "@/i18n"
-import { ThemeProvider, useAppTheme } from "@/theme/context"
-import { customFontsToLoad } from "@/theme/typography"
+import { useNavigationTheme } from "@/navigators/useNavigationTheme"
 import { loadDateFnsLocale } from "@/utils/formatDate"
 
 function RootStackLayout() {
-  const {
-    navigationTheme,
-    theme: { colors },
-  } = useAppTheme()
+  const navigationTheme = useNavigationTheme()
 
   return (
     <NavigationThemeProvider value={navigationTheme}>
@@ -32,7 +29,7 @@ function RootStackLayout() {
         screenOptions={{
           headerShown: false,
           contentStyle: {
-            backgroundColor: colors.background,
+            backgroundColor: "#F0EDE8",
           },
         }}
       />
@@ -41,7 +38,6 @@ function RootStackLayout() {
 }
 
 export default function RootLayout() {
-  const [areFontsLoaded, fontLoadError] = useFonts(customFontsToLoad)
   const [isI18nInitialized, setIsI18nInitialized] = useState(false)
 
   useEffect(() => {
@@ -50,24 +46,24 @@ export default function RootLayout() {
       .then(() => loadDateFnsLocale())
   }, [])
 
-  if (!isI18nInitialized || (!areFontsLoaded && !fontLoadError)) {
+  if (!isI18nInitialized) {
     return null
   }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <KeyboardProvider>
-          <AuthProvider>
-            <DashboardProvider>
-              <ThemeProvider>
+        <TamaguiProvider config={tamaguiConfig} defaultTheme="dark">
+          <KeyboardProvider>
+            <AuthProvider>
+              <DashboardProvider>
                 <ToastProviderWithViewport>
                   <RootStackLayout />
                 </ToastProviderWithViewport>
-              </ThemeProvider>
-            </DashboardProvider>
-          </AuthProvider>
-        </KeyboardProvider>
+              </DashboardProvider>
+            </AuthProvider>
+          </KeyboardProvider>
+        </TamaguiProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )

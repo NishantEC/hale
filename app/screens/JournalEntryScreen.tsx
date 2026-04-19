@@ -18,15 +18,26 @@ import { JOURNAL_FACTORS, FactorDefinition } from "@/constants/journalFactors"
 import { createJournalEntry } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import { insertJournalEntry } from "@/services/db/repositories/journalEntry"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+
+const PALETTE = {
+  screenBackground: "#F0EDE8",
+  surfaceCardBorder: "rgba(0,0,0,0.06)",
+  surfaceElevated: "rgba(0,0,0,0.05)",
+  surfaceSubtle: "rgba(0,0,0,0.03)",
+  onSurface: "#000000",
+  text: "#191015",
+  textDim: "#564E4A",
+  textMuted: "#978F8A",
+  error: "#C03403",
+}
 
 const SCREEN_WIDTH = Dimensions.get("window").width
 const TILE_WIDTH = (SCREEN_WIDTH - 40 - 24) / 3
 
 export function JournalEntryScreen() {
   const navigation = useNavigation()
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = PALETTE
+  const themed = <T,>(s: T): T => s
 
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [value, setValue] = useState<number | null>(null)
@@ -191,7 +202,8 @@ function FactorInput({
   value: number | null
   onChange: (v: number) => void
 }) {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = PALETTE
+  const themed = <T,>(s: T): T => s
   const { input, color } = factor
 
   if (input.kind === "toggle") {
@@ -280,10 +292,10 @@ function FactorInput({
 
 // ── Themed styles (depend on theme colors) ──────────────────────────
 
-const $container: ThemedStyle<ViewStyle> = ({ colors }) => ({
+const $container: ViewStyle = {
   flex: 1,
-  backgroundColor: colors.screenBackground,
-})
+  backgroundColor: PALETTE.screenBackground,
+}
 
 const $header: ViewStyle = {
   flexDirection: "row",
@@ -309,15 +321,15 @@ const $factorGrid: ViewStyle = {
   gap: 12,
 }
 
-const $factorTile: ThemedStyle<ViewStyle> = ({ colors }) => ({
+const $factorTile: ViewStyle = {
   width: TILE_WIDTH,
   aspectRatio: 1,
-  backgroundColor: colors.surfaceElevated,
+  backgroundColor: PALETTE.surfaceElevated,
   borderRadius: 16,
   alignItems: "center",
   justifyContent: "center",
   gap: 8,
-})
+}
 
 const $inputSection: ViewStyle = {
   marginTop: 28,
@@ -344,11 +356,11 @@ const $quantityChip: ViewStyle = {
   justifyContent: "center",
 }
 
-const $quantityChipUnselected: ThemedStyle<ViewStyle> = ({ colors }) => ({
+const $quantityChipUnselected: ViewStyle = {
   backgroundColor: "transparent",
   borderWidth: 2,
-  borderColor: colors.surfaceCardBorder,
-})
+  borderColor: PALETTE.surfaceCardBorder,
+}
 
 const $scaleRow: ViewStyle = {
   flexDirection: "row",
@@ -362,18 +374,18 @@ const $scaleChip: ViewStyle = {
   alignItems: "center",
 }
 
-const $scaleChipUnselected: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  backgroundColor: colors.surfaceElevated,
-})
+const $scaleChipUnselected: ViewStyle = {
+  backgroundColor: PALETTE.surfaceElevated,
+}
 
-const $noteInput: ThemedStyle<TextStyle> = ({ colors }) => ({
+const $noteInput: TextStyle = {
   marginTop: 24,
-  backgroundColor: colors.surfaceSubtle,
+  backgroundColor: PALETTE.surfaceSubtle,
   borderRadius: 14,
   padding: 14,
-  color: colors.onSurface,
+  color: PALETTE.onSurface,
   fontSize: 15,
-})
+}
 
 const $saveButton: ViewStyle = {
   marginTop: 28,
@@ -382,7 +394,7 @@ const $saveButton: ViewStyle = {
   alignItems: "center",
 }
 
-const $saveButtonDisabled: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  backgroundColor: colors.surfaceElevated,
+const $saveButtonDisabled: ViewStyle = {
+  backgroundColor: PALETTE.surfaceElevated,
   opacity: 0.4,
-})
+}

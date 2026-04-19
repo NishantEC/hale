@@ -20,11 +20,13 @@ import "./utils/gestureHandler"
 
 import { useEffect, useState } from "react"
 import { AppState } from "react-native"
-import { useFonts } from "expo-font"
 import * as Linking from "expo-linking"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { KeyboardProvider } from "react-native-keyboard-controller"
 import { initialWindowMetrics, SafeAreaProvider } from "react-native-safe-area-context"
+import { TamaguiProvider } from "tamagui"
+
+import tamaguiConfig from "../tamagui.config"
 
 import { AuthProvider } from "./context/AuthContext"
 import { DashboardProvider } from "./context/DashboardContext"
@@ -43,8 +45,6 @@ import {
   SETTING_RAW_RETENTION_DAYS,
   getSetting,
 } from "./services/db/repositories/settings"
-import { ThemeProvider } from "./theme/context"
-import { customFontsToLoad } from "./theme/typography"
 import { loadDateFnsLocale } from "./utils/formatDate"
 import * as storage from "./utils/storage"
 
@@ -58,16 +58,6 @@ const config = {
       path: "",
     },
     Welcome: "welcome",
-    Demo: {
-      screens: {
-        DemoShowroom: {
-          path: "showroom/:queryIndex?/:itemIndex?",
-        },
-        DemoDebug: "debug",
-        DemoPodcastList: "podcast",
-        DemoCommunity: "community",
-      },
-    },
   },
 }
 
@@ -83,7 +73,6 @@ export function App() {
     isRestored: isNavigationStateRestored,
   } = useNavigationPersistence(storage, NAVIGATION_PERSISTENCE_KEY)
 
-  const [areFontsLoaded, fontLoadError] = useFonts(customFontsToLoad)
   const [isI18nInitialized, setIsI18nInitialized] = useState(false)
   const [isDbReady, setIsDbReady] = useState(false)
 
@@ -166,12 +155,7 @@ export function App() {
   // In iOS: application:didFinishLaunchingWithOptions:
   // In Android: https://stackoverflow.com/a/45838109/204044
   // You can replace with your own loading component if you wish.
-  if (
-    !isNavigationStateRestored ||
-    !isI18nInitialized ||
-    !isDbReady ||
-    (!areFontsLoaded && !fontLoadError)
-  ) {
+  if (!isNavigationStateRestored || !isI18nInitialized || !isDbReady) {
     return null
   }
 
@@ -184,19 +168,19 @@ export function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <KeyboardProvider>
-          <AuthProvider>
-            <DashboardProvider>
-              <ThemeProvider>
+        <TamaguiProvider config={tamaguiConfig} defaultTheme="dark">
+          <KeyboardProvider>
+            <AuthProvider>
+              <DashboardProvider>
                 <AppNavigator
                   linking={linking}
                   initialState={initialNavigationState}
                   onStateChange={onNavigationStateChange}
                 />
-              </ThemeProvider>
-            </DashboardProvider>
-          </AuthProvider>
-        </KeyboardProvider>
+              </DashboardProvider>
+            </AuthProvider>
+          </KeyboardProvider>
+        </TamaguiProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )

@@ -1,8 +1,6 @@
 import { PropsWithChildren } from "react"
-import { TouchableOpacity, View, ViewStyle, type StyleProp } from "react-native"
-
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { TouchableOpacity, ViewStyle, type StyleProp } from "react-native"
+import { YStack } from "./tamagui-primitives"
 
 type GlassCardProps = PropsWithChildren<{
   style?: StyleProp<ViewStyle>
@@ -11,8 +9,19 @@ type GlassCardProps = PropsWithChildren<{
 }>
 
 export function GlassCard({ children, style, onPress, disabled }: GlassCardProps) {
-  const { themed } = useAppTheme()
-  const content = <View style={[themed($card), style]}>{children}</View>
+  const content = (
+    <YStack
+      backgroundColor="rgba(255,255,255,0.05)"
+      borderColor="rgba(255,255,255,0.08)"
+      borderWidth={1}
+      borderRadius={20}
+      padding={16}
+      overflow="hidden"
+      style={style}
+    >
+      {children}
+    </YStack>
+  )
 
   if (!onPress) return content
 
@@ -22,12 +31,3 @@ export function GlassCard({ children, style, onPress, disabled }: GlassCardProps
     </TouchableOpacity>
   )
 }
-
-const $card: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
-  backgroundColor: colors.surfaceCard,
-  borderRadius: 20,
-  padding: spacing.md,
-  borderWidth: 1,
-  borderColor: colors.surfaceCardBorder,
-  overflow: "hidden",
-})

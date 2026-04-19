@@ -10,10 +10,10 @@ import {
 
 import { isRTL } from "@/i18n"
 import { translate } from "@/i18n/translate"
-import { useAppTheme } from "@/theme/context"
-import { $styles } from "@/theme/styles"
-import type { ThemedStyle } from "@/theme/types"
 import { ExtendedEdge, useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
+
+const HEADER_COLORS = { background: "#F0EDE8", tint: "#C76542" }
+const $rowFlex: ViewStyle = { flexDirection: "row" }
 
 import { IconTypes, PressableIcon } from "./Icon"
 import { Text, TextProps } from "./Text"
@@ -150,11 +150,7 @@ interface HeaderActionProps {
  */
 export function Header(props: HeaderProps) {
   const {
-    theme: { colors },
-    themed,
-  } = useAppTheme()
-  const {
-    backgroundColor = colors.background,
+    backgroundColor = HEADER_COLORS.background,
     LeftActionComponent,
     leftIcon,
     leftIconColor,
@@ -186,7 +182,7 @@ export function Header(props: HeaderProps) {
 
   return (
     <View style={[$container, $containerInsets, { backgroundColor }, $containerStyleOverride]}>
-      <View style={[$styles.row, $wrapper, $styleOverride]}>
+      <View style={[$rowFlex, $wrapper, $styleOverride]}>
         <HeaderAction
           tx={leftTx}
           text={leftText}
@@ -202,7 +198,7 @@ export function Header(props: HeaderProps) {
           <View
             style={[
               $titleWrapperPointerEvents,
-              titleMode === "center" && themed($titleWrapperCenter),
+              titleMode === "center" && $titleWrapperCenter,
               titleMode === "flex" && $titleWrapperFlex,
               $titleContainerStyleOverride,
             ]}
@@ -237,7 +233,6 @@ export function Header(props: HeaderProps) {
  */
 function HeaderAction(props: HeaderActionProps) {
   const { backgroundColor, icon, text, tx, txOptions, onPress, ActionComponent, iconColor } = props
-  const { themed } = useAppTheme()
 
   const content = tx ? translate(tx, txOptions) : text
 
@@ -246,12 +241,12 @@ function HeaderAction(props: HeaderActionProps) {
   if (content) {
     return (
       <TouchableOpacity
-        style={themed([$actionTextContainer, { backgroundColor }])}
+        style={[$actionTextContainer, { backgroundColor }]}
         onPress={onPress}
         disabled={!onPress}
         activeOpacity={0.8}
       >
-        <Text weight="medium" size="md" text={content} style={themed($actionText)} />
+        <Text weight="medium" size="md" text={content} style={$actionText} />
       </TouchableOpacity>
     )
   }
@@ -263,7 +258,7 @@ function HeaderAction(props: HeaderActionProps) {
         icon={icon}
         color={iconColor}
         onPress={onPress}
-        containerStyle={themed([$actionIconContainer, { backgroundColor }])}
+        containerStyle={[$actionIconContainer, { backgroundColor }]}
         style={isRTL ? { transform: [{ rotate: "180deg" }] } : {}}
       />
     )
@@ -286,27 +281,25 @@ const $title: TextStyle = {
   textAlign: "center",
 }
 
-const $actionTextContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+const $actionTextContainer: ViewStyle = {
   flexGrow: 0,
   alignItems: "center",
   justifyContent: "center",
   height: "100%",
-  paddingHorizontal: spacing.md,
+  paddingHorizontal: 16,
   zIndex: 2,
-})
+}
 
-const $actionText: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.tint,
-})
+const $actionText: TextStyle = { color: HEADER_COLORS.tint }
 
-const $actionIconContainer: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+const $actionIconContainer: ViewStyle = {
   flexGrow: 0,
   alignItems: "center",
   justifyContent: "center",
   height: "100%",
-  paddingHorizontal: spacing.md,
+  paddingHorizontal: 16,
   zIndex: 2,
-})
+}
 
 const $actionFillerContainer: ViewStyle = {
   width: 16,
@@ -316,15 +309,15 @@ const $titleWrapperPointerEvents: ViewStyle = {
   pointerEvents: "none",
 }
 
-const $titleWrapperCenter: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+const $titleWrapperCenter: ViewStyle = {
   alignItems: "center",
   justifyContent: "center",
   height: "100%",
   width: "100%",
   position: "absolute",
-  paddingHorizontal: spacing.xxl,
+  paddingHorizontal: 48,
   zIndex: 1,
-})
+}
 
 const $titleWrapperFlex: ViewStyle = {
   justifyContent: "center",

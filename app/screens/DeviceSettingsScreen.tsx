@@ -9,19 +9,18 @@ import {
   View,
   ViewStyle,
 } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 
 import { DetailScreenHeader } from "@/components/DetailScreenHeader"
-import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Dialog } from "@/components/reactx/dialog"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 export const DeviceSettingsScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = LOCAL_THEME.colors
   const {
     liveDeviceState,
     scannedDevices,
@@ -106,11 +105,7 @@ export const DeviceSettingsScreen: FC = () => {
   }, [disconnect, isConnected, scan, scannedDevices.length])
 
   return (
-    <Screen
-      preset="fixed"
-      safeAreaEdges={["top", "bottom"]}
-      contentContainerStyle={themed($container)}
-    >
+    <SafeAreaView style={themed($container)} edges={["top", "bottom"]}>
       <DetailScreenHeader title="Device Settings" />
 
       {/* ─── Hero: big watch + battery ─── */}
@@ -270,7 +265,7 @@ export const DeviceSettingsScreen: FC = () => {
               </TouchableOpacity>
             </Dialog.Trigger>
             <Dialog.Content onClose={() => {}}>
-              <Dialog.Backdrop backgroundColor={colors.palette.overlay50}>
+              <Dialog.Backdrop backgroundColor={colors.overlay50}>
                 <View style={themed($dialogContent)}>
                   <Text text="Unpair Device" size="lg" weight="bold" style={themed($infoValue)} />
                   <Text text="Are you sure? You'll need to re-pair the strap to sync again." size="xs" style={themed($dialogBody)} />
@@ -305,7 +300,7 @@ export const DeviceSettingsScreen: FC = () => {
           <Text text="Diagnostics" size="xxs" style={themed($debugText)} />
         </TouchableOpacity>
       </View>
-    </Screen>
+    </SafeAreaView>
   )
 }
 

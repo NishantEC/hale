@@ -1,10 +1,8 @@
-import { TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
+import { TouchableOpacity, View } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 import Svg, { Circle } from "react-native-svg"
 
-import { Text } from "@/components/Text"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+import { XStack, YStack, Paragraph } from "./tamagui-primitives"
 
 type MetricRingProps = {
   value: string
@@ -25,8 +23,8 @@ export function MetricRing({
   size = "sm",
   flexWeight = 1,
 }: MetricRingProps) {
-  const { themed, theme: { colors } } = useAppTheme()
-  const ringAccent = accent ?? colors.tint
+  const ringAccent = accent ?? "#7C3AED"
+  const trackColor = "rgba(255,255,255,0.08)"
   const clampedProgress = Math.max(0.02, Math.min(1, progress || 0))
   const ringSize = size === "lg" ? 120 : 104
   const strokeWidth = size === "lg" ? 9 : 8
@@ -38,78 +36,58 @@ export function MetricRing({
       activeOpacity={0.9}
       disabled={!onPress}
       onPress={onPress}
-      style={[themed($container), { flex: flexWeight }]}
+      style={{ flex: flexWeight }}
     >
-      <View style={[themed($ringWrap), { height: ringSize, width: ringSize }]}>
-        <Svg width={ringSize} height={ringSize}>
-          <Circle
-            cx={ringSize / 2}
-            cy={ringSize / 2}
-            r={radius}
-            stroke={colors.surfaceElevated}
-            strokeWidth={strokeWidth}
-            fill="transparent"
-          />
-          <Circle
-            cx={ringSize / 2}
-            cy={ringSize / 2}
-            r={radius}
-            stroke={clampedProgress > 0.021 ? ringAccent : colors.surfaceElevated}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            fill="transparent"
-            strokeDasharray={`${circumference} ${circumference}`}
-            strokeDashoffset={circumference * (1 - clampedProgress)}
-            origin={`${ringSize / 2}, ${ringSize / 2}`}
-            rotation="-90"
-          />
-        </Svg>
-
-        <View style={themed($valueWrap)}>
-          <Text
-            text={value}
-            size={size === "lg" ? "xl" : "lg"}
-            weight="bold"
-            style={themed($valueText)}
-          />
+      <YStack alignItems="center" gap={16}>
+        <View
+          style={{
+            height: ringSize,
+            width: ringSize,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Svg width={ringSize} height={ringSize}>
+            <Circle
+              cx={ringSize / 2}
+              cy={ringSize / 2}
+              r={radius}
+              stroke={trackColor}
+              strokeWidth={strokeWidth}
+              fill="transparent"
+            />
+            <Circle
+              cx={ringSize / 2}
+              cy={ringSize / 2}
+              r={radius}
+              stroke={clampedProgress > 0.021 ? ringAccent : trackColor}
+              strokeWidth={strokeWidth}
+              strokeLinecap="round"
+              fill="transparent"
+              strokeDasharray={`${circumference} ${circumference}`}
+              strokeDashoffset={circumference * (1 - clampedProgress)}
+              origin={`${ringSize / 2}, ${ringSize / 2}`}
+              rotation="-90"
+            />
+          </Svg>
+          <View
+            style={{
+              position: "absolute",
+              inset: 0,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Paragraph fontSize={size === "lg" ? 22 : 18} fontWeight="700">
+              {value}
+            </Paragraph>
+          </View>
         </View>
-      </View>
-
-      <View style={themed($labelRow)}>
-        <Text text={label} weight="semiBold" size="md" style={themed($label)} />
-        <Ionicons name="chevron-forward" size={14} color={colors.iconDefault} />
-      </View>
+        <XStack alignItems="center" gap={6}>
+          <Paragraph fontWeight="600">{label}</Paragraph>
+          <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.72)" />
+        </XStack>
+      </YStack>
     </TouchableOpacity>
   )
 }
-
-const $container: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  gap: 16,
-})
-
-const $ringWrap: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  justifyContent: "center",
-})
-
-const $valueWrap: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  inset: 0,
-  justifyContent: "center",
-  position: "absolute",
-})
-
-const $valueText: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
-
-const $labelRow: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flexDirection: "row",
-  gap: 6,
-})
-
-const $label: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})

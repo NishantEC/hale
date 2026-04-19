@@ -14,7 +14,15 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 
 import { Text } from "@/components/Text"
-import { useAppTheme } from "@/theme/context"
+
+// Inline color palette — was previously sourced from the theme context.
+const HYPNOGRAM_COLORS = {
+  text: "#FFFFFF",
+  textDim: "rgba(255,255,255,0.72)",
+  textMuted: "rgba(255,255,255,0.5)",
+  cardBase: "rgba(255,255,255,0.92)",
+  surfaceCardBorder: "rgba(0,0,0,0.06)",
+}
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -155,7 +163,7 @@ const CursorOverlay = React.forwardRef<
   { setData: (d: CursorData) => void },
   CursorOverlayProps
 >(({ panX, opacity, minPanX, maxPanX, chartWidth }, ref) => {
-  const { theme: { colors } } = useAppTheme()
+  const colors = HYPNOGRAM_COLORS
   const [data, setData] = useState<CursorData | null>(null)
   const cardLayout = useSharedValue({ width: 0, height: 0 })
 
@@ -220,7 +228,7 @@ const CursorOverlay = React.forwardRef<
 // ── Main component ──────────────────────────────────────────
 
 export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: HypnogramChartProps) {
-  const { theme: { colors } } = useAppTheme()
+  const colors = HYPNOGRAM_COLORS
   const chartWidth = width
 
   const segments = useMemo(() => epochsToSegments(epochs), [epochs])
