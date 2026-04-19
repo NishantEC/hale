@@ -38,6 +38,7 @@ import {
   PipelineResults,
 } from "../services/api/noopClient"
 import { openDatabase } from "../services/db"
+import { getViewCache, setViewCache } from "../services/db/repositories/viewCache"
 import { historicalRecordToRawRow, ingestBleRecords } from "../services/sync/bleIngest"
 import {
   runPipeline,
@@ -649,6 +650,20 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       setIsRefreshing(true)
     }
     setError(null)
+
+    // 1) Instant render from local cache if available.
+    try {
+      const db = openDatabase()
+      const [cachedHome, cachedSleep] = await Promise.all([
+        getViewCache<HomeViewModel>(db, "home", selectedDate),
+        getViewCache<SleepViewModel>(db, "sleep", selectedDate),
+      ])
+      if (cachedHome) setHomeView(cachedHome)
+      if (cachedSleep) setSleepView(cachedSleep)
+    } catch (cacheErr) {
+      console.warn("[dashboard] cache read failed", cacheErr)
+    }
+
     try {
       const [nextHomeView, nextSleepView] = await Promise.all([
         fetchHomeView(selectedDate),
@@ -656,6 +671,14 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       ])
       setHomeView(nextHomeView)
       setSleepView(nextSleepView)
+      // 2) Refresh cache with fresh backend values for offline next time.
+      try {
+        const db = openDatabase()
+        await setViewCache(db, "home", selectedDate, nextHomeView)
+        await setViewCache(db, "sleep", selectedDate, nextSleepView)
+      } catch (cacheWriteErr) {
+        console.warn("[dashboard] cache write failed", cacheWriteErr)
+      }
     } catch (nextError: any) {
       if (isViewsApiUnavailable(nextError)) {
         try {
