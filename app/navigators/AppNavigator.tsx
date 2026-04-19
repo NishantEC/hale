@@ -18,7 +18,7 @@ import { JournalEntryScreen } from "@/screens/JournalEntryScreen"
 import { JournalHistoryScreen } from "@/screens/JournalHistoryScreen"
 import { SleepDetailScreen } from "@/screens/SleepDetailScreen"
 import { StrainActivityScreen } from "@/screens/StrainActivityScreen"
-import { useAppTheme } from "@/theme/context"
+import { useNavigationTheme } from "./useNavigationTheme"
 
 import { MainNavigator } from "./MainNavigator"
 import type { AppStackParamList, NavigationProps } from "./navigationTypes"
@@ -36,9 +36,7 @@ const Stack = createNativeStackNavigator<AppStackParamList>()
 const AppStack = () => {
   const { isAuthenticated } = useAuth()
 
-  const {
-    theme: { colors },
-  } = useAppTheme()
+  const colors = { background: "#F0EDE8" }
 
   return (
     <Stack.Navigator
@@ -93,7 +91,7 @@ const AppStack = () => {
 }
 
 export const AppNavigator = (props: NavigationProps) => {
-  const { navigationTheme } = useAppTheme()
+  const navigationTheme = useNavigationTheme()
 
   useBackButtonHandler((routeName) => exitRoutes.includes(routeName))
 

@@ -6,7 +6,6 @@ import { Platform, View } from "react-native"
 import { DeviceScreen } from "@/screens/DeviceScreen"
 import { HomeScreen } from "@/screens/HomeScreen"
 import { TrendsScreen } from "@/screens/TrendsScreen"
-import { useAppTheme } from "@/theme/context"
 
 const Tab = createBottomTabNavigator()
 
@@ -17,9 +16,15 @@ const TAB_CONFIG = {
 } as const
 
 export function MainNavigator() {
-  const {
-    theme: { colors, isDark },
-  } = useAppTheme()
+  const colors = {
+    tint: "#C76542",
+    textDim: "#564E4A",
+    border: "#B6ACA6",
+    background: "#F0EDE8",
+    screenBackground: "#F0EDE8",
+    tabBarBlur: "rgba(247, 247, 249, 0.72)",
+  }
+  const isDark = false
 
   return (
     <Tab.Navigator
