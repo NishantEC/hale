@@ -16,9 +16,14 @@ import { Text } from "@/components/Text"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
 import {
   fetchJournalEntries,
-  deleteJournalEntry,
+  deleteJournalEntry as deleteJournalEntryRemote,
   JournalEntryResponse,
 } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import {
+  deleteJournalEntry,
+  listJournalEntriesByDate,
+} from "@/services/db/repositories/journalEntry"
 import { useAppTheme } from "@/theme/context"
 import { ThemedStyle } from "@/theme/types"
 
@@ -48,6 +53,26 @@ export function JournalHistoryScreen() {
   }, [])
 
   async function loadEntries() {
+    // Read local-first for instant display and offline resilience.
+    try {
+      const db = openDatabase()
+      const locals = await listJournalEntriesByDate(db, todayKey())
+      if (locals.length > 0) {
+        setEntries(
+          locals.map((r) => ({
+            id: r.id,
+            factorTag: r.factorTag,
+            intensity: r.intensity,
+            note: r.note,
+            timestamp: new Date(r.timestamp).toISOString(),
+            createdAt: new Date(r.createdAt).toISOString(),
+          })),
+        )
+      }
+    } catch (err) {
+      console.warn("[journal] local read failed", err)
+    }
+
     try {
       const res = await fetchJournalEntries(todayKey())
       setEntries(res.entries)
@@ -71,8 +96,14 @@ export function JournalHistoryScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            await deleteJournalEntry(id)
+            const db = openDatabase()
+            await deleteJournalEntry(db, id)
             setEntries((prev) => prev.filter((e) => e.id !== id))
+            try {
+              await deleteJournalEntryRemote(id)
+            } catch (postErr) {
+              console.warn("[journal] remote delete failed — drainer will retry", postErr)
+            }
           } catch {}
         },
       },
