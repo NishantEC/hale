@@ -12,8 +12,14 @@ import {
   INSPECTOR_WEB_URL,
   runDebugPipeline,
 } from "@/services/api/noopClient"
-import { useAppTheme } from "@/theme/context"
-import type { ThemedStyle } from "@/theme/types"
+const PALETTE = {
+  tint: "#C76542",
+  textDim: "#564E4A",
+  text: "#191015",
+  surfaceSubtle: "rgba(0,0,0,0.03)",
+  surfaceCard: "rgba(0,0,0,0.035)",
+  surfaceCardBorder: "rgba(0,0,0,0.06)",
+}
 import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 
 function formatTimestamp(value?: string | null) {
@@ -27,7 +33,8 @@ function formatTimestamp(value?: string | null) {
 }
 
 export const DebugInspectorScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = PALETTE
+  const themed = <T,>(s: T): T => s
   const { selectedDate, refreshDashboard, syncNow } = useDashboard()
   const [overview, setOverview] = useState<DebugOverview | null>(null)
   const [sleepNight, setSleepNight] = useState<DebugSleepNight | null>(null)
@@ -169,7 +176,7 @@ export const DebugInspectorScreen: FC = () => {
 }
 
 const ActionButton = ({ label, onPress }: { label: string; onPress: () => void }) => {
-  const { theme: { colors } } = useAppTheme()
+  const colors = PALETTE
   return (
     <TouchableOpacity onPress={onPress} style={{ flex: 1 }}>
       <View style={{ backgroundColor: colors.surfaceSubtle, borderWidth: 1, borderColor: colors.surfaceCardBorder, borderRadius: 16, paddingVertical: 12, paddingHorizontal: 14, alignItems: "center" }}>
@@ -180,7 +187,7 @@ const ActionButton = ({ label, onPress }: { label: string; onPress: () => void }
 }
 
 const MetricTile = ({ label, value }: { label: string; value: string }) => {
-  const { theme: { colors } } = useAppTheme()
+  const colors = PALETTE
   return (
     <View style={{ flex: 1, backgroundColor: colors.surfaceCard, borderWidth: 1, borderColor: colors.surfaceCardBorder, borderRadius: 18, padding: 14, gap: 6 }}>
       <Text text={label} size="xxs" style={{ color: colors.textDim }} />
@@ -190,7 +197,7 @@ const MetricTile = ({ label, value }: { label: string; value: string }) => {
 }
 
 const KeyValue = ({ label, value }: { label: string; value: string }) => {
-  const { theme: { colors } } = useAppTheme()
+  const colors = PALETTE
   return (
     <View style={{ gap: 4 }}>
       <Text text={label} size="xxs" weight="bold" style={{ color: colors.textDim }} />
@@ -199,54 +206,29 @@ const KeyValue = ({ label, value }: { label: string; value: string }) => {
   )
 }
 
-const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  paddingHorizontal: spacing.lg,
-  paddingVertical: spacing.md,
-  gap: spacing.md,
-})
-
-const $header: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  gap: spacing.xs,
-})
-
-const $subtle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-})
-
-const $buttonRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  flexDirection: "row",
-  gap: spacing.sm,
-})
-
-const $metricsRow: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  flexDirection: "row",
-  gap: spacing.sm,
-})
-
-const $card: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
-  backgroundColor: colors.surfaceCard,
+const $container: ViewStyle = { paddingHorizontal: 24, paddingVertical: 16, gap: 16 }
+const $header: ViewStyle = { gap: 8 }
+const $subtle: TextStyle = { color: PALETTE.textDim }
+const $buttonRow: ViewStyle = { flexDirection: "row", gap: 12 }
+const $metricsRow: ViewStyle = { flexDirection: "row", gap: 12 }
+const $card: ViewStyle = {
+  backgroundColor: PALETTE.surfaceCard,
   borderRadius: 22,
   borderWidth: 1,
-  borderColor: colors.surfaceCardBorder,
-  padding: spacing.md,
-  gap: spacing.sm,
-})
-
-const $errorBanner: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  borderColor: PALETTE.surfaceCardBorder,
+  padding: 16,
+  gap: 12,
+}
+const $errorBanner: ViewStyle = {
   backgroundColor: "rgba(255,96,96,0.16)",
   borderRadius: 16,
-  paddingHorizontal: spacing.md,
-  paddingVertical: spacing.sm,
-})
-
-const $infoBanner: ThemedStyle<ViewStyle> = ({ spacing }) => ({
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+}
+const $infoBanner: ViewStyle = {
   backgroundColor: "rgba(171,204,255,0.16)",
   borderRadius: 16,
-  paddingHorizontal: spacing.md,
-  paddingVertical: spacing.sm,
-})
-
-const $loadingWrap: ThemedStyle<ViewStyle> = ({ spacing }) => ({
-  paddingVertical: spacing.lg,
-  alignItems: "center",
-})
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+}
+const $loadingWrap: ViewStyle = { paddingVertical: 24, alignItems: "center" }
