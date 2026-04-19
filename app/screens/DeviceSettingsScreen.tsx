@@ -9,9 +9,9 @@ import {
   View,
   ViewStyle,
 } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 
 import { DetailScreenHeader } from "@/components/DetailScreenHeader"
-import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Dialog } from "@/components/reactx/dialog"
@@ -106,11 +106,7 @@ export const DeviceSettingsScreen: FC = () => {
   }, [disconnect, isConnected, scan, scannedDevices.length])
 
   return (
-    <Screen
-      preset="fixed"
-      safeAreaEdges={["top", "bottom"]}
-      contentContainerStyle={themed($container)}
-    >
+    <SafeAreaView style={themed($container)} edges={["top", "bottom"]}>
       <DetailScreenHeader title="Device Settings" />
 
       {/* ─── Hero: big watch + battery ─── */}
@@ -305,7 +301,7 @@ export const DeviceSettingsScreen: FC = () => {
           <Text text="Diagnostics" size="xxs" style={themed($debugText)} />
         </TouchableOpacity>
       </View>
-    </Screen>
+    </SafeAreaView>
   )
 }
 
