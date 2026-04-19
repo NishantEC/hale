@@ -31,10 +31,12 @@ import { DashboardProvider } from "./context/DashboardContext"
 import { initI18n } from "./i18n"
 import { AppNavigator } from "./navigators/AppNavigator"
 import { useNavigationPersistence } from "./navigators/navigationUtilities"
-import { apiPost } from "./services/api/noopClient"
+import { apiGet, apiPost } from "./services/api/noopClient"
 import { openDatabase, runMigrations } from "./services/db"
+import { setViewCache } from "./services/db/repositories/viewCache"
 import { SyncService } from "./services/sync/SyncService"
 import { drainOnce } from "./services/sync/uplinkDrainer"
+import { pullDownlink } from "./services/sync/downlinkPuller"
 import { ThemeProvider } from "./theme/context"
 import { customFontsToLoad } from "./theme/typography"
 import { loadDateFnsLocale } from "./utils/formatDate"
@@ -105,7 +107,33 @@ export function App() {
           batchSize: 200,
         }),
       pullFn: async () => {
-        // Filled in by Phase 3 (downlinkPuller).
+        await pullDownlink(db, {
+          apiGet: async (path) => apiGet(path),
+          tables: [
+            "daily_metrics",
+            "daily_scores",
+            "sleep_detections",
+            "sleep_stages",
+            "night_features",
+            "signal_samples",
+            "activity_detections",
+            "baseline_profile",
+            "sleep_plans",
+          ],
+        })
+        const today = new Date().toISOString().slice(0, 10)
+        try {
+          const [home, sleep, trends] = await Promise.all([
+            apiGet(`/views/home?date=${today}`),
+            apiGet(`/views/sleep?date=${today}`),
+            apiGet(`/views/trends?days=30`),
+          ])
+          await setViewCache(db, "home", today, home)
+          await setViewCache(db, "sleep", today, sleep)
+          await setViewCache(db, "trends", "30d", trends)
+        } catch (err) {
+          console.warn("[sync] view cache refresh failed", err)
+        }
       },
       intervalMs: 15_000,
     })
