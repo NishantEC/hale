@@ -9,7 +9,6 @@ import {
   ViewStyle,
 } from "react-native"
 
-import { useAppTheme } from "@/theme/context"
 
 export type IconTypes = keyof typeof iconRegistry
 
@@ -60,11 +59,9 @@ export function PressableIcon(props: PressableIconProps) {
     ...pressableProps
   } = props
 
-  const { theme } = useAppTheme()
-
   const $imageStyle: StyleProp<ImageStyle> = [
     $imageStyleBase,
-    { tintColor: color ?? theme.colors.text },
+    { tintColor: color ?? "#191015" },
     size !== undefined && { width: size, height: size },
     $imageStyleOverride,
   ]
@@ -93,11 +90,9 @@ export function Icon(props: IconProps) {
     ...viewProps
   } = props
 
-  const { theme } = useAppTheme()
-
   const $imageStyle: StyleProp<ImageStyle> = [
     $imageStyleBase,
-    { tintColor: color ?? theme.colors.text },
+    { tintColor: color ?? "#191015" },
     size !== undefined && { width: size, height: size },
     $imageStyleOverride,
   ]
