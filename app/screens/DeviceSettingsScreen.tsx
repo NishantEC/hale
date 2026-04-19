@@ -17,11 +17,71 @@ import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Dialog } from "@/components/reactx/dialog"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import { useAppTheme } from "@/theme/context"
+const THEME = {
+  colors: {
+    screenBackground: "#F0EDE8",
+    text: "#191015",
+    textDim: "#564E4A",
+    textMuted: "#978F8A",
+    onSurface: "#000000",
+    onPrimary: "#FFFFFF",
+    tint: "#C76542",
+    tintInactive: "#D7CEC9",
+    iconDefault: "rgba(0,0,0,0.72)",
+    iconDim: "rgba(0,0,0,0.38)",
+    border: "#B6ACA6",
+    separator: "#D7CEC9",
+    divider: "rgba(0,0,0,0.06)",
+    background: "#F0EDE8",
+    surfaceCard: "rgba(0,0,0,0.035)",
+    surfaceCardBorder: "rgba(0,0,0,0.06)",
+    surfaceElevated: "rgba(0,0,0,0.05)",
+    surfaceSubtle: "rgba(0,0,0,0.03)",
+    cardBase: "rgba(255,255,255,0.92)",
+    error: "#C03403",
+    errorBackground: "#F2D6CD",
+    statusGreen: "#16A34A",
+    statusAmber: "#D97706",
+    statusRed: "#DC2626",
+    ringSleep: "#7C3AED",
+    ringRecovery: "#16A34A",
+    ringStrain: "#D97706",
+    switchTrackOff: "rgba(0,0,0,0.14)",
+    switchTrackOn: "rgba(199,101,66,0.42)",
+    palette: {
+      neutral100: "#FFFFFF",
+      neutral200: "#F4F2F1",
+      neutral300: "#D7CEC9",
+      neutral400: "#B6ACA6",
+      neutral500: "#978F8A",
+      neutral600: "#564E4A",
+      neutral700: "#3C3836",
+      neutral800: "#191015",
+      neutral900: "#000000",
+    },
+    overlay20: "rgba(25, 16, 21, 0.2)",
+    overlay50: "rgba(25, 16, 21, 0.5)",
+  },
+  spacing: { xxxs: 2, xxs: 4, xs: 8, sm: 12, md: 16, lg: 24, xl: 32, xxl: 48, xxxl: 64 },
+  typography: {
+    primary: {
+      thin: "System",
+      light: "System",
+      normal: "System",
+      medium: "System",
+      semiBold: "System",
+      bold: "System",
+    },
+  },
+  timing: { quick: 300 },
+  isDark: false,
+} as const
+const themed: any = (styleOrFn: any) =>
+  typeof styleOrFn === "function" ? styleOrFn(THEME) : styleOrFn
 import type { ThemedStyle } from "@/theme/types"
 
 export const DeviceSettingsScreen: FC = () => {
-  const { themed, theme: { colors } } = useAppTheme()
+  const colors = THEME.colors
   const {
     liveDeviceState,
     scannedDevices,
@@ -266,7 +326,7 @@ export const DeviceSettingsScreen: FC = () => {
               </TouchableOpacity>
             </Dialog.Trigger>
             <Dialog.Content onClose={() => {}}>
-              <Dialog.Backdrop backgroundColor={colors.palette.overlay50}>
+              <Dialog.Backdrop backgroundColor={colors.overlay50}>
                 <View style={themed($dialogContent)}>
                   <Text text="Unpair Device" size="lg" weight="bold" style={themed($infoValue)} />
                   <Text text="Are you sure? You'll need to re-pair the strap to sync again." size="xs" style={themed($dialogBody)} />
