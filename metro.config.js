@@ -24,6 +24,13 @@ config.transformer.getTransformOptions = async () => ({
 // https://github.com/facebook/metro/issues/1272
 config.resolver.unstable_conditionNames = ["require", "default", "browser"]
 
+// Tamagui v2-RC ships `.native.js` files whose internal imports use an
+// explicit `.native.js` extension. Metro's default resolver treats `.native`
+// as a platform suffix and strips it, which breaks those imports. Enabling
+// package-exports resolution makes Metro follow the `react-native` export
+// condition correctly and resolves the internal paths as-is.
+config.resolver.unstable_enablePackageExports = true
+
 // This helps support certain popular third-party libraries
 // such as Firebase that use the extension cjs.
 config.resolver.sourceExts.push("cjs")
