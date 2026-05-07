@@ -10,6 +10,11 @@ import { NightFeature } from '../sleep/entities/night-feature.entity.js';
 import { DailyScore } from '../wellness/entities/daily-score.entity.js';
 import { DailyMetric } from '../wellness/entities/daily-metric.entity.js';
 import { SleepPlan } from '../plans/sleep-plan.entity.js';
+import { BaselineProfile } from '../plans/baseline-profile.entity.js';
+import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
+import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
+import { RealtimeSample } from '../telemetry/entities/realtime-sample.entity.js';
+import { ConsoleLog } from '../telemetry/entities/console-log.entity.js';
 import { ViewsService } from '../views/views.service.js';
 
 type SelectionMode =
@@ -45,6 +50,16 @@ export class DebugService {
     private readonly dailyMetricRepo: Repository<DailyMetric>,
     @InjectRepository(SleepPlan)
     private readonly sleepPlanRepo: Repository<SleepPlan>,
+    @InjectRepository(BaselineProfile)
+    private readonly baselineRepo: Repository<BaselineProfile>,
+    @InjectRepository(SignalSample)
+    private readonly signalSampleRepo: Repository<SignalSample>,
+    @InjectRepository(DeviceEvent)
+    private readonly deviceEventRepo: Repository<DeviceEvent>,
+    @InjectRepository(RealtimeSample)
+    private readonly realtimeSampleRepo: Repository<RealtimeSample>,
+    @InjectRepository(ConsoleLog)
+    private readonly consoleLogRepo: Repository<ConsoleLog>,
   ) {}
 
   assertEnabled() {
@@ -468,5 +483,339 @@ export class DebugService {
       day: 'numeric',
       year: 'numeric',
     }).format(date);
+  }
+
+  async seedDemoData(userId: string, nights = 7) {
+    this.assertEnabled();
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+    const counts = { detections: 0, stages: 0, features: 0, signals: 0, scores: 0, metrics: 0 };
+
+    // Generate N nights ending last night
+    for (let i = 0; i < nights; i++) {
+      const nightDate = new Date(today);
+      nightDate.setDate(nightDate.getDate() - 1 - i);
+      const nightKey = this.dayKey(nightDate);
+
+      // Vary bedtime 22:00-23:30, wake 06:00-07:30
+      const bedHour = 22 + Math.random() * 1.5;
+      const bedtime = new Date(nightDate);
+      bedtime.setHours(Math.floor(bedHour), Math.round((bedHour % 1) * 60), 0, 0);
+
+      const sleepDurationHours = 6.5 + Math.random() * 2.5; // 6.5-9h
+      const wakeTime = new Date(bedtime.getTime() + sleepDurationHours * 3600_000);
+      const totalMinutes = Math.round(sleepDurationHours * 60);
+
+      // Stage distribution (roughly: 50% core, 20% REM, 15% deep, 10% awake, 5% unknown)
+      const deepMin = Math.round(totalMinutes * (0.12 + Math.random() * 0.08));
+      const remMin = Math.round(totalMinutes * (0.18 + Math.random() * 0.08));
+      const awakeMin = Math.round(totalMinutes * (0.03 + Math.random() * 0.06));
+      const coreMin = totalMinutes - deepMin - remMin - awakeMin;
+
+      // Generate realistic epoch timeline (1-min epochs with cycling)
+      const epochTimeline = this.generateEpochTimeline(bedtime, totalMinutes, {
+        deepMin, remMin, awakeMin, coreMin,
+      });
+
+      // SleepDetection
+      await this.sleepDetectionRepo.save(
+        this.sleepDetectionRepo.create({
+          userId,
+          nightDate,
+          bedtime,
+          wakeTime,
+          durationHours: sleepDurationHours,
+          interruptionCount: Math.floor(Math.random() * 4),
+          continuity: 0.80 + Math.random() * 0.18,
+          regularity: 0.75 + Math.random() * 0.20,
+          validCoverage: 0.90 + Math.random() * 0.10,
+          confidence: 0.80 + Math.random() * 0.18,
+        }),
+      );
+      counts.detections++;
+
+      // SleepStage
+      await this.sleepStageRepo.save(
+        this.sleepStageRepo.create({
+          userId,
+          nightDate,
+          remMinutes: remMin,
+          coreMinutes: coreMin,
+          deepMinutes: deepMin,
+          awakeMinutes: awakeMin,
+          unknownMinutes: 0,
+          confidence: 0.80 + Math.random() * 0.18,
+          source: 'Strap',
+          epochTimeline,
+          epochMinutes: 1,
+        }),
+      );
+      counts.stages++;
+
+      // NightFeature
+      const restingHR = 48 + Math.random() * 12; // 48-60 bpm
+      await this.nightFeatureRepo.save(
+        this.nightFeatureRepo.create({
+          userId,
+          nightDate,
+          restingHeartRate: restingHR,
+          rmssd: 35 + Math.random() * 40,
+          sdnn: 45 + Math.random() * 35,
+          respiratoryRate: 12 + Math.random() * 4,
+          continuity: 0.80 + Math.random() * 0.18,
+          regularity: 0.75 + Math.random() * 0.20,
+          validCoverage: 0.90 + Math.random() * 0.10,
+          confidenceRaw: 0.80 + Math.random() * 0.18,
+          sleepEstimateHours: sleepDurationHours,
+          sourceBlend: 'Strap',
+        }),
+      );
+      counts.features++;
+
+      // SignalSamples — HR chart data (~30s intervals through the night)
+      const signals: Partial<SignalSample>[] = [];
+      let hrCursor = 65 + Math.random() * 10; // starting HR
+      for (let t = bedtime.getTime(); t < wakeTime.getTime(); t += 30_000) {
+        const elapsed = (t - bedtime.getTime()) / 3600_000;
+        // HR dips during deep sleep (hours 1-3), rises towards morning
+        const nightProgress = elapsed / sleepDurationHours;
+        const deepDip = nightProgress < 0.4 ? -8 * Math.sin(nightProgress * Math.PI / 0.4) : 0;
+        const morningRise = nightProgress > 0.7 ? 6 * ((nightProgress - 0.7) / 0.3) : 0;
+        hrCursor += (Math.random() - 0.5) * 2; // random walk
+        const hr = Math.max(42, Math.min(90, restingHR + deepDip + morningRise + (hrCursor - 65)));
+
+        signals.push({
+          userId,
+          timestamp: new Date(t),
+          source: 'strap',
+          heartRate: Math.round(hr * 10) / 10,
+          ibiMs: Math.round(60000 / hr),
+          motionScore: Math.random() * 0.3,
+          qualityScore: 0.90 + Math.random() * 0.10,
+        });
+      }
+      // Bulk save in chunks
+      for (let j = 0; j < signals.length; j += 200) {
+        await this.signalSampleRepo.save(
+          signals.slice(j, j + 200).map((s) => this.signalSampleRepo.create(s)),
+        );
+      }
+      counts.signals += signals.length;
+
+      // DailyScore (for wake day)
+      const wakeDay = new Date(wakeTime);
+      wakeDay.setHours(12, 0, 0, 0);
+      await this.dailyScoreRepo.save(
+        this.dailyScoreRepo.create({
+          userId,
+          dayDate: wakeDay,
+          dailyBalance: Math.round(50 + Math.random() * 45),
+          loadPressure: Math.round(20 + Math.random() * 60),
+          sleepReserveHours: Math.round((sleepDurationHours - 7.5) * 10) / 10,
+          confidence: sleepDurationHours > 7 ? 'High' : 'Medium',
+          recommendation: sleepDurationHours > 8 ? 'Build' : sleepDurationHours > 7 ? 'Steady' : 'Restore',
+          detail: `Sleep ${Math.round(sleepDurationHours * 10) / 10}h, RHR ${Math.round(restingHR)} bpm`,
+        }),
+      );
+      counts.scores++;
+
+      // DailyMetric
+      await this.dailyMetricRepo.save(
+        this.dailyMetricRepo.create({
+          userId,
+          dayDate: wakeDay,
+          stressAverage: 20 + Math.random() * 40,
+          spo2Average: 95 + Math.random() * 4,
+          skinTempAvgCelsius: 31 + Math.random() * 2,
+          skinTempDeltaCelsius: -0.5 + Math.random() * 1,
+          strainScore: 4 + Math.random() * 12,
+          sleepConsistencyScore: 60 + Math.random() * 35,
+          detectedSleepNights: 1,
+        }),
+      );
+      counts.metrics++;
+    }
+
+    // BaselineProfile (upsert)
+    const existing = await this.baselineRepo.findOne({ where: { userId } });
+    if (existing) {
+      existing.restingHeartRate = 54;
+      existing.rmssd = 50;
+      existing.sdnn = 62;
+      existing.nightsUsed = nights;
+      await this.baselineRepo.save(existing);
+    } else {
+      await this.baselineRepo.save(
+        this.baselineRepo.create({
+          userId,
+          restingHeartRate: 54,
+          rmssd: 50,
+          sdnn: 62,
+          nightsUsed: nights,
+        }),
+      );
+    }
+
+    // SleepPlan (upsert)
+    const existingPlan = await this.sleepPlanRepo.findOne({ where: { userId } });
+    if (!existingPlan) {
+      await this.sleepPlanRepo.save(
+        this.sleepPlanRepo.create({
+          userId,
+          targetSleepMinutes: 480,
+          wakeMinutes: 420,
+          alarmEnabled: false,
+          alarmMinutes: 420,
+          smartWakeEnabled: false,
+        }),
+      );
+    }
+
+    return { ok: true, nights, counts };
+  }
+
+  private generateEpochTimeline(
+    bedtime: Date,
+    totalMinutes: number,
+    dist: { deepMin: number; remMin: number; awakeMin: number; coreMin: number },
+  ) {
+    // Realistic sleep architecture: cycles of ~90 min
+    // Early night: more deep, late night: more REM
+    const epochs: { timestamp: string; stage: string }[] = [];
+    const cycleLength = 90;
+    const numCycles = Math.ceil(totalMinutes / cycleLength);
+
+    let minuteIndex = 0;
+    for (let cycle = 0; cycle < numCycles && minuteIndex < totalMinutes; cycle++) {
+      const cycleMinutes = Math.min(cycleLength, totalMinutes - minuteIndex);
+      const progress = cycle / Math.max(numCycles - 1, 1); // 0 to 1
+
+      // Early cycles: more deep; late cycles: more REM
+      const deepFrac = Math.max(0, 0.25 * (1 - progress));
+      const remFrac = 0.10 + 0.25 * progress;
+      const awakeFrac = 0.02 + Math.random() * 0.03;
+      const coreFrac = 1 - deepFrac - remFrac - awakeFrac;
+
+      // Build stages within this cycle: core → deep → core → REM → (brief awake)
+      const stages = [
+        { stage: 'core', mins: Math.round(cycleMinutes * coreFrac * 0.5) },
+        { stage: 'deep', mins: Math.round(cycleMinutes * deepFrac) },
+        { stage: 'core', mins: Math.round(cycleMinutes * coreFrac * 0.5) },
+        { stage: 'rem', mins: Math.round(cycleMinutes * remFrac) },
+        { stage: 'awake', mins: Math.round(cycleMinutes * awakeFrac) },
+      ];
+
+      for (const block of stages) {
+        for (let m = 0; m < block.mins && minuteIndex < totalMinutes; m++) {
+          const ts = new Date(bedtime.getTime() + minuteIndex * 60_000);
+          epochs.push({ timestamp: ts.toISOString(), stage: block.stage });
+          minuteIndex++;
+        }
+      }
+    }
+
+    // Fill any remaining minutes
+    while (minuteIndex < totalMinutes) {
+      const ts = new Date(bedtime.getTime() + minuteIndex * 60_000);
+      epochs.push({ timestamp: ts.toISOString(), stage: 'core' });
+      minuteIndex++;
+    }
+
+    // Bookend: first few minutes awake (falling asleep), last few awake (waking)
+    for (let i = 0; i < Math.min(5, epochs.length); i++) epochs[i].stage = 'awake';
+    for (let i = Math.max(0, epochs.length - 3); i < epochs.length; i++) epochs[i].stage = 'awake';
+
+    return epochs;
+  }
+
+  async getTelemetry(userId: string, limit: number) {
+    this.assertEnabled();
+
+    const [events, eventCount] = await this.deviceEventRepo.findAndCount({
+      where: { userId },
+      order: { capturedAt: 'DESC' },
+      take: limit,
+    });
+
+    const [realtimeSamples, realtimeCount] = await this.realtimeSampleRepo.findAndCount({
+      where: { userId },
+      order: { capturedAt: 'DESC' },
+      take: limit,
+    });
+
+    // Group events by name for summary
+    const eventSummary: Record<string, number> = {};
+    for (const e of events) {
+      eventSummary[e.eventName] = (eventSummary[e.eventName] ?? 0) + 1;
+    }
+
+    // Group realtime by session
+    const sessionSummary: Record<string, { dataType: string; count: number; earliest: string; latest: string }> = {};
+    for (const s of realtimeSamples) {
+      if (!sessionSummary[s.sessionId]) {
+        sessionSummary[s.sessionId] = {
+          dataType: s.dataType,
+          count: 0,
+          earliest: s.capturedAt.toISOString(),
+          latest: s.capturedAt.toISOString(),
+        };
+      }
+      sessionSummary[s.sessionId].count++;
+      const ts = s.capturedAt.toISOString();
+      if (ts < sessionSummary[s.sessionId].earliest) sessionSummary[s.sessionId].earliest = ts;
+      if (ts > sessionSummary[s.sessionId].latest) sessionSummary[s.sessionId].latest = ts;
+    }
+
+    // Console logs
+    const [consoleLogs, consoleLogCount] = await this.consoleLogRepo.findAndCount({
+      where: { userId },
+      order: { capturedAt: 'DESC' },
+      take: limit,
+    });
+
+    // Aggregate device info from metadata
+    const deviceInfo: Record<string, any> = {};
+    for (const log of consoleLogs) {
+      if (log.metadata) {
+        Object.assign(deviceInfo, log.metadata);
+      }
+    }
+
+    return {
+      events: {
+        totalCount: eventCount,
+        summary: eventSummary,
+        recent: events.slice(0, 50).map((e) => ({
+          eventName: e.eventName,
+          eventNumber: e.eventNumber,
+          deviceId: e.deviceId,
+          capturedAt: e.capturedAt.toISOString(),
+          receivedAt: e.receivedAt.toISOString(),
+        })),
+      },
+      realtime: {
+        totalCount: realtimeCount,
+        sessions: sessionSummary,
+        recent: realtimeSamples.slice(0, 50).map((s) => ({
+          dataType: s.dataType,
+          heartRate: s.heartRate,
+          sessionId: s.sessionId,
+          capturedAt: s.capturedAt.toISOString(),
+        })),
+      },
+      consoleLogs: {
+        totalCount: consoleLogCount,
+        deviceInfo: Object.keys(deviceInfo).length > 0 ? deviceInfo : null,
+        recent: consoleLogs.slice(0, 100).map((l) => ({
+          message: l.message,
+          logLevel: l.logLevel,
+          deviceId: l.deviceId,
+          metadata: l.metadata,
+          capturedAt: l.capturedAt.toISOString(),
+          receivedAt: l.receivedAt.toISOString(),
+        })),
+      },
+    };
   }
 }

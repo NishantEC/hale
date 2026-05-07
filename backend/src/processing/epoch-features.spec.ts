@@ -18,6 +18,12 @@ function makeRecord(
     gravityZ: 1.0,
     respRateRaw: 14,
     skinContact: true,
+    ppgGreen: null,
+    ppgRedIr: null,
+    ambientLight: null,
+    ledDrive1: null,
+    ledDrive2: null,
+    signalQuality: null,
     ...overrides,
   };
 }

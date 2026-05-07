@@ -508,6 +508,110 @@ export class ViewsService {
     };
   }
 
+  async getTrendsView(userId: string, days: number = 30) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const [nightFeatures, dailyMetrics, dailyScores, sleepDetections] = await Promise.all([
+      this.nightFeatureRepo.find({
+        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        order: { nightDate: 'ASC' },
+      }),
+      this.dailyMetricRepo.find({
+        where: { userId, dayDate: MoreThanOrEqual(cutoff) },
+        order: { dayDate: 'ASC' },
+      }),
+      this.dailyScoreRepo.find({
+        where: { userId, dayDate: MoreThanOrEqual(cutoff) },
+        order: { dayDate: 'ASC' },
+      }),
+      this.sleepDetectionRepo.find({
+        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        order: { nightDate: 'ASC' },
+      }),
+    ]);
+
+    const toSeries = <T>(items: T[], dateKey: keyof T, valueKey: keyof T) =>
+      items
+        .filter((item) => item[valueKey] != null)
+        .map((item) => ({
+          timestamp: (item[dateKey] as Date).toISOString(),
+          value: item[valueKey] as number,
+        }));
+
+    // Nightly HRV (RMSSD) — key autonomic health indicator
+    const hrvTrend = toSeries(nightFeatures, 'nightDate', 'rmssd');
+
+    // Nightly Resting HR — fitness / overtraining marker
+    const restingHrTrend = toSeries(nightFeatures, 'nightDate', 'restingHeartRate');
+
+    // Sleep duration trend
+    const sleepDurationTrend = sleepDetections.map((d) => ({
+      timestamp: d.nightDate.toISOString(),
+      value: Math.round(d.durationHours * 10) / 10,
+    }));
+
+    // Recovery trend (daily balance)
+    const recoveryTrend = dailyScores.map((s) => ({
+      timestamp: s.dayDate.toISOString(),
+      value: s.dailyBalance,
+    }));
+
+    // Training load ratio trend — injury risk over time
+    const trainingLoadTrend = toSeries(dailyMetrics, 'dayDate', 'trainingLoadRatio' as any);
+
+    // Sleep consistency trend
+    const consistencyTrend = toSeries(dailyMetrics, 'dayDate', 'sleepConsistencyScore' as any);
+
+    // Strain trend
+    const strainTrend = toSeries(dailyMetrics, 'dayDate', 'strainScore' as any);
+
+    // Stress trend
+    const stressTrend = toSeries(dailyMetrics, 'dayDate', 'stressAverage' as any);
+
+    // Summaries — current vs 7-day-ago comparison for key metrics
+    const latestFeature = nightFeatures.length > 0 ? nightFeatures[nightFeatures.length - 1] : null;
+    const weekAgoIdx = Math.max(0, nightFeatures.length - 8);
+    const weekAgoFeature = nightFeatures.length > 7 ? nightFeatures[weekAgoIdx] : null;
+
+    const summaries = {
+      hrv: {
+        current: latestFeature?.rmssd ?? null,
+        weekAgo: weekAgoFeature?.rmssd ?? null,
+        trend: latestFeature && weekAgoFeature
+          ? (latestFeature.rmssd > weekAgoFeature.rmssd ? 'improving' : latestFeature.rmssd < weekAgoFeature.rmssd ? 'declining' : 'stable')
+          : null,
+      },
+      restingHr: {
+        current: latestFeature?.restingHeartRate ?? null,
+        weekAgo: weekAgoFeature?.restingHeartRate ?? null,
+        trend: latestFeature && weekAgoFeature
+          ? (latestFeature.restingHeartRate < weekAgoFeature.restingHeartRate ? 'improving' : latestFeature.restingHeartRate > weekAgoFeature.restingHeartRate ? 'declining' : 'stable')
+          : null,
+      },
+      sleepDuration: {
+        avgHours: sleepDetections.length > 0
+          ? Math.round(sleepDetections.reduce((s, d) => s + d.durationHours, 0) / sleepDetections.length * 10) / 10
+          : null,
+        nights: sleepDetections.length,
+      },
+    };
+
+    return {
+      days,
+      dataPoints: nightFeatures.length,
+      hrvTrend,
+      restingHrTrend,
+      sleepDurationTrend,
+      recoveryTrend,
+      trainingLoadTrend,
+      consistencyTrend,
+      strainTrend,
+      stressTrend,
+      summaries,
+    };
+  }
+
   async updateSleepPlan(userId: string, dto: UpdateSleepPlanDto) {
     const existing = await this.sleepPlanRepo.findOne({ where: { userId } });
     const entity = existing ?? this.sleepPlanRepo.create({ userId });

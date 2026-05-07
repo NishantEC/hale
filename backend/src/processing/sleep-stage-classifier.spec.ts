@@ -70,6 +70,13 @@ function makeEpochFeature(
     clockCos: 1,
     skinContact: 1,
     signalCompleteness: 1,
+    ambientLightMean: 0,
+    ppgConfidence: 0.9,
+    deviceSignalQuality: 0.95,
+    lfPower: NaN,
+    hfPower: NaN,
+    lfHfRatio: NaN,
+    rsaAmplitude: NaN,
     ...overrides,
   };
 }

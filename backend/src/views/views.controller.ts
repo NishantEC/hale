@@ -43,6 +43,17 @@ export class ViewsController {
     }
   }
 
+  @Get('trends')
+  async trends(@Req() req: any, @Query('days') days?: string) {
+    try {
+      const n = days ? Math.min(Math.max(parseInt(days, 10) || 30, 7), 90) : 30;
+      return await this.viewsService.getTrendsView(req.user.userId, n);
+    } catch (e) {
+      this.logger.error(`trends view failed: ${e.message}`, e.stack);
+      throw new HttpException(`Trends view failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   @Put('sleep-plan')
   @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
   async updateSleepPlan(@Req() req: any, @Body() dto: UpdateSleepPlanDto) {

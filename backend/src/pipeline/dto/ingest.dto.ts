@@ -77,6 +77,30 @@ class HistoricalSensorRecordDto {
   @IsOptional()
   @IsBoolean()
   skinContact: boolean | null;
+
+  @IsOptional()
+  @IsNumber()
+  ppgGreen: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  ppgRedIr: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  ambientLight: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  ledDrive1: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  ledDrive2: number | null;
+
+  @IsOptional()
+  @IsNumber()
+  signalQuality: number | null;
 }
 
 export class IngestDto {

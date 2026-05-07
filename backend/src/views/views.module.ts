@@ -12,6 +12,7 @@ import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
 import { BaselineProfile } from '../plans/baseline-profile.entity.js';
 import { JournalEntry } from '../journal/journal-entry.entity.js';
 import { SleepPlan } from '../plans/sleep-plan.entity.js';
+import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { SleepPlan } from '../plans/sleep-plan.entity.js';
       BaselineProfile,
       JournalEntry,
       SleepPlan,
+      ActivityDetection,
     ]),
   ],
   controllers: [ViewsController],

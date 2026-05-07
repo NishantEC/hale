@@ -15,6 +15,12 @@ function makeRecord(timestamp: Date): HistoricalSensorRecord {
     gravityZ: 1,
     respRateRaw: 14,
     skinContact: true,
+    ppgGreen: null,
+    ppgRedIr: null,
+    ambientLight: null,
+    ledDrive1: null,
+    ledDrive2: null,
+    signalQuality: null,
   };
 }
 

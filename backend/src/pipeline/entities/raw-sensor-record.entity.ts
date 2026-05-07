@@ -44,4 +44,22 @@ export class RawSensorRecord {
 
   @Column('boolean', { nullable: true })
   skinContact: boolean;
+
+  @Column('double precision', { nullable: true })
+  ppgGreen: number;
+
+  @Column('double precision', { nullable: true })
+  ppgRedIr: number;
+
+  @Column('double precision', { nullable: true })
+  ambientLight: number;
+
+  @Column('double precision', { nullable: true })
+  ledDrive1: number;
+
+  @Column('double precision', { nullable: true })
+  ledDrive2: number;
+
+  @Column('double precision', { nullable: true })
+  signalQuality: number;
 }

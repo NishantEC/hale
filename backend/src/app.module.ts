@@ -12,6 +12,8 @@ import { SyncModule } from './sync/sync.module.js';
 import { PipelineModule } from './pipeline/pipeline.module.js';
 import { ViewsModule } from './views/views.module.js';
 import { DebugModule } from './debug/debug.module.js';
+import { TelemetryModule } from './telemetry/telemetry.module.js';
+import { ActivityModule } from './activity/activity.module.js';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { DebugModule } from './debug/debug.module.js';
     DevicesModule,
     SyncModule,
     PipelineModule,
+    TelemetryModule,
+    ActivityModule,
     ViewsModule,
     DebugModule,
   ],

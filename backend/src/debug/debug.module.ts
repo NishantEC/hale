@@ -9,6 +9,11 @@ import { NightFeature } from '../sleep/entities/night-feature.entity.js';
 import { DailyScore } from '../wellness/entities/daily-score.entity.js';
 import { DailyMetric } from '../wellness/entities/daily-metric.entity.js';
 import { SleepPlan } from '../plans/sleep-plan.entity.js';
+import { BaselineProfile } from '../plans/baseline-profile.entity.js';
+import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
+import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
+import { RealtimeSample } from '../telemetry/entities/realtime-sample.entity.js';
+import { ConsoleLog } from '../telemetry/entities/console-log.entity.js';
 import { ViewsModule } from '../views/views.module.js';
 import { DebugController } from './debug.controller.js';
 import { DebugService } from './debug.service.js';
@@ -25,6 +30,11 @@ import { DebugService } from './debug.service.js';
       DailyScore,
       DailyMetric,
       SleepPlan,
+      BaselineProfile,
+      SignalSample,
+      DeviceEvent,
+      RealtimeSample,
+      ConsoleLog,
     ]),
   ],
   controllers: [DebugController],

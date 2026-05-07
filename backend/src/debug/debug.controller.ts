@@ -90,4 +90,26 @@ export class DebugController {
       throw e;
     }
   }
+
+  @Get('telemetry')
+  async getTelemetry(@Req() req: any, @Query('limit') limit?: string) {
+    try {
+      const n = limit ? Math.min(Math.max(parseInt(limit, 10) || 200, 1), 1000) : 200;
+      return await this.debugService.getTelemetry(req.user.userId, n);
+    } catch (e) {
+      this.logger.error(`telemetry failed: ${e.message}`, e.stack);
+      throw e;
+    }
+  }
+
+  @Post('seed')
+  async seedDemoData(@Req() req: any, @Query('nights') nights?: string) {
+    try {
+      const n = nights ? Math.min(Math.max(parseInt(nights, 10) || 7, 1), 30) : 7;
+      return await this.debugService.seedDemoData(req.user.userId, n);
+    } catch (e) {
+      this.logger.error(`seed failed: ${e.message}`, e.stack);
+      throw e;
+    }
+  }
 }

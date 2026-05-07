@@ -30,7 +30,11 @@ export class SleepEventEngine {
       Math.floor((15 * 60) / Math.max(intervalSeconds, 1)),
     );
     const deltas = gravityDeltas(sorted);
-    const isSleepFlags = classifySleep(deltas, windowSize);
+    let isSleepFlags = classifySleep(deltas, windowSize);
+
+    // HR-assisted refinement: adjust boundary epochs based on heart rate trends
+    isSleepFlags = hrAssistedRefinement(sorted, isSleepFlags);
+
     const periods = mergePeriods(
       buildPeriods(sorted, isSleepFlags),
       20 * 60,
@@ -335,4 +339,46 @@ function medianIntervalSeconds(
   if (intervals.length === 0) return 60.0;
   intervals.sort((a, b) => a - b);
   return intervals[Math.floor(intervals.length / 2)];
+}
+
+/**
+ * Refine gravity-based sleep/wake flags using heart rate trends.
+ * At transition boundaries:
+ * - "Wake" epochs with HR below nightMedianHR - 1*std → reclassify as sleep
+ * - "Sleep" epochs with HR above nightMedianHR + 2*std → flag as wake
+ */
+function hrAssistedRefinement(
+  records: HistoricalSensorRecord[],
+  flags: boolean[],
+): boolean[] {
+  const heartRates = records.map((r) => r.heartRate).filter((hr) => hr > 0);
+  if (heartRates.length < 20) return flags;
+
+  const sorted = [...heartRates].sort((a, b) => a - b);
+  const nightMedianHR = sorted[Math.floor(sorted.length / 2)];
+  const hrStd = standardDeviation(heartRates);
+  if (hrStd <= 0) return flags;
+
+  const lowThreshold = nightMedianHR - hrStd;
+  const highThreshold = nightMedianHR + 2 * hrStd;
+
+  const refined = [...flags];
+  for (let i = 1; i < refined.length - 1; i++) {
+    // Only refine at transition boundaries (where adjacent flags differ)
+    const isTransition = refined[i - 1] !== refined[i] || refined[i] !== refined[i + 1];
+    if (!isTransition) continue;
+
+    const hr = records[i].heartRate;
+    if (hr <= 0) continue;
+
+    // Wake epoch with low HR → likely sleep
+    if (!refined[i] && hr < lowThreshold) {
+      refined[i] = true;
+    }
+    // Sleep epoch with very high HR → likely wake
+    if (refined[i] && hr > highThreshold) {
+      refined[i] = false;
+    }
+  }
+  return refined;
 }
