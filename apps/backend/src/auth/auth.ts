@@ -5,14 +5,29 @@ import { Pool } from 'pg';
 
 config({ path: resolve(process.cwd(), '.env') });
 
-const dbUrl = `postgresql://${process.env.DB_USER ?? 'noop'}:${process.env.DB_PASSWORD ?? 'noop_dev'}@${process.env.DB_HOST ?? 'localhost'}:${process.env.DB_PORT ?? '5434'}/${process.env.DB_NAME ?? 'noop'}`;
+const instanceConnectionName = process.env.INSTANCE_CONNECTION_NAME;
+const dbUser = process.env.DB_USER ?? 'noop';
+const dbPassword = process.env.DB_PASSWORD ?? 'noop_dev';
+const dbName = process.env.DB_NAME ?? 'noop';
+
+const pgPool = instanceConnectionName
+  ? new Pool({
+      host: `/cloudsql/${instanceConnectionName}`,
+      user: dbUser,
+      password: dbPassword,
+      database: dbName,
+    })
+  : new Pool({
+      connectionString: `postgresql://${dbUser}:${dbPassword}@${process.env.DB_HOST ?? 'localhost'}:${process.env.DB_PORT ?? '5434'}/${dbName}`,
+    });
+
 const extraTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
 export const auth = betterAuth({
-  database: new Pool({ connectionString: dbUrl }),
+  database: pgPool,
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3009',
   emailAndPassword: {
     enabled: true,
