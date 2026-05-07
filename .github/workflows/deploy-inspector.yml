@@ -1,0 +1,80 @@
+name: Deploy Inspector
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/inspector/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "package.json"
+      - "turbo.json"
+      - ".github/workflows/deploy-inspector.yml"
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: flashckard
+  REGION: us-central1
+  SERVICE: noop-inspector
+  REGISTRY: us-central1-docker.pkg.dev/flashckard/noop
+  VITE_API_BASE_URL: https://api.noop.enform.co
+
+jobs:
+  deploy:
+    name: Build and Deploy Inspector
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/inspector:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/inspector:latest \
+            --build-arg VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }} \
+            -f apps/inspector/Dockerfile \
+            .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.REGISTRY }}/inspector:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/inspector:latest
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/inspector:${{ github.sha }}
+          flags: |
+            --service-account=noop-cloud-run@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+            --min-instances=0
+            --cpu-boost
+            --max-instances=5
+            --memory=256Mi
+            --cpu=1
+            --allow-unauthenticated
+
+      - name: Show deployed URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "::notice title=Inspector Deployed::$URL"

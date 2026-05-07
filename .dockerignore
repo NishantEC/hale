@@ -1,0 +1,36 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+**/dist
+.turbo
+**/.turbo
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Editors / OS
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Untouched root subdirs we don't want in the build context
+app
+app-old
+docs
+resource
+resources
+
+# Plain claude/local junk
+.claude
+.cursor
