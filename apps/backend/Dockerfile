@@ -38,7 +38,6 @@ USER nestjs
 # Preserve workspace layout so workspace-package resolution still works
 COPY --from=builder --chown=nestjs:nodejs /repo/apps/backend/dist ./apps/backend/dist
 COPY --from=builder --chown=nestjs:nodejs /repo/apps/backend/package.json ./apps/backend/package.json
-COPY --from=builder --chown=nestjs:nodejs /repo/packages ./packages
 COPY --from=builder --chown=nestjs:nodejs /repo/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /repo/package.json ./package.json
 
