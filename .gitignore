@@ -33,3 +33,9 @@ Thumbs.db
 # Misc
 *.local
 out
+
+# Pre-monorepo app/ directory — replaced by apps/app/ via git subtree.
+# Safe to delete locally once apps/app/ is verified working.
+/app/
+/app-old/
+

@@ -1,9 +1,26 @@
 /* eslint-env node */
 // Learn more https://docs.expo.io/guides/customizing-metro
 const { getDefaultConfig } = require("expo/metro-config")
+const path = require("path")
+
+const projectRoot = __dirname
+const workspaceRoot = path.resolve(projectRoot, "../..")
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = getDefaultConfig(__dirname)
+const config = getDefaultConfig(projectRoot)
+
+// Monorepo (pnpm workspace) support — Metro needs to:
+//   1. Watch the workspace root so it picks up changes from packages/*
+//   2. Resolve modules from both the project's node_modules and the
+//      hoisted root node_modules created by pnpm.
+config.watchFolders = [workspaceRoot]
+config.resolver.nodeModulesPaths = [
+  path.resolve(projectRoot, "node_modules"),
+  path.resolve(workspaceRoot, "node_modules"),
+]
+// Force Metro to look up modules in the order above instead of walking
+// up the directory tree (which breaks under pnpm's flat hoisting).
+config.resolver.disableHierarchicalLookup = true
 
 config.transformer.getTransformOptions = async () => ({
   transform: {

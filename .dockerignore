@@ -24,7 +24,10 @@ dist
 .env.*
 !.env.example
 
-# Untouched root subdirs we don't want in the build context
+# Backend/inspector Docker builds don't need the React Native app or any
+# of these root sibling dirs. apps/app/ is huge with native modules and
+# would balloon every build context if not ignored.
+apps/app
 app
 app-old
 docs
