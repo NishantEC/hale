@@ -88,7 +88,7 @@ jobs:
           image: ${{ env.REGISTRY }}/backend:${{ github.sha }}
           flags: |
             --set-cloudsql-instances=${{ env.CLOUDSQL_INSTANCE }}
-            --set-env-vars=NODE_ENV=production,INSTANCE_CONNECTION_NAME=${{ env.CLOUDSQL_INSTANCE }},BETTER_AUTH_URL=https://api.noop.enform.co,BETTER_AUTH_TRUSTED_ORIGINS=https://noop.enform.co
+            --set-env-vars=NODE_ENV=production,INSTANCE_CONNECTION_NAME=${{ env.CLOUDSQL_INSTANCE }},BETTER_AUTH_URL=https://api.noop.enform.co,BETTER_AUTH_TRUSTED_ORIGINS=https://noop.enform.co,DEBUG_INSPECTOR_ENABLED=true
             --set-secrets=DB_USER=NOOP_DB_USER:latest,DB_PASSWORD=NOOP_DB_PASSWORD:latest,DB_NAME=NOOP_DB_NAME:latest,BETTER_AUTH_SECRET=NOOP_JWT_SECRET:latest
             --service-account=noop-cloud-run@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
             --min-instances=0
