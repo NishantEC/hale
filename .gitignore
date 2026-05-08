@@ -39,3 +39,7 @@ out
 /app/
 /app-old/
 
+# Tamagui's generated config — regenerated on each app build
+**/.tamagui/
+.expo/
+
