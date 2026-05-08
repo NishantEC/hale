@@ -71,7 +71,7 @@ jobs:
             --set-secrets=DB_USER=NOOP_DB_USER:latest,DB_PASSWORD=NOOP_DB_PASSWORD:latest,DB_NAME=NOOP_DB_NAME:latest,BETTER_AUTH_SECRET=NOOP_JWT_SECRET:latest \
             --set-cloudsql-instances=${{ env.CLOUDSQL_INSTANCE }} \
             --command=node \
-            --args=apps/backend/dist/scripts/migrate-better-auth.js \
+            --args=node_modules/@better-auth/cli/dist/index.mjs,migrate,--cwd,apps/backend,--config,dist/auth/auth.js,-y \
             --max-retries=0 \
             --task-timeout=5m \
             --quiet
