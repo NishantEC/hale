@@ -7,13 +7,13 @@ import { HistoricalRecord } from '../ble/packet-types';
 // HTTP layer.
 const mmkv = new MMKV();
 
-const DEFAULT_BASE_URL = 'https://c861-49-207-192-31.ngrok-free.app';
+const DEFAULT_BASE_URL = 'https://api.noop.enform.co';
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   DEFAULT_BASE_URL;
 const REQUEST_TIMEOUT_MS = 20000;
-export const INSPECTOR_WEB_URL = process.env.EXPO_PUBLIC_INSPECTOR_URL || 'http://localhost:5175';
+export const INSPECTOR_WEB_URL = process.env.EXPO_PUBLIC_INSPECTOR_URL || 'https://noop.enform.co';
 
 let sessionToken: string | null = null;
 
