@@ -21,6 +21,10 @@ export function databaseConfig(): TypeOrmModuleOptions {
     password: process.env.DB_PASSWORD || 'noop_dev',
     database: process.env.DB_NAME || 'noop',
     autoLoadEntities: true,
-    synchronize: true,
+    // Schema is now managed by TypeORM migrations (see src/migrations/).
+    // Keep synchronize:true only for local dev when explicitly requested
+    // via DB_SYNCHRONIZE=true — never in production.
+    synchronize: process.env.DB_SYNCHRONIZE === 'true',
+    migrationsRun: false,
   };
 }
