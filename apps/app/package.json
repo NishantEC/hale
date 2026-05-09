@@ -6,7 +6,8 @@
   "scripts": {
     "start": "expo start --dev-client",
     "android": "expo run:android",
-    "ios": "expo run:ios",
+    "ios": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer expo run:ios",
+    "ios:device": "DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer expo run:ios --device",
     "web": "expo start --web",
     "bundle:web": "npx expo export --platform web",
     "serve:web": "npx serve dist",
