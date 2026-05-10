@@ -48,7 +48,7 @@ const BORDER_WIDTH = 2
 const ROW_HEIGHT = (CHART_HEIGHT - 16) / LANE_COUNT
 const BAR_HEIGHT = ROW_HEIGHT * 0.45
 const BAR_TOP_OFFSET = BAR_HEIGHT * 0.8
-const LABEL_COLUMN_WIDTH = 0
+const LABEL_COLUMN_WIDTH = 56
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -395,6 +395,10 @@ export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: H
   const axisRows = STAGE_KEYS.map((key, index) => (
     <View key={key} style={{ height: ROW_HEIGHT }}>
       {index > 0 && <View style={[styles.horizontal, { backgroundColor: colors.surfaceCardBorder }]} />}
+      <View style={[styles.rowLabelWrap, { width: LABEL_COLUMN_WIDTH }]}>
+        <RNText style={[styles.stageLabel, { color: SleepStage[key].color }]}>{SleepStage[key].label}</RNText>
+        <RNText style={[styles.stageDuration, { color: colors.textMuted }]}>{formatMinutes(stageDurations[key] ?? 0)}</RNText>
+      </View>
     </View>
   ))
 
@@ -483,6 +487,18 @@ const styles = StyleSheet.create({
     width: "100%",
     height: StyleSheet.hairlineWidth,
     backgroundColor: "rgba(255,255,255,0.10)",
+  },
+  rowLabelWrap: {
+    paddingLeft: 6,
+    paddingTop: 4,
+  },
+  stageLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  stageDuration: {
+    fontSize: 10,
+    marginTop: 1,
   },
   timeAxis: {
     flexDirection: "row",

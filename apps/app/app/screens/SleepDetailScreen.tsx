@@ -17,7 +17,6 @@ import { DateSwitcher } from "@/components/DateSwitcher"
 import { HypnogramChart } from "@/components/HypnogramChart"
 import { LabsAccordion } from "@/components/LabsAccordion"
 import { SleepHero } from "@/components/SleepHero"
-import { StagePills } from "@/components/StagePills"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { TrendSparkline } from "@/components/TrendSparkline"
@@ -109,23 +108,36 @@ export const SleepDetailScreen: FC = () => {
     : "Set alarm"
   const onPressAlarm = () => router.push("/sleep-planner" as any)
 
-  const durationMinutes = (() => {
+  const durationMinutes = sleepView.epochTimeline.length || (() => {
     const s = sleepView.header.duration
-    const m = /(?:(\d+)h)?\s*(?:(\d+)m)?/.exec(s)
-    if (!m) return sleepView.epochTimeline.length
-    const val = (Number(m[1] ?? 0) * 60) + Number(m[2] ?? 0)
-    return val || sleepView.epochTimeline.length
+    const hourOnly = /^(\d+)h$/.exec(s)
+    const minOnly = /^(\d+)m$/.exec(s)
+    const both = /^(\d+)h\s+(\d+)m$/.exec(s)
+    if (both) return Number(both[1]) * 60 + Number(both[2])
+    if (hourOnly) return Number(hourOnly[1]) * 60
+    if (minOnly) return Number(minOnly[1])
+    return 0
   })()
 
-  const totalMin = sleepView.epochTimeline.length || durationMinutes
-  const stageMin = (id: string): number => {
-    const row = sleepView.stageRows.find((r) => r.id === id)
-    return row ? Math.round(row.barFraction * totalMin) : 0
-  }
-  const awakeMin = stageMin("awake")
-  const remMin = stageMin("rem")
-  const coreMin = stageMin("core") || stageMin("light")
-  const deepMin = stageMin("deep")
+  const nightScore = (() => {
+    const points = sleepView.sleepScoreTrend ?? []
+    const exact = points.find((p) => p.timestamp.startsWith(date))
+    if (exact) return Math.round(exact.value)
+    if (points.length) return Math.round(points[points.length - 1].value)
+    return null
+  })()
+  const nightScoreLabel =
+    nightScore == null ? "Unknown" : nightScore >= 80 ? "Good" : nightScore >= 60 ? "Fair" : "Poor"
+  const nightScoreDelta = (() => {
+    if (nightScore == null) return null
+    const priors = (sleepView.sleepScoreTrend ?? [])
+      .filter((p) => !p.timestamp.startsWith(date))
+      .map((p) => p.value)
+      .filter((v) => Number.isFinite(v))
+    if (priors.length < 3) return null
+    const mean = priors.reduce((a, b) => a + b, 0) / priors.length
+    return Math.round((nightScore - mean) * 10) / 10
+  })()
 
   const lookupMetric = (label: string): string => {
     const m = sleepView.metrics.find((x) => x.label === label)
@@ -185,11 +197,11 @@ export const SleepDetailScreen: FC = () => {
             durationMinutes={durationMinutes}
             bedtimeLabel={sleepView?.header.bedtime}
             wakeTimeLabel={sleepView?.header.wakeTime}
-            score={sleepView?.score?.value ?? null}
-            scoreLabel={sleepView?.score?.label ?? "Unknown"}
+            score={nightScore}
+            scoreLabel={nightScoreLabel}
             scoreConfidence={sleepView?.score?.confidence ?? "Low"}
-            scoreDelta={sleepView?.score?.deltaVsWeek ?? null}
-            detail={sleepView?.score?.detail ?? ""}
+            scoreDelta={nightScoreDelta}
+            detail=""
           />
 
           {sleepView?.epochTimeline.length ? (
@@ -200,13 +212,6 @@ export const SleepDetailScreen: FC = () => {
               wakeTimeLabel={sleepView.header.wakeTime}
             />
           ) : null}
-
-          <StagePills
-            awakeMin={awakeMin}
-            remMin={remMin}
-            coreMin={coreMin}
-            deepMin={deepMin}
-          />
 
           <WhyPanel
             factors={sleepView?.factorInsights ?? []}
