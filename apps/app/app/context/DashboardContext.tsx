@@ -596,12 +596,18 @@ function buildLegacySleepView(results: PipelineResults, selectedKey: string): Sl
       { label: "Respiratory Rate", value: feature?.respiratoryRate != null ? `${feature.respiratoryRate.toFixed(1)} rpm` : "--", detail: null },
       { label: "Consistency", value: metric?.sleepConsistencyScore != null ? `${Math.round(metric.sleepConsistencyScore)}` : "--", detail: "/ 100" },
     ],
-    factorInsights: (results.journalCorrelations ?? []).map((item) => ({
-      factorTag: item.factorTag,
-      deepDelta: item.avgDeepDelta != null ? `${Math.round(item.avgDeepDelta)}m deep` : null,
-      remDelta: item.avgRemDelta != null ? `${Math.round(item.avgRemDelta)}m REM` : null,
-      sampleCount: item.sampleCount ?? 0,
-    })),
+    factorInsights: (results.journalCorrelations ?? []).map((item) => {
+      const deepMin = Math.round(item.avgDeepDelta ?? 0)
+      const remMin = Math.round(item.avgRemDelta ?? 0)
+      return {
+        factorTag: item.factorTag,
+        occurrences: item.sampleCount ?? 0,
+        deepMin,
+        remMin,
+        awakeMin: 0,
+        effectSize: Math.max(Math.abs(deepMin), Math.abs(remMin)),
+      }
+    }),
     planner: {
       targetSleepMinutes,
       wakeMinutes,
@@ -620,6 +626,19 @@ function buildLegacySleepView(results: PipelineResults, selectedKey: string): Sl
       storageMode: "Legacy fallback",
       persistenceHealth: results.dailyScores?.length ? "Healthy" : "Unavailable",
       disclaimer: "Using /pipeline/results because the /views API is unavailable on the server.",
+    },
+    score: {
+      value: score?.dailyBalance ?? null,
+      label: score?.recommendation ?? "Unknown",
+      confidence: score?.confidence ?? "Low",
+      detail: score?.detail ?? "",
+      deltaVsWeek: null,
+    },
+    vitalsDelta: {
+      efficiency: null,
+      rhr: null,
+      hrv: null,
+      skinTempDelta: null,
     },
   }
 }
@@ -845,11 +864,11 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
     if (!isAuthenticated || isSyncing || bleManager.connectionState !== "ready") return
 
     const now = Date.now()
-    if (now - lastAutoSyncAttemptAt.current < 5 * 60 * 1000) return
+    if (now - lastAutoSyncAttemptAt.current < 60 * 1000) return
 
     if (liveDeviceState.lastSyncAt) {
       const lastSyncMs = new Date(liveDeviceState.lastSyncAt).getTime()
-      if (!Number.isNaN(lastSyncMs) && now - lastSyncMs < 15 * 60 * 1000) {
+      if (!Number.isNaN(lastSyncMs) && now - lastSyncMs < 3 * 60 * 1000) {
         return
       }
     }
@@ -1246,10 +1265,9 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
       }
     })
 
-    // Periodic auto-sync every 15 minutes while connected
     const syncTimer = setInterval(() => {
       maybeAutoSync().catch(() => undefined)
-    }, 15 * 60 * 1000)
+    }, 2 * 60 * 1000)
 
     return () => {
       unsubscribeState()
