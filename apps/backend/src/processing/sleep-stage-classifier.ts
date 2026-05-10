@@ -32,12 +32,22 @@ export function classifySleepStages(
 
     if (nightEpochs.length === 0) continue;
 
-    const stages = classifyNight(nightEpochs);
-    const densified = densifyTimeline(
-      nightEpochs.map((e, i) => ({ timestamp: e.timestamp, stage: stages[i] })),
+    // Fill the wall-clock epoch grid by nearest-neighbour copying real
+    // epochs into empty slots BEFORE classification. This way the
+    // quantile prior (Wake 8% / REM 22% / Deep 20%) operates on full
+    // night-time minutes instead of the sparse subset that has data —
+    // sparse coverage was producing 11% REM in prod even though the
+    // local eval (which densified before classification) hit 23%.
+    const denseEpochs = densifyEpochFeatures(
+      nightEpochs,
       detection.bedtime,
       detection.wakeTime,
     );
+    const stages = classifyNight(denseEpochs);
+    const densified: SleepStageEpoch[] = denseEpochs.map((e, i) => ({
+      timestamp: e.timestamp,
+      stage: stages[i],
+    }));
 
     const remMinutes = countStage(densified, 'rem');
     const coreMinutes = countStage(densified, 'core');
@@ -45,7 +55,8 @@ export function classifySleepStages(
     const awakeMinutes = countStage(densified, 'awake');
 
     const validCount = nightEpochs.filter((e) => e.signalCompleteness > 0.5).length;
-    const featureCompleteness = validCount / Math.max(1, nightEpochs.length);
+    // Coverage now reported against the full grid, not the sparse subset.
+    const featureCompleteness = validCount / Math.max(1, denseEpochs.length);
 
     const transitions = densified
       .slice(1)
@@ -257,19 +268,26 @@ function suppressRareIslands(input: Stage[], minRun: number): Stage[] {
   return result;
 }
 
-function densifyTimeline(
-  classifications: SleepStageEpoch[],
+/**
+ * Build a contiguous wall-clock epoch grid from sparse real epochs.
+ * Each grid slot points at its nearest real epoch (by timestamp). The
+ * timestamp of the returned EpochFeature is anchored to the grid slot,
+ * not the source epoch, so downstream consumers can rely on uniform
+ * 30-second spacing.
+ */
+function densifyEpochFeatures(
+  source: EpochFeature[],
   bedtime: Date,
   wakeTime: Date,
-): SleepStageEpoch[] {
-  if (classifications.length === 0) return classifications;
-  const sorted = [...classifications].sort(
+): EpochFeature[] {
+  if (source.length === 0) return source;
+  const sorted = [...source].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
   );
   const totalEpochs = Math.ceil(
     (wakeTime.getTime() - bedtime.getTime()) / EPOCH_MS,
   );
-  const dense: SleepStageEpoch[] = [];
+  const dense: EpochFeature[] = [];
   let idx = 0;
   for (let i = 0; i < totalEpochs; i++) {
     const t = bedtime.getTime() + i * EPOCH_MS + EPOCH_MS / 2;
@@ -280,11 +298,7 @@ function densifyTimeline(
     const beforeDt = Math.abs(t - before.timestamp.getTime());
     const afterDt = Math.abs(t - after.timestamp.getTime());
     const nearest = afterDt < beforeDt ? after : before;
-    if (Math.abs(nearest.timestamp.getTime() - t) < EPOCH_MS / 2) {
-      dense.push(nearest);
-    } else {
-      dense.push({ timestamp: new Date(t), stage: nearest.stage });
-    }
+    dense.push({ ...nearest, timestamp: new Date(t) });
   }
   return dense;
 }
