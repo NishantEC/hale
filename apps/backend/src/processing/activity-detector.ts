@@ -14,6 +14,9 @@ import { fftRadix2, makeHannWindow } from './hrv-frequency.js';
 export type ActivityType =
   | 'Running'
   | 'Walking'
+  | 'Hiking'
+  | 'Stair Climbing Up'
+  | 'Stair Climbing Down'
   | 'Cycling'
   | 'Strength'
   | 'HIIT'
@@ -33,6 +36,10 @@ export interface ActivityBout {
   heartRateMax: number;
   strainScore: number;
   cadenceHz: number | null;
+  flightsCount?: number | null;
+  elevationGainMeters?: number | null;
+  distanceMeters?: number | null;
+  externalSource?: string | null;
 }
 
 // ── Constants ────────────────────────────────────────────

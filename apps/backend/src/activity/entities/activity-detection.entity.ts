@@ -39,6 +39,18 @@ export class ActivityDetection {
   @Column('double precision', { nullable: true })
   cadenceHz: number;
 
+  @Column('integer', { nullable: true })
+  flightsCount: number;
+
+  @Column('double precision', { nullable: true })
+  elevationGainMeters: number;
+
+  @Column('double precision', { nullable: true })
+  distanceMeters: number;
+
+  @Column('varchar', { nullable: true })
+  externalSource: string;
+
   @Column('varchar', { default: 'detected' })
   source: string;
 

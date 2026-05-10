@@ -51,12 +51,16 @@ export const LoginScreen: FC = () => {
     }
     setIsLoading(true)
     try {
+      // Trim whitespace and lowercase the email — autofill commonly leaks a
+      // trailing space, and emails are case-insensitive on the server.
+      // Password is sent as-is (whitespace and case are significant).
+      const normalizedEmail = email.trim().toLowerCase()
       // Persist to MMKV right before the API call so the AuthProvider
       // (and any downstream readers) see the same email we authed with.
-      setAuthEmail(email)
+      setAuthEmail(normalizedEmail)
       const success = isSignUp
-        ? await apiRegister(email, authPassword)
-        : await apiLogin(email, authPassword)
+        ? await apiRegister(normalizedEmail, authPassword)
+        : await apiLogin(normalizedEmail, authPassword)
       if (success) {
         const token = await AsyncStorage.getItem("sessionToken")
         if (token) {

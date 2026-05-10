@@ -545,6 +545,12 @@ export class ViewsService {
     // Nightly Resting HR — fitness / overtraining marker
     const restingHrTrend = toSeries(nightFeatures, 'nightDate', 'restingHeartRate');
 
+    // Nightly respiratory rate — recovery, illness, training-stress signal
+    const respiratoryRateTrend = toSeries(nightFeatures, 'nightDate', 'respiratoryRate');
+
+    // Nightly average SpO2 — overnight oxygenation
+    const spo2Trend = toSeries(dailyMetrics, 'dayDate', 'spo2Average' as any);
+
     // Sleep duration trend
     const sleepDurationTrend = sleepDetections.map((d) => ({
       timestamp: d.nightDate.toISOString(),
@@ -608,6 +614,8 @@ export class ViewsService {
       consistencyTrend,
       strainTrend,
       stressTrend,
+      respiratoryRateTrend,
+      spo2Trend,
       summaries,
     };
   }

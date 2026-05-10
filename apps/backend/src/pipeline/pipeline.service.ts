@@ -24,8 +24,13 @@ import {
   recomputeBaselineProfile,
 } from '../processing/wellness-scoring.js';
 import { SleepEventEngine } from '../processing/sleep-event-engine.js';
-import { detectActivities } from '../processing/activity-detector.js';
+import { detectActivities, type ActivityBout } from '../processing/activity-detector.js';
+import { reclassifyHiking } from '../processing/hiking-detector.js';
+import { reclassifyStairs } from '../processing/stair-detector.js';
+import { applyHealthkitWorkoutMatches } from '../processing/healthkit-workout-matcher.js';
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
+import { HealthkitDailySummary } from '../activity/entities/healthkit-daily-summary.entity.js';
+import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.js';
 import { extractEpochFeatures } from '../processing/epoch-features.js';
 import {
   loadModel,
@@ -73,6 +78,10 @@ export class PipelineService {
     private rawSensorRepo: Repository<RawSensorRecord>,
     @InjectRepository(ActivityDetection)
     private activityDetectionRepo: Repository<ActivityDetection>,
+    @InjectRepository(HealthkitDailySummary)
+    private healthkitSummaryRepo: Repository<HealthkitDailySummary>,
+    @InjectRepository(HealthkitWorkout)
+    private healthkitWorkoutRepo: Repository<HealthkitWorkout>,
   ) {}
 
   // ------------------------------------------------------------------ ingest
@@ -311,7 +320,18 @@ export class PipelineService {
     const sleepDetections = SleepEventEngine.detect(sensorRecords);
 
     // Activity detection on non-sleep daytime periods
-    const activityBouts = detectActivities(sensorRecords, sleepDetections, baseline);
+    let activityBouts = detectActivities(sensorRecords, sleepDetections, baseline);
+
+    // Apply HealthKit-driven reclassifiers (hiking, stairs, Apple workout match)
+    if (activityBouts.length > 0) {
+      activityBouts = await this.applyHealthkitReclassifiers(
+        userId,
+        activityBouts,
+        sensorRecords,
+        baseline,
+      );
+    }
+
     if (activityBouts.length > 0) {
       // Delete existing detected activities for this user's data range, then insert new
       const boutStart = activityBouts[0].startTime;
@@ -338,6 +358,10 @@ export class PipelineService {
         entity.heartRateMax = bout.heartRateMax;
         entity.strainScore = bout.strainScore;
         entity.cadenceHz = bout.cadenceHz as any;
+        entity.flightsCount = (bout.flightsCount ?? null) as any;
+        entity.elevationGainMeters = (bout.elevationGainMeters ?? null) as any;
+        entity.distanceMeters = (bout.distanceMeters ?? null) as any;
+        entity.externalSource = (bout.externalSource ?? null) as any;
         entity.source = 'detected';
         return entity;
       });
@@ -836,4 +860,111 @@ export class PipelineService {
   private dayKey(date: Date) {
     return this.startOfDay(date).getTime();
   }
+
+  /**
+   * Apply HealthKit-derived reclassifiers to strap-detected bouts:
+   *   1. Apple workout cross-match (Cycling, Running, etc.) — boost confidence
+   *      and override label if Apple's classifier is more reliable.
+   *   2. Stair climbing (uses day's HealthKit flightsClimbed + Z-axis impact).
+   *   3. Hiking (long Walking + day flightsClimbed + elevated HR).
+   *
+   * Order matters: Apple workouts trump heuristics. Stairs run before hiking
+   * because a long ascent like a 25-min climb might be either a hike or stairs;
+   * hiking checks duration ≥ 20 min, stair detector limits to ≤ 10 min, so
+   * they don't overlap.
+   */
+  private async applyHealthkitReclassifiers(
+    userId: string,
+    bouts: ActivityBout[],
+    sensorRecords: HistoricalSensorRecord[],
+    baseline: BaselineProfileInterface,
+  ): Promise<ActivityBout[]> {
+    if (bouts.length === 0) return bouts;
+
+    const minStart = bouts[0].startTime;
+    const maxEnd = bouts[bouts.length - 1].endTime;
+
+    // Span (with some buffer) for HealthKit lookups
+    const dayStart = this.startOfDay(minStart);
+    const dayEnd = new Date(maxEnd);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    dayEnd.setHours(0, 0, 0, 0);
+
+    // Pull workouts in window
+    const workouts = await this.healthkitWorkoutRepo
+      .createQueryBuilder('w')
+      .where('w."userId" = :userId', { userId })
+      .andWhere('w."startTime" >= :start', { start: dayStart })
+      .andWhere('w."startTime" < :end', { end: dayEnd })
+      .getMany();
+
+    // Pull daily summaries in window
+    const summaries = await this.healthkitSummaryRepo
+      .createQueryBuilder('s')
+      .where('s."userId" = :userId', { userId })
+      .andWhere('s."dayDate" >= :start', { start: dayStart.toISOString().slice(0, 10) })
+      .andWhere(
+        's."dayDate" < :end',
+        { end: dayEnd.toISOString().slice(0, 10) },
+      )
+      .getMany();
+
+    const flightsByDay = new Map<string, number | null>();
+    for (const s of summaries) {
+      flightsByDay.set(s.dayDate, s.flightsClimbed);
+    }
+
+    // 1. Apple workout cross-match (highest priority)
+    let result = applyHealthkitWorkoutMatches(
+      bouts,
+      workouts.map((w) => ({
+        uuid: w.uuid,
+        activityName: w.activityName,
+        startTime: w.startTime,
+        endTime: w.endTime,
+        totalDistanceMeters: w.totalDistanceMeters,
+        totalEnergyKcal: w.totalEnergyKcal,
+      })),
+    );
+
+    // 2. Stair climbing
+    const dayBuckets = groupBoutsByDay(result);
+    const restaged: ActivityBout[] = [];
+    for (const [dayKey, dayBouts] of dayBuckets) {
+      const flights = flightsByDay.get(dayKey) ?? null;
+      const stairsApplied = reclassifyStairs(dayBouts, sensorRecords, {
+        dayFlightsClimbed: flights,
+      });
+
+      // 3. Hiking (per-bout, needs day-walking-minutes total)
+      const dayWalkingMinutes = stairsApplied
+        .filter((b) => b.activityType === 'Walking')
+        .reduce((s, b) => s + b.durationMinutes, 0);
+      const restingHR = baseline.restingHeartRate > 0 ? baseline.restingHeartRate : 60;
+
+      for (const b of stairsApplied) {
+        restaged.push(
+          reclassifyHiking(b, {
+            dayFlightsClimbed: flights,
+            dayWalkingMinutes,
+            restingHeartRate: restingHR,
+          }),
+        );
+      }
+    }
+
+    return restaged;
+  }
+}
+
+function groupBoutsByDay(bouts: ActivityBout[]): Map<string, ActivityBout[]> {
+  const map = new Map<string, ActivityBout[]>();
+  for (const b of bouts) {
+    const d = b.startTime;
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const arr = map.get(key) ?? [];
+    arr.push(b);
+    map.set(key, arr);
+  }
+  return map;
 }
