@@ -19,7 +19,7 @@ if (__DEV__) {
 import "./utils/gestureHandler"
 
 import { useEffect, useState } from "react"
-import { AppState } from "react-native"
+import { Alert, AppState } from "react-native"
 import * as Linking from "expo-linking"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { KeyboardProvider } from "react-native-keyboard-controller"
@@ -34,7 +34,7 @@ import { initI18n } from "./i18n"
 import { AppNavigator } from "./navigators/AppNavigator"
 import { useNavigationPersistence } from "./navigators/navigationUtilities"
 import { apiGet, apiPost } from "./services/api/noopClient"
-import { openDatabase, runMigrations } from "./services/db"
+import { openDatabase, runMigrations, wipeDatabase } from "./services/db"
 import { setViewCache } from "./services/db/repositories/viewCache"
 import { SyncService } from "./services/sync/SyncService"
 import { drainOnce } from "./services/sync/uplinkDrainer"
@@ -83,12 +83,44 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    runMigrations()
-      .then(() => setIsDbReady(true))
-      .catch((err) => {
-        console.error("[db] migration failed", err)
-        setIsDbReady(true)
-      })
+    let cancelled = false
+    const attempt = () => {
+      runMigrations()
+        .then(() => {
+          if (!cancelled) setIsDbReady(true)
+        })
+        .catch((err) => {
+          if (cancelled) return
+          // Don't proceed with isDbReady=true on a broken DB. The app would
+          // load and then explode on the first repository call. Surface the
+          // failure and offer recovery.
+          console.error("[db] migration failed", err)
+          Alert.alert(
+            "Local database error",
+            `The on-device database failed to initialize.\n\n${String(err)}\n\nRetry, or reset local data to recover (pending un-synced data will be lost).`,
+            [
+              { text: "Retry", onPress: attempt },
+              {
+                text: "Reset local data",
+                style: "destructive",
+                onPress: async () => {
+                  try {
+                    await wipeDatabase()
+                  } catch (wipeErr) {
+                    console.error("[db] wipe failed", wipeErr)
+                  }
+                  attempt()
+                },
+              },
+            ],
+            { cancelable: false },
+          )
+        })
+    }
+    attempt()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {

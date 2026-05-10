@@ -17,16 +17,28 @@ function newId(): string {
 }
 
 export async function enqueueOutbound(db: NoopDatabase, input: EnqueueInput): Promise<void> {
-  await db.insert(outboundQueue).values({
-    id: newId(),
-    tableName: input.tableName,
-    rowId: input.rowId,
-    payload: JSON.stringify(input.payload),
-    attempts: 0,
-    lastAttemptAt: null,
-    lastError: null,
-    createdAt: Date.now(),
-  })
+  // onConflictDoNothing on (table_name, row_id) — see migration 0002. Re-enqueue
+  // of the same record is a silent no-op. The existing queue row will be drained
+  // once and that delivers the latest persisted state.
+  await db
+    .insert(outboundQueue)
+    .values({
+      id: newId(),
+      tableName: input.tableName,
+      rowId: input.rowId,
+      payload: JSON.stringify(input.payload),
+      attempts: 0,
+      lastAttemptAt: null,
+      lastError: null,
+      createdAt: Date.now(),
+    })
+    .onConflictDoNothing({ target: [outboundQueue.tableName, outboundQueue.rowId] })
+}
+
+export async function purgeOutboundQueue(db: NoopDatabase): Promise<number> {
+  const before = await queueDepth(db)
+  await db.delete(outboundQueue)
+  return before
 }
 
 export async function claimOutboundBatch(db: NoopDatabase, limit: number) {

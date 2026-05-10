@@ -57,8 +57,28 @@ export async function ingestBleRecord(
 export async function ingestBleRecords(
   db: NoopDatabase,
   records: RawSensorRecordInput[],
-): Promise<void> {
+): Promise<{ ok: number; failed: number }> {
+  // Per-record try/catch so one bad row doesn't kill the entire batch.
+  // Returns counts so the caller can surface partial failure visibly.
+  let ok = 0
+  let failed = 0
   for (const r of records) {
-    await ingestBleRecord(db, r)
+    try {
+      await ingestBleRecord(db, r)
+      ok++
+    } catch (err) {
+      failed++
+      console.warn(
+        "[ingestBleRecord] failed",
+        r.id,
+        err instanceof Error ? err.message : err,
+      )
+    }
   }
+  if (failed > 0) {
+    console.warn(
+      `[ingestBleRecords] ${failed}/${records.length} records failed to persist`,
+    )
+  }
+  return { ok, failed }
 }

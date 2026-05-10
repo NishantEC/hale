@@ -31,13 +31,20 @@ export async function insertRawSensorRecord(
   input: RawSensorRecordInput,
 ): Promise<void> {
   const userId = getActiveUserId()
-  await db.insert(rawSensorRecords).values({
-    ...input,
-    _syncedAt: null,
-    _localCreatedAt: Date.now(),
-    _origin: "local",
-    userId,
-  })
+  // onConflictDoNothing: id is deterministic (`${seq}-${ts}` from BLE) and
+  // the strap re-sends the same history buffer on every reconnect. Without
+  // this, the first duplicate raises a UNIQUE constraint violation that
+  // aborts the entire ingest batch and silently kills sync.
+  await db
+    .insert(rawSensorRecords)
+    .values({
+      ...input,
+      _syncedAt: null,
+      _localCreatedAt: Date.now(),
+      _origin: "local",
+      userId,
+    })
+    .onConflictDoNothing()
   notifyTable("raw_sensor_records")
 }
 

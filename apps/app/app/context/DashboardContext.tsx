@@ -765,6 +765,7 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
   }, [])
 
   const syncNow = useCallback(async () => {
+    console.log("[syncNow] start; bleState=", bleManager.connectionState)
     if (bleManager.connectionState !== "ready") {
       setError("Connect your WHOOP strap before syncing.")
       return
@@ -778,6 +779,7 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
     try {
       const downloader = new HistoryDownloader()
       const records = await downloader.startDownload(setSyncProgress)
+      console.log("[syncNow] download resolved with", records.length, "records")
       setSyncProgress((current) => ({
         state: "complete",
         chunksReceived: current?.chunksReceived ?? 0,
@@ -795,7 +797,9 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
         setSyncStage(`Writing ${records.length} records locally…`)
         const db = openDatabase()
         const mapped = records.map(historicalRecordToRawRow)
-        await ingestBleRecords(db, mapped)
+        console.log("[syncNow] calling ingestBleRecords for", mapped.length, "records")
+        const ingestLocalResult = await ingestBleRecords(db, mapped)
+        console.log("[syncNow] ingestBleRecords done", ingestLocalResult)
 
         setSyncStage(`Uploading ${records.length} records…`)
         // Best-effort direct POST for immediate pipeline UX. If it fails,
@@ -829,6 +833,7 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
 
       await refreshDashboard()
     } catch (nextError: any) {
+      console.error("[syncNow] failed", nextError)
       setError(nextError?.message ?? "Sync failed")
     } finally {
       setIsSyncing(false)

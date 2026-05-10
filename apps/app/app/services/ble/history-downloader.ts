@@ -202,16 +202,23 @@ export class HistoryDownloader {
     console.log('[HistoryDownloader] Complete:', records.length, 'records');
     // Exit high-frequency sync mode to save battery
     bleManager.writeCommand(this.commandService.buildExitHighFreqSync()).catch(() => {});
+    // Capture resolve BEFORE cleanup() — cleanup() nulls this.resolve, and
+    // calling it after would silently no-op via optional chaining, leaving
+    // the awaiter hung forever. This was the latent bug that made every
+    // BLE history download silently swallow its records.
+    const resolve = this.resolve;
     this.cleanup();
-    this.resolve?.(records);
+    resolve?.(records);
   }
 
   private finishWithError(error: Error) {
     console.log('[HistoryDownloader] Error:', error.message);
     // Exit high-frequency sync mode to save battery
     bleManager.writeCommand(this.commandService.buildExitHighFreqSync()).catch(() => {});
+    // Same trap as finishSuccess — capture before cleanup nulls it.
+    const reject = this.reject;
     this.cleanup();
-    this.reject?.(error);
+    reject?.(error);
   }
 
   cancel() {

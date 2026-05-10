@@ -1,10 +1,12 @@
 import { FC, useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, ScrollView, TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
+import { ActivityIndicator, Alert, ScrollView, TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import { LocalDbDiagnostics } from "@/components/LocalDbDiagnostics"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
+import { openDatabase } from "@/services/db"
+import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
 import {
   DebugOverview,
   DebugSleepNight,
@@ -77,6 +79,30 @@ export const DebugInspectorScreen: FC = () => {
     setBanner("Mobile sync completed.")
   }, [refreshDashboard, refreshInspector, syncNow])
 
+  const handleClearQueue = useCallback(() => {
+    Alert.alert(
+      "Clear outbound queue?",
+      "Drops every pending and dead-lettered upload row. The records themselves stay in raw_sensor_records — only the queue is purged. Use after shipping a backend fix that lets the drainer succeed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const db = openDatabase()
+              const purged = await purgeOutboundQueue(db)
+              setBanner(`Cleared ${purged} queue rows.`)
+              await refreshInspector()
+            } catch (err: any) {
+              setError(err?.message ?? "Failed to clear queue")
+            }
+          },
+        },
+      ],
+    )
+  }, [refreshInspector])
+
   const handleRunPipeline = useCallback(async () => {
     setIsLoading(true)
     setError(null)
@@ -130,6 +156,7 @@ export const DebugInspectorScreen: FC = () => {
         <ActionButton label="Open Web Inspector" onPress={() => openLinkInBrowser(INSPECTOR_WEB_URL)} />
       </View>
       <View style={themed($buttonRow)}>
+        <ActionButton label="Clear Outbound Queue" onPress={handleClearQueue} />
         <ActionButton label="Log Out" onPress={() => void forceLogout().then(() => logout())} />
       </View>
 
