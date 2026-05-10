@@ -34,6 +34,25 @@ export function buildTodayTape(input: {
   const { journalEntries, now, colors } = input
   const events: TapeEvent[] = []
 
+  // Recovery scored — synthetic time at 06:35 of selectedDate
+  if (input.homeView) {
+    const recoveryValue = parseScalar(input.homeView.rings.recovery.value)
+    if (recoveryValue != null) {
+      const ts = synthesizeTimeOnDate(input.selectedDate, 6, 35)
+      if (Number.isFinite(ts) && ts <= now) {
+        events.push({
+          id: "recovery-scored",
+          time: formatTime(ts),
+          ts,
+          title: `Recovery scored ${Math.round(recoveryValue)}%`,
+          desc: undefined,
+          dotColor: colors.ringRecovery,
+          type: "recovery",
+        })
+      }
+    }
+  }
+
   for (const entry of journalEntries) {
     const ts = new Date(entry.createdAt).getTime()
     if (!Number.isFinite(ts)) continue
@@ -82,4 +101,18 @@ function formatJournalDesc(
     return input.labels[entry.intensity - 1]
   }
   return undefined
+}
+
+function parseScalar(value: string): number | null {
+  if (!value) return null
+  const cleaned = value.replace(/[^\d.-]/g, "")
+  if (cleaned === "" || cleaned === "-" || cleaned === ".") return null
+  const n = Number(cleaned)
+  return Number.isFinite(n) ? n : null
+}
+
+function synthesizeTimeOnDate(dateIso: string, hour: number, minute: number): number {
+  const [y, m, d] = dateIso.split("-").map(Number)
+  if (!y || !m || !d) return NaN
+  return new Date(y, m - 1, d, hour, minute, 0, 0).getTime()
 }

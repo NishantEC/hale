@@ -1,4 +1,56 @@
+import type { HomeViewModel } from "@/services/api/noopClient"
+
 import { buildTodayTape } from "./buildTodayTape"
+
+function makeHomeView(rings: Partial<HomeViewModel["rings"]>): HomeViewModel {
+  return {
+    selectedDate: "2026-05-10",
+    selectedDateTitle: "Today",
+    selectedDateSubtitle: "",
+    topStrip: { title: "", subtitle: "" },
+    rings: {
+      sleep: rings.sleep ?? { value: "--", progress: 0 },
+      recovery: rings.recovery ?? { value: "--", progress: 0 },
+      strain: rings.strain ?? { value: "--", progress: 0 },
+    },
+    cards: {
+      recommendation: { title: "", subtitle: "", footer: "" },
+      stress: { title: "", subtitle: "", footer: "" },
+      loadPressure: { title: "", subtitle: "", footer: "" },
+      liveHeartRate: { title: "", subtitle: "", footer: "" },
+    },
+    todayOverview: {
+      headline: "",
+      detail: "",
+      dailyBalance: "",
+      loadPressure: "",
+      sleepReserve: "",
+      confidence: "",
+      dateLabel: "",
+    },
+    activities: {
+      stress: "",
+      spo2: "",
+      skinTemp: "",
+      strain: "",
+      skinTempDelta: "",
+      recoveryIndex: "",
+      trainingLoad: "",
+      trainingLoadRiskZone: "",
+      spo2Dips: "",
+      activityFeed: [],
+      totalActiveMinutes: "",
+      activityCount: 0,
+    },
+    confidence: {
+      confidence: "",
+      pipelineStatus: "",
+      sourceBlend: "",
+      storageMode: "",
+      persistenceHealth: "",
+    },
+  } as HomeViewModel
+}
 
 const COLORS = {
   ringRecovery: "#1ed760",
@@ -95,5 +147,36 @@ describe("buildTodayTape", () => {
       selectedDate: "2026-05-10",
     })
     expect(events).toEqual([])
+  })
+
+  it("emits a recovery event when homeView has a recovery ring with a value", () => {
+    const events = buildTodayTape({
+      homeView: makeHomeView({
+        recovery: { value: "87", progress: 0.87 },
+      }),
+      journalEntries: [],
+      now: NOW,
+      colors: COLORS,
+      selectedDate: "2026-05-10",
+    })
+    const recoveryEvents = events.filter((e) => e.type === "recovery")
+    expect(recoveryEvents).toHaveLength(1)
+    expect(recoveryEvents[0]).toMatchObject({
+      title: "Recovery scored 87%",
+      dotColor: COLORS.ringRecovery,
+    })
+  })
+
+  it("does not emit a recovery event when value is empty / placeholder", () => {
+    const events = buildTodayTape({
+      homeView: makeHomeView({
+        recovery: { value: "--", progress: 0 },
+      }),
+      journalEntries: [],
+      now: NOW,
+      colors: COLORS,
+      selectedDate: "2026-05-10",
+    })
+    expect(events.filter((e) => e.type === "recovery")).toEqual([])
   })
 })
