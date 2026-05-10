@@ -18,7 +18,7 @@ function FallbackTabs() {
 
   const TAB_CONFIG = {
     index: { icon: "home-outline", activeIcon: "home", label: "Home" },
-    trends: { icon: "stats-chart-outline", activeIcon: "stats-chart", label: "Trends" },
+    health: { icon: "pulse-outline", activeIcon: "pulse", label: "Health" },
     journal: { icon: "add-circle-outline", activeIcon: "add-circle", label: "Log" },
     settings: { icon: "settings-outline", activeIcon: "settings", label: "Settings" },
   } as const
@@ -90,11 +90,11 @@ export default function NativeTabsLayout() {
           <NativeTabs.Trigger.Icon sf={{ default: "house", selected: "house.fill" }} md="home" />
         </NativeTabs.Trigger>
 
-        <NativeTabs.Trigger name="trends" contentStyle={{ backgroundColor: contentBackground }}>
-          <NativeTabs.Trigger.Label>Trends</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger name="health" contentStyle={{ backgroundColor: contentBackground }}>
+          <NativeTabs.Trigger.Label>Health</NativeTabs.Trigger.Label>
           <NativeTabs.Trigger.Icon
-            sf={{ default: "chart.line.uptrend.xyaxis", selected: "chart.line.uptrend.xyaxis" }}
-            md="monitoring"
+            sf={{ default: "heart.text.square", selected: "heart.text.square.fill" }}
+            md="favorite"
           />
         </NativeTabs.Trigger>
 

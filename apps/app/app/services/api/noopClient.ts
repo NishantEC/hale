@@ -649,6 +649,58 @@ export async function fetchTrendsView(days: number = 30): Promise<TrendsViewMode
   return apiGet(`/views/trends?days=${days}`);
 }
 
+export interface HealthContributor {
+  key: string;
+  label: string;
+  section: 'Sleep' | 'Strain' | 'Fitness';
+  thirtyDayValue: number | null;
+  sixMonthValue: number | null;
+  unitsLabel: string;
+  axisLo: number;
+  axisHi: number;
+  direction: 'higher' | 'lower';
+  impactYears: number;
+}
+
+export interface HealthAssessment {
+  id: string;
+  weekStart: string;
+  chronologicalAge: number;
+  noopAge: number;
+  paceOfAging: number | null;
+  contributors: HealthContributor[];
+  coachingTitle: string | null;
+  coachingBody: string | null;
+  generatedAt: string;
+}
+
+export interface UserProfileData {
+  dateOfBirth: string | null;
+  biologicalSex: 'male' | 'female' | 'other' | null;
+  heightCm: number | null;
+  weightKg: number | null;
+}
+
+export interface HealthViewModel {
+  current: HealthAssessment | null;
+  history: HealthAssessment[];
+  profile: UserProfileData | null;
+  needsDateOfBirth: boolean;
+}
+
+export async function fetchHealthView(week?: string): Promise<HealthViewModel> {
+  const qs = week ? `?week=${encodeURIComponent(week)}` : '';
+  return apiGet(`/views/health${qs}`);
+}
+
+export async function fetchProfile(): Promise<UserProfileData> {
+  return apiGet('/profile');
+}
+
+export async function updateProfile(patch: Partial<UserProfileData>): Promise<UserProfileData> {
+  return apiPut('/profile', patch);
+}
+
 export async function updateSleepPlan(input: SleepPlanInput): Promise<{ ok: boolean; sleepView: SleepViewModel }> {
   return apiPut('/views/sleep-plan', input);
 }
