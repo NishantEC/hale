@@ -417,20 +417,6 @@ export const SettingsScreen: FC = () => {
           />
         </Card>
 
-        {/* Dev tools */}
-        {__DEV__ ? (
-          <>
-            <SectionLabel>Developer</SectionLabel>
-            <Card>
-              <Row
-                icon="construct-outline"
-                label="Reacticx component showcase"
-                chevron
-                onPress={() => router.push("/reacticx-showcase")}
-              />
-            </Card>
-          </>
-        ) : null}
 
         {/* Appearance */}
         <SectionLabel>Appearance</SectionLabel>
