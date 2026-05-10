@@ -14,6 +14,7 @@ import {
   SleepTypicalRanges,
 } from '../processing/interfaces.js';
 import { journalSleepCorrelations } from '../processing/journal-correlations.js';
+import { computeSleepNeed } from '../processing/sleep-need.js';
 import { computeSleepScoreForNight } from '../processing/sleep-score.js';
 import { computeTypicalRanges } from '../processing/typical-ranges.js';
 import { NightFeature } from '../sleep/entities/night-feature.entity.js';
@@ -545,6 +546,7 @@ export class ViewsService {
         data.sleepPlan,
         selectedStageSummary,
         data.nightFeatures,
+        detectionInterfaces,
       ),
       factorInsights: factorInsights.map((correlation) => ({
         factorTag: correlation.factorTag,
@@ -1078,6 +1080,7 @@ export class ViewsService {
     sleepPlan: SleepPlan | null,
     selectedStage: SleepStageSummary | null,
     allNightFeatures: NightFeature[] = [],
+    allDetections: SleepDetectionSummary[] = [],
   ) {
     const timeInBedMinutes =
       selectedDetection == null
@@ -1175,6 +1178,36 @@ export class ViewsService {
         label: 'HRV-CV (7d)',
         value: this.formatHrvCv(selectedFeature, allNightFeatures),
         detail: null,
+      },
+      {
+        label: 'Sleep Need',
+        value: (() => {
+          if (!selectedDetection) return '--';
+          const need = computeSleepNeed(
+            sleepPlan?.targetSleepMinutes ?? 480,
+            selectedMetric?.strainScore ?? null,
+            allDetections,
+            selectedDetection.nightDate,
+          );
+          const h = Math.floor(need.totalHours);
+          const m = Math.round((need.totalHours - h) * 60);
+          return `${h}h ${m}m`;
+        })(),
+        detail: (() => {
+          if (!selectedDetection) return null;
+          const need = computeSleepNeed(
+            sleepPlan?.targetSleepMinutes ?? 480,
+            selectedMetric?.strainScore ?? null,
+            allDetections,
+            selectedDetection.nightDate,
+          );
+          const parts: string[] = [];
+          if (need.strainHours > 0.05)
+            parts.push(`+${(need.strainHours * 60).toFixed(0)}m strain`);
+          if (need.debtHours > 0.05)
+            parts.push(`+${(need.debtHours * 60).toFixed(0)}m debt`);
+          return parts.length > 0 ? parts.join(' · ') : null;
+        })(),
       },
       {
         label: 'pNN50',
