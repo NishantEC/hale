@@ -179,4 +179,44 @@ describe("buildTodayTape", () => {
     })
     expect(events.filter((e) => e.type === "recovery")).toEqual([])
   })
+
+  it("emits a sleep wake-up event when there's a sleep ring", () => {
+    const events = buildTodayTape({
+      homeView: makeHomeView({ sleep: { value: "7:23", progress: 0.92 } }),
+      journalEntries: [],
+      now: NOW,
+      colors: COLORS,
+      selectedDate: "2026-05-10",
+    })
+    const sleepEvents = events.filter((e) => e.type === "sleep")
+    expect(sleepEvents).toHaveLength(1)
+    expect(sleepEvents[0]).toMatchObject({
+      title: "Woke up",
+      desc: "7:23",
+      dotColor: COLORS.ringSleep,
+    })
+  })
+
+  it("emits one workout event per activity in homeView.activities.activityFeed", () => {
+    const homeView = makeHomeView({})
+    homeView.activities.activityFeed = [
+      { type: "Run", duration: "26:14", strain: "9.2", intensity: "Moderate", time: "09:45" },
+      { type: "Yoga", duration: "30:00", strain: "3.1", intensity: "Low", time: "13:00" },
+    ]
+    const events = buildTodayTape({
+      homeView,
+      journalEntries: [],
+      now: NOW,
+      colors: COLORS,
+      selectedDate: "2026-05-10",
+    })
+    const workouts = events.filter((e) => e.type === "workout")
+    expect(workouts).toHaveLength(2)
+    expect(workouts[0]).toMatchObject({
+      title: "Run",
+      desc: "26:14 · Strain 9.2",
+      dotColor: COLORS.ringStrain,
+      time: "09:45",
+    })
+  })
 })

@@ -34,6 +34,25 @@ export function buildTodayTape(input: {
   const { journalEntries, now, colors } = input
   const events: TapeEvent[] = []
 
+  // Sleep wake-up — synthetic time at 06:30 of selectedDate
+  if (input.homeView) {
+    const sleepLabel = input.homeView.rings.sleep.value
+    if (sleepLabel && sleepLabel !== "--") {
+      const ts = synthesizeTimeOnDate(input.selectedDate, 6, 30)
+      if (Number.isFinite(ts) && ts <= now) {
+        events.push({
+          id: "sleep-wake",
+          time: formatTime(ts),
+          ts,
+          title: "Woke up",
+          desc: sleepLabel,
+          dotColor: colors.ringSleep,
+          type: "sleep",
+        })
+      }
+    }
+  }
+
   // Recovery scored — synthetic time at 06:35 of selectedDate
   if (input.homeView) {
     const recoveryValue = parseScalar(input.homeView.rings.recovery.value)
@@ -50,6 +69,26 @@ export function buildTodayTape(input: {
           type: "recovery",
         })
       }
+    }
+  }
+
+  // Workouts — from activities.activityFeed (time is "HH:MM" already)
+  if (input.homeView) {
+    for (let i = 0; i < input.homeView.activities.activityFeed.length; i++) {
+      const a = input.homeView.activities.activityFeed[i]
+      const [h, m] = a.time.split(":").map(Number)
+      if (!Number.isFinite(h) || !Number.isFinite(m)) continue
+      const ts = synthesizeTimeOnDate(input.selectedDate, h, m)
+      if (!Number.isFinite(ts) || ts > now) continue
+      events.push({
+        id: `workout-${i}`,
+        time: a.time,
+        ts,
+        title: a.type,
+        desc: `${a.duration} · Strain ${a.strain}`,
+        dotColor: colors.ringStrain,
+        type: "workout",
+      })
     }
   }
 
