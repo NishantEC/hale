@@ -212,7 +212,7 @@ export class DebugService {
       .andWhere('raw.timestamp >= :start', { start })
       .andWhere('raw.timestamp < :end', { end })
       .orderBy('raw.timestamp', 'DESC')
-      .limit(Math.min(Math.max(limit, 1), 500))
+      .limit(Math.min(Math.max(limit, 1), 50000))
       .getMany();
 
     return {
