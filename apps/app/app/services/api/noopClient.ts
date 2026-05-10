@@ -165,6 +165,19 @@ export interface SleepViewModel {
     samples: SeriesPoint[];
   };
   sleepScoreTrend: SeriesPoint[];
+  score: {
+    value: number | null;
+    label: string;
+    confidence: string;
+    detail: string;
+    deltaVsWeek: number | null;
+  };
+  vitalsDelta: {
+    efficiency: number | null;
+    rhr: number | null;
+    hrv: number | null;
+    skinTempDelta: number | null;
+  };
   metrics: Array<{
     label: string;
     value: string;
@@ -172,9 +185,11 @@ export interface SleepViewModel {
   }>;
   factorInsights: Array<{
     factorTag: string;
-    deepDelta: string | null;
-    remDelta: string | null;
-    sampleCount: number;
+    occurrences: number;
+    deepMin: number;
+    remMin: number;
+    awakeMin: number;
+    effectSize: number;
   }>;
   planner: {
     targetSleepMinutes: number;
