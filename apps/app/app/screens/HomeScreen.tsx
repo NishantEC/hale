@@ -385,11 +385,11 @@ export const HomeScreen: FC = () => {
           accessibilityRole="button"
           style={({ pressed }) => [
             $tabBarFab,
-            { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceCardBorder },
-            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+            { backgroundColor: colors.tint },
+            pressed && { opacity: 0.9, transform: [{ scale: 0.96 }] },
           ]}
         >
-          <Ionicons name="add" size={22} color={colors.tint} />
+          <Ionicons name="add" size={24} color={colors.onPrimary} />
         </Pressable>
 
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
@@ -526,22 +526,21 @@ const $topStrip: ThemedStyle<ViewStyle> = () => ({
 const $tabBarFab: ViewStyle = {
   alignItems: "center",
   borderRadius: 9999,
-  borderWidth: 1,
-  bottom: 32,
-  height: 44,
+  bottom: 36,
+  height: 52,
   justifyContent: "center",
   position: "absolute",
-  right: 20,
-  width: 44,
+  right: 16,
+  width: 52,
   zIndex: 20,
   ...Platform.select({
     ios: {
       shadowColor: "#000",
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.5,
-      shadowRadius: 16,
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.45,
+      shadowRadius: 18,
     },
-    android: { elevation: 8 },
+    android: { elevation: 10 },
   }),
 }
 

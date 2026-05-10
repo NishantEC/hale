@@ -32,8 +32,8 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
       <Pressable onPress={onPress} style={$ringPress} disabled={!onPress}>
         <CircularProgress
           progress={progress}
-          size={160}
-          strokeWidth={8}
+          size={112}
+          strokeWidth={6}
           progressCircleColor={colors.ringRecovery}
           outerCircleColor={colors.surfaceCard}
           backgroundColor="transparent"
@@ -44,10 +44,10 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
                 text={label}
                 style={{
                   color: colors.text,
-                  fontSize: 44,
+                  fontSize: 28,
                   fontWeight: "900",
-                  letterSpacing: -1.5,
-                  lineHeight: 48,
+                  letterSpacing: -0.8,
+                  lineHeight: 32,
                   fontVariant: ["tabular-nums"],
                 }}
               />
@@ -55,10 +55,10 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
                 text="RECOVERY"
                 style={{
                   color: colors.textDim,
-                  fontSize: 8,
+                  fontSize: 7,
                   fontWeight: "700",
-                  letterSpacing: 1.4,
-                  marginTop: 2,
+                  letterSpacing: 1.2,
+                  marginTop: 1,
                 }}
               />
             </View>
@@ -73,7 +73,7 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
           fontSize: 13,
           fontWeight: "700",
           letterSpacing: -0.2,
-          marginTop: 12,
+          marginTop: 8,
           textAlign: "center",
         }}
       />
@@ -92,8 +92,8 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
 
 const $wrap: ViewStyle = {
   alignItems: "center",
-  marginTop: 16,
-  marginBottom: 24,
+  marginTop: 8,
+  marginBottom: 16,
 }
 
 const $ringPress: ViewStyle = {
