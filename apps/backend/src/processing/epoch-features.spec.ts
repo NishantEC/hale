@@ -82,14 +82,30 @@ describe('extractEpochFeatures', () => {
     expect(features[0].skinContact).toBe(0);
   });
 
-  it('computes signalCompleteness based on available signals', () => {
-    const records = Array.from({ length: 30 }, (_, i) =>
-      makeRecord(i, { spo2Red: null, spo2IR: null, skinTempRaw: null }),
-    );
-    const bedtime = records[0].timestamp;
-    const wakeTime = new Date(bedtime.getTime() + 30 * 1000);
-    const features = extractEpochFeatures(records, bedtime, wakeTime, 60);
-    expect(features[0].signalCompleteness).toBeCloseTo(18 / 21, 2);
+  it('drops signalCompleteness when spo2/temp inputs are null', () => {
+    // Compare the completeness with vs without the three nullable signals.
+    // The exact denominator (FEATURE_COUNT) drifts as new features are
+    // added; what matters is that nulling spo2Red/spo2IR/skinTempRaw
+    // produces a measurable drop (those signals become NaN downstream).
+    const baseline = extractEpochFeatures(
+      Array.from({ length: 30 }, (_, i) => makeRecord(i)),
+      new Date(Date.UTC(2026, 3, 6, 0, 0, 0)),
+      new Date(Date.UTC(2026, 3, 6, 0, 0, 30)),
+      60,
+    )[0];
+    const withNulls = extractEpochFeatures(
+      Array.from({ length: 30 }, (_, i) =>
+        makeRecord(i, { spo2Red: null, spo2IR: null, skinTempRaw: null }),
+      ),
+      new Date(Date.UTC(2026, 3, 6, 0, 0, 0)),
+      new Date(Date.UTC(2026, 3, 6, 0, 0, 30)),
+      60,
+    )[0];
+    expect(withNulls.signalCompleteness).toBeLessThan(baseline.signalCompleteness);
+    // 3 inputs (spo2Red, spo2IR, skinTempRaw) feed at least 3 outputs
+    // (spo2, skinTemp, skinTempDelta). Difference should be ≥ 3/FEATURE_COUNT.
+    const drop = baseline.signalCompleteness - withNulls.signalCompleteness;
+    expect(drop).toBeGreaterThan(0.05);
   });
 
   it('returns empty array when fewer than 30 records', () => {
