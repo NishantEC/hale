@@ -10,9 +10,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
 
+import Svg, { Defs, RadialGradient, Stop, Circle } from "react-native-svg"
+
 import { Dialog } from "@/components/reacticx/dialog"
 import { DisclosureGroup } from "@/components/reacticx/disclosure-group"
-import { EnergyOrb } from "@/components/reacticx/energy-orb"
 import {
   fetchHealthView,
   HealthAssessment,
@@ -234,7 +235,23 @@ const OrbBlock: FC<{
     <View style={styles.orbWrap}>
       <View style={styles.orbContainer}>
         <View style={styles.orbAbsolute}>
-          <EnergyOrb width={ORB_SIZE} height={ORB_SIZE} colors={orbColors} speed={0.8} intensity={2.2} glowRadius={0.5} />
+          <Svg width={ORB_SIZE} height={ORB_SIZE} viewBox="0 0 100 100">
+            <Defs>
+              <RadialGradient id="orbInner" cx="50%" cy="50%" r="50%">
+                <Stop offset="0%" stopColor={orbColors[0]} stopOpacity="0" />
+                <Stop offset="45%" stopColor={orbColors[1]} stopOpacity="0.55" />
+                <Stop offset="70%" stopColor={orbColors[1]} stopOpacity="0.18" />
+                <Stop offset="100%" stopColor={orbColors[2]} stopOpacity="0" />
+              </RadialGradient>
+              <RadialGradient id="orbRing" cx="50%" cy="50%" r="55%">
+                <Stop offset="55%" stopColor={accentColor} stopOpacity="0" />
+                <Stop offset="68%" stopColor={accentColor} stopOpacity="0.55" />
+                <Stop offset="82%" stopColor={accentColor} stopOpacity="0" />
+              </RadialGradient>
+            </Defs>
+            <Circle cx="50" cy="50" r="48" fill="url(#orbInner)" />
+            <Circle cx="50" cy="50" r="48" fill="url(#orbRing)" />
+          </Svg>
         </View>
         <View style={styles.orbCenter}>
           <Text style={[styles.orbNum, { color: colors.text }]}>
