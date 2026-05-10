@@ -21,10 +21,10 @@ export const TapeRow: FC<Props> = ({ time, dotColor, title, desc, onPress }) => 
         text={time}
         style={{
           color: colors.textMuted,
-          fontSize: 9,
+          fontSize: 11,
           fontWeight: "700",
           letterSpacing: 0.5,
-          minWidth: 38,
+          minWidth: 44,
           paddingTop: 3,
           fontVariant: ["tabular-nums"],
         }}
@@ -34,13 +34,13 @@ export const TapeRow: FC<Props> = ({ time, dotColor, title, desc, onPress }) => 
         <Text
           text={title}
           numberOfLines={1}
-          style={{ color: colors.text, fontSize: 12, fontWeight: "600" }}
+          style={{ color: colors.text, fontSize: 15, fontWeight: "600" }}
         />
         {desc ? (
           <Text
             text={desc}
             numberOfLines={2}
-            style={{ color: colors.textDim, fontSize: 9, marginTop: 1 }}
+            style={{ color: colors.textDim, fontSize: 12, marginTop: 2 }}
           />
         ) : null}
       </View>
@@ -60,16 +60,16 @@ export const TapeRow: FC<Props> = ({ time, dotColor, title, desc, onPress }) => 
 
 const $row: ViewStyle = {
   flexDirection: "row",
-  gap: 10,
+  gap: 12,
   alignItems: "flex-start",
-  paddingVertical: 8,
+  paddingVertical: 10,
 }
 
 const $dot: ViewStyle = {
-  width: 7,
-  height: 7,
-  borderRadius: 4,
-  marginTop: 6,
+  width: 9,
+  height: 9,
+  borderRadius: 5,
+  marginTop: 7,
   flexShrink: 0,
 }
 

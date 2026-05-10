@@ -351,7 +351,7 @@ export const HomeScreen: FC = () => {
                   text="STATS"
                   style={{
                     color: colors.textDim,
-                    fontSize: 8,
+                    fontSize: 11,
                     fontWeight: "700",
                     letterSpacing: 1.4,
                     marginBottom: 8,
@@ -364,7 +364,7 @@ export const HomeScreen: FC = () => {
                   text="TODAY'S TAPE"
                   style={{
                     color: colors.textDim,
-                    fontSize: 8,
+                    fontSize: 11,
                     fontWeight: "700",
                     letterSpacing: 1.4,
                     marginTop: 28,

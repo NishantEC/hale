@@ -24,26 +24,26 @@ export const StatTile: FC<Props> = ({ label, value, desc, tint, onPress }) => {
         text={label.toUpperCase()}
         style={{
           color: colors.textDim,
-          fontSize: 7,
+          fontSize: 10,
           fontWeight: "700",
-          letterSpacing: 1.2,
+          letterSpacing: 1.4,
         }}
       />
       <Text
         text={value}
         style={{
           color: colors.text,
-          fontSize: 20,
+          fontSize: 26,
           fontWeight: "900",
-          letterSpacing: -0.5,
-          marginTop: 2,
+          letterSpacing: -0.6,
+          marginTop: 4,
           fontVariant: ["tabular-nums"],
         }}
       />
       {desc ? (
         <Text
           text={desc}
-          style={{ color: colors.textMuted, fontSize: 9, marginTop: 1 }}
+          style={{ color: colors.textMuted, fontSize: 12, marginTop: 2 }}
           numberOfLines={1}
         />
       ) : null}
@@ -62,19 +62,19 @@ export const StatTile: FC<Props> = ({ label, value, desc, tint, onPress }) => {
 }
 
 const $tile: ViewStyle = {
-  borderRadius: 12,
-  padding: 12,
+  borderRadius: 14,
+  padding: 14,
   overflow: "hidden",
   position: "relative",
   flex: 1,
-  minHeight: 76,
+  minHeight: 96,
 }
 
 const $halo: ViewStyle = {
   position: "absolute",
-  top: -20,
-  right: -20,
-  width: 60,
-  height: 60,
-  borderRadius: 30,
+  top: -24,
+  right: -24,
+  width: 72,
+  height: 72,
+  borderRadius: 36,
 }

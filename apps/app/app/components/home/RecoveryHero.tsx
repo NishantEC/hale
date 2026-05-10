@@ -32,8 +32,8 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
       <Pressable onPress={onPress} style={$ringPress} disabled={!onPress}>
         <CircularProgress
           progress={progress}
-          size={112}
-          strokeWidth={6}
+          size={140}
+          strokeWidth={7}
           progressCircleColor={colors.ringRecovery}
           outerCircleColor={colors.surfaceCard}
           backgroundColor="transparent"
@@ -44,10 +44,10 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
                 text={label}
                 style={{
                   color: colors.text,
-                  fontSize: 28,
+                  fontSize: 38,
                   fontWeight: "900",
-                  letterSpacing: -0.8,
-                  lineHeight: 32,
+                  letterSpacing: -1.2,
+                  lineHeight: 42,
                   fontVariant: ["tabular-nums"],
                 }}
               />
@@ -55,10 +55,10 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
                 text="RECOVERY"
                 style={{
                   color: colors.textDim,
-                  fontSize: 7,
+                  fontSize: 9,
                   fontWeight: "700",
-                  letterSpacing: 1.2,
-                  marginTop: 1,
+                  letterSpacing: 1.4,
+                  marginTop: 2,
                 }}
               />
             </View>
@@ -70,10 +70,10 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
         text={verdict}
         style={{
           color: colors.text,
-          fontSize: 13,
+          fontSize: 17,
           fontWeight: "700",
-          letterSpacing: -0.2,
-          marginTop: 8,
+          letterSpacing: -0.3,
+          marginTop: 12,
           textAlign: "center",
         }}
       />
@@ -81,8 +81,8 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
         text={verdictDetail}
         style={{
           color: colors.textDim,
-          fontSize: 10,
-          marginTop: 2,
+          fontSize: 13,
+          marginTop: 3,
           textAlign: "center",
         }}
       />
@@ -92,8 +92,8 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
 
 const $wrap: ViewStyle = {
   alignItems: "center",
-  marginTop: 8,
-  marginBottom: 16,
+  marginTop: 12,
+  marginBottom: 20,
 }
 
 const $ringPress: ViewStyle = {

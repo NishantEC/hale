@@ -46,7 +46,7 @@ export const TodayTape: FC<Props> = ({ events, onEventPress }) => {
               style={{
                 height: StyleSheet.hairlineWidth,
                 backgroundColor: colors.divider,
-                marginLeft: 38 + 10 + 7 + 10, // time width + gap + dot + gap
+                marginLeft: 44 + 12 + 9 + 12, // time width + gap + dot + gap
               }}
             />
           ) : null}
