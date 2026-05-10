@@ -22,20 +22,27 @@ import {
   SPRING_DEFAULT,
 } from "./tokens"
 
-const ROUTES: PillRoute[] = [
-  { key: "index", label: "Home", iconOutline: "home-outline", iconFilled: "home" },
-  { key: "health", label: "Health", iconOutline: "pulse-outline", iconFilled: "pulse" },
-  { key: "settings", label: "Settings", iconOutline: "settings-outline", iconFilled: "settings" },
-]
+const ROUTE_META: Record<string, Omit<PillRoute, "key">> = {
+  index: { label: "Home", iconOutline: "home-outline", iconFilled: "home" },
+  health: { label: "Health", iconOutline: "pulse-outline", iconFilled: "pulse" },
+  settings: { label: "Settings", iconOutline: "settings-outline", iconFilled: "settings" },
+}
 
 export function AppTabBar({ state, navigation, insets }: BottomTabBarProps) {
   const reduced = useReducedMotion()
   const bottomInset = Math.max(insets.bottom, 8)
 
   const focusedRouteName = state.routes[state.index]?.name
-  const focusedIndex = useMemo(
-    () => Math.max(0, ROUTES.findIndex((r) => r.key === focusedRouteName)),
-    [focusedRouteName],
+  const pillRoutes = useMemo<PillRoute[]>(
+    () =>
+      state.routes
+        .filter((r) => ROUTE_META[r.name])
+        .map((r) => ({ key: r.name, ...ROUTE_META[r.name] })),
+    [state.routes],
+  )
+  const focusedIndex = Math.max(
+    0,
+    pillRoutes.findIndex((r) => r.key === focusedRouteName),
   )
 
   const pathname = usePathname()
@@ -56,7 +63,9 @@ export function AppTabBar({ state, navigation, insets }: BottomTabBarProps) {
   }))
 
   const onSelect = (index: number) => {
-    const route = state.routes.find((r) => r.name === ROUTES[index].key)
+    const pillRoute = pillRoutes[index]
+    if (!pillRoute) return
+    const route = state.routes.find((r) => r.name === pillRoute.key)
     if (!route) return
     const event = navigation.emit({
       type: "tabPress",
@@ -86,7 +95,7 @@ export function AppTabBar({ state, navigation, insets }: BottomTabBarProps) {
       pointerEvents="box-none"
     >
       <View style={[styles.row, { gap: PILL_FAB_GAP }]}>
-        <TabPill routes={ROUTES} focusedIndex={focusedIndex} onSelect={onSelect} />
+        <TabPill routes={pillRoutes} focusedIndex={focusedIndex} onSelect={onSelect} />
         <PlusFab isOpen={isJournalOpen} onPress={onPressPlus} />
       </View>
     </Animated.View>
