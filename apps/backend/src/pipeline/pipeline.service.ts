@@ -363,6 +363,19 @@ export class PipelineService {
 
     const featureByNightKey = new Map<number, import('../processing/interfaces.js').NightFeatureSet>();
     for (const detection of sleepDetections) {
+      const nightEpochs = allEpochFeatures.filter(
+        (e) =>
+          e.timestamp.getTime() >= detection.bedtime.getTime() &&
+          e.timestamp.getTime() <= detection.wakeTime.getTime(),
+      );
+      const respValues = nightEpochs
+        .map((e) => e.respiratoryRate)
+        .filter((v): v is number => Number.isFinite(v) && v > 0);
+      const respiratoryRate =
+        respValues.length > 0
+          ? respValues.reduce((a, b) => a + b, 0) / respValues.length
+          : null;
+
       const baseFeature = buildNightFeatureSet(
         sanitized,
         this.startOfDay(detection.nightDate),
@@ -374,6 +387,7 @@ export class PipelineService {
           regularity: detection.regularity,
           validCoverage: detection.validCoverage,
           sleepEstimateHours: detection.durationHours,
+          respiratoryRate,
         },
       );
       const effectiveFeature = effectiveSleepFeatureSet(baseFeature, detection);

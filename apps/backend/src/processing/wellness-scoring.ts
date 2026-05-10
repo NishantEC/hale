@@ -16,6 +16,12 @@ type NightFeatureBuildOptions = {
   validCoverage?: number | null;
   sleepEstimateHours?: number | null;
   sourceBlend?: string | null;
+  /**
+   * Mean respiratory rate (breaths/min) from the strap's `respRateRaw`
+   * field, averaged across in-window epochs. When supplied, replaces the
+   * HR-stddev fallback that only exists for samples without a real RR.
+   */
+  respiratoryRate?: number | null;
 };
 
 export function buildNightFeatureSet(
@@ -55,10 +61,14 @@ export function buildNightFeatureSet(
   // SDNN: standard deviation of IBIs
   const sdnn = ibis.length >= 2 ? standardDeviation(ibis) : 0;
 
-  // Respiratory rate estimate: 14.0 + (hrStdDev * 0.65), clamped 10-22
+  // Respiratory rate: prefer real `respRateRaw` mean from strap when the
+  // caller supplies it; otherwise fall back to a HR-stddev heuristic.
   const hrStdDev =
     heartRates.length >= 2 ? standardDeviation(heartRates) : 0;
-  const respiratoryRate = clamp(14.0 + hrStdDev * 0.65, 10, 22);
+  const respiratoryRate =
+    options.respiratoryRate != null && Number.isFinite(options.respiratoryRate)
+      ? clamp(options.respiratoryRate, 6, 30)
+      : clamp(14.0 + hrStdDev * 0.65, 10, 22);
 
   // Continuity: gap penalty for gaps > 8 minutes
   const continuity = clamp(

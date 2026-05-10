@@ -103,10 +103,13 @@ function computeEpochFeature(
   const sdnn = ibis.length >= 2 ? standardDeviation(ibis) : NaN;
   const rrMean = ibis.length > 0 ? average(ibis) : NaN;
 
-  // Respiratory features
+  // Respiratory features. respRateRaw is a Q8.8 fixed-point value
+  // (high byte = breaths/min integer part, low byte = fractional/flag).
+  // Dividing by 256 yields breaths-per-minute. Sleep range is ~7-16,
+  // awake range ~12-20; clamp to [4, 30] to drop sensor garbage.
   const respValues = records
-    .map((r) => r.respRateRaw)
-    .filter((v): v is number => v != null && v > 0);
+    .map((r) => (r.respRateRaw != null ? r.respRateRaw / 256 : null))
+    .filter((v): v is number => v != null && v >= 4 && v <= 30);
   const respiratoryRate = respValues.length > 0 ? average(respValues) : NaN;
   const respiratoryStd =
     respValues.length >= 2 ? standardDeviation(respValues) : NaN;
