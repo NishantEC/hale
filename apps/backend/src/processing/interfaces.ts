@@ -174,9 +174,3 @@ export interface EpochFeature {
   rsaAmplitude: number;
 }
 
-export interface EpochClassification {
-  timestamp: Date;
-  stage: 'Wake' | 'Light' | 'Deep' | 'REM';
-  confidence: number;
-  probabilities: [number, number, number, number]; // [wake, light, deep, rem]
-}

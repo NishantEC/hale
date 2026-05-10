@@ -32,12 +32,8 @@ import { ActivityDetection } from '../activity/entities/activity-detection.entit
 import { HealthkitDailySummary } from '../activity/entities/healthkit-daily-summary.entity.js';
 import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.js';
 import { extractEpochFeatures } from '../processing/epoch-features.js';
-import {
-  loadModel,
-  classifySleepStages,
-} from '../processing/sleep-stage-classifier.js';
+import { classifySleepStages } from '../processing/sleep-stage-classifier.js';
 import { median } from '../processing/utils.js';
-import sleepRfModel from '../processing/models/sleep-rf-v1.json';
 import { computeDerivedMetrics } from '../processing/derived-metrics.js';
 import { computeSleepScoreForNight } from '../processing/sleep-score.js';
 import { computeTypicalRanges } from '../processing/typical-ranges.js';
@@ -53,7 +49,6 @@ import type {
 @Injectable()
 export class PipelineService {
   private readonly logger = new Logger(PipelineService.name);
-  private readonly rfModel = loadModel(sleepRfModel);
 
   constructor(
     @InjectRepository(SleepDetection)
@@ -349,7 +344,7 @@ export class PipelineService {
       await this.activityDetectionRepo.save(entities, { chunk: 200 });
     }
 
-    // Extract epoch features and classify sleep stages using RF model
+    // Extract epoch features and classify sleep stages
     const nightMedianHR =
       sensorRecords.length > 0
         ? median(sensorRecords.map((r) => r.heartRate).filter((h) => h > 0))
@@ -364,11 +359,7 @@ export class PipelineService {
       ),
     );
 
-    const sleepStages = classifySleepStages(
-      this.rfModel,
-      allEpochFeatures,
-      sleepDetections,
-    );
+    const sleepStages = classifySleepStages(allEpochFeatures, sleepDetections);
 
     const featureByNightKey = new Map<number, import('../processing/interfaces.js').NightFeatureSet>();
     for (const detection of sleepDetections) {
@@ -1065,23 +1056,23 @@ async function upsertRawSensorRows(
       .insert()
       .values(values as any)
       .onConflict(`("userId", timestamp) DO UPDATE SET
-        "heartRate"        = CASE WHEN EXCLUDED."heartRate" > 0 THEN EXCLUDED."heartRate" ELSE raw_sensor_records."heartRate" END,
-        "rrAverageMs"      = COALESCE(EXCLUDED."rrAverageMs",      raw_sensor_records."rrAverageMs"),
-        "spo2Red"          = COALESCE(EXCLUDED."spo2Red",          raw_sensor_records."spo2Red"),
-        "spo2IR"           = COALESCE(EXCLUDED."spo2IR",           raw_sensor_records."spo2IR"),
-        "skinTempRaw"      = COALESCE(EXCLUDED."skinTempRaw",      raw_sensor_records."skinTempRaw"),
-        "gravityMagnitude" = COALESCE(EXCLUDED."gravityMagnitude", raw_sensor_records."gravityMagnitude"),
-        "gravityX"         = COALESCE(EXCLUDED."gravityX",         raw_sensor_records."gravityX"),
-        "gravityY"         = COALESCE(EXCLUDED."gravityY",         raw_sensor_records."gravityY"),
-        "gravityZ"         = COALESCE(EXCLUDED."gravityZ",         raw_sensor_records."gravityZ"),
-        "respRateRaw"      = COALESCE(EXCLUDED."respRateRaw",      raw_sensor_records."respRateRaw"),
-        "skinContact"      = COALESCE(EXCLUDED."skinContact",      raw_sensor_records."skinContact"),
-        "ppgGreen"         = COALESCE(EXCLUDED."ppgGreen",         raw_sensor_records."ppgGreen"),
-        "ppgRedIr"         = COALESCE(EXCLUDED."ppgRedIr",         raw_sensor_records."ppgRedIr"),
-        "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     raw_sensor_records."ambientLight"),
-        "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        raw_sensor_records."ledDrive1"),
-        "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        raw_sensor_records."ledDrive2"),
-        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    raw_sensor_records."signalQuality")
+        "heartRate"        = CASE WHEN EXCLUDED."heartRate" > 0 THEN EXCLUDED."heartRate" ELSE "heartRate" END,
+        "rrAverageMs"      = COALESCE(EXCLUDED."rrAverageMs",      "rrAverageMs"),
+        "spo2Red"          = COALESCE(EXCLUDED."spo2Red",          "spo2Red"),
+        "spo2IR"           = COALESCE(EXCLUDED."spo2IR",           "spo2IR"),
+        "skinTempRaw"      = COALESCE(EXCLUDED."skinTempRaw",      "skinTempRaw"),
+        "gravityMagnitude" = COALESCE(EXCLUDED."gravityMagnitude", "gravityMagnitude"),
+        "gravityX"         = COALESCE(EXCLUDED."gravityX",         "gravityX"),
+        "gravityY"         = COALESCE(EXCLUDED."gravityY",         "gravityY"),
+        "gravityZ"         = COALESCE(EXCLUDED."gravityZ",         "gravityZ"),
+        "respRateRaw"      = COALESCE(EXCLUDED."respRateRaw",      "respRateRaw"),
+        "skinContact"      = COALESCE(EXCLUDED."skinContact",      "skinContact"),
+        "ppgGreen"         = COALESCE(EXCLUDED."ppgGreen",         "ppgGreen"),
+        "ppgRedIr"         = COALESCE(EXCLUDED."ppgRedIr",         "ppgRedIr"),
+        "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     "ambientLight"),
+        "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        "ledDrive1"),
+        "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        "ledDrive2"),
+        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    "signalQuality")
       `)
       .execute();
     total += slice.length;

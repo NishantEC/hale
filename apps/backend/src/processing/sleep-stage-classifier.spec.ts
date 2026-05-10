@@ -1,47 +1,5 @@
-import {
-  loadModel,
-  classifyEpoch,
-  classifySleepStages,
-} from './sleep-stage-classifier';
-import type {
-  EpochFeature,
-  EpochClassification,
-  SleepStageSummary,
-  SleepDetectionSummary,
-} from './interfaces';
-
-// Tiny 2-tree model for testing. Each tree has 3 nodes:
-// Node 0: split on feature 0 (hrMean) at threshold 65
-//   Left (hrMean <= 65) → Node 1 (leaf: Deep)
-//   Right (hrMean > 65) → Node 2 (leaf: Wake)
-const TINY_MODEL = {
-  nEstimators: 2,
-  nFeatures: 21,
-  featureNames: [
-    'hrMean', 'hrStd', 'hrMin', 'hrMax', 'hrDeltaFromBaseline',
-    'motionMagnitude', 'motionStd', 'motionCount', 'stillFraction',
-    'rmssd', 'sdnn', 'rrMean',
-    'respiratoryRate', 'respiratoryStd',
-    'spo2', 'skinTemp', 'skinTempDelta',
-    'clockSin', 'clockCos', 'skinContact', 'signalCompleteness',
-  ],
-  trees: [
-    {
-      nodes: [
-        { featureIndex: 0, threshold: 65, left: 1, right: 2 },
-        { featureIndex: -1, threshold: 0, left: -1, right: -1, value: [0.0, 0.1, 0.8, 0.1] },
-        { featureIndex: -1, threshold: 0, left: -1, right: -1, value: [0.9, 0.05, 0.0, 0.05] },
-      ],
-    },
-    {
-      nodes: [
-        { featureIndex: 0, threshold: 65, left: 1, right: 2 },
-        { featureIndex: -1, threshold: 0, left: -1, right: -1, value: [0.0, 0.2, 0.7, 0.1] },
-        { featureIndex: -1, threshold: 0, left: -1, right: -1, value: [0.8, 0.1, 0.0, 0.1] },
-      ],
-    },
-  ],
-};
+import { classifySleepStages } from './sleep-stage-classifier';
+import type { EpochFeature, SleepDetectionSummary } from './interfaces';
 
 function makeEpochFeature(
   offsetMinutes: number,
@@ -49,12 +7,12 @@ function makeEpochFeature(
 ): EpochFeature {
   return {
     timestamp: new Date(Date.UTC(2026, 3, 6, 0, 0, 0) + offsetMinutes * 60 * 1000),
-    hrMean: 55,
+    hrMean: 60,
     hrStd: 2,
-    hrMin: 52,
-    hrMax: 58,
-    hrDeltaFromBaseline: -0.08,
-    motionMagnitude: 0.002,
+    hrMin: 58,
+    hrMax: 62,
+    hrDeltaFromBaseline: -0.05,
+    motionMagnitude: 0.005,
     motionStd: 0.001,
     motionCount: 0,
     stillFraction: 1,
@@ -81,92 +39,115 @@ function makeEpochFeature(
   };
 }
 
-describe('loadModel', () => {
-  it('parses a model JSON object', () => {
-    const model = loadModel(TINY_MODEL);
-    expect(model.nEstimators).toBe(2);
-    expect(model.trees).toHaveLength(2);
-  });
-});
+function makeDetection(
+  bedtime: Date,
+  wakeTime: Date,
+  overrides: Partial<SleepDetectionSummary> = {},
+): SleepDetectionSummary {
+  return {
+    nightDate: new Date(Date.UTC(2026, 3, 6)),
+    bedtime,
+    wakeTime,
+    durationHours: (wakeTime.getTime() - bedtime.getTime()) / 3_600_000,
+    interruptionCount: 0,
+    continuity: 1,
+    regularity: 0.8,
+    validCoverage: 1,
+    confidence: 1,
+    ...overrides,
+  };
+}
 
-describe('classifyEpoch', () => {
-  it('classifies low HR epoch as Deep', () => {
-    const model = loadModel(TINY_MODEL);
-    const epoch = makeEpochFeature(0, { hrMean: 55 });
-    const result = classifyEpoch(model, epoch);
-    expect(result.stage).toBe('Deep');
-    expect(result.confidence).toBeGreaterThan(0.5);
-  });
-
-  it('classifies high HR epoch as Wake', () => {
-    const model = loadModel(TINY_MODEL);
-    const epoch = makeEpochFeature(0, { hrMean: 75 });
-    const result = classifyEpoch(model, epoch);
-    expect(result.stage).toBe('Wake');
-    expect(result.confidence).toBeGreaterThan(0.5);
-  });
-});
-
-describe('classifySleepStages', () => {
-  it('returns a SleepStageSummary with correct stage minutes', () => {
-    const model = loadModel(TINY_MODEL);
-    const epochs = [
-      ...Array.from({ length: 20 }, (_, i) =>
-        makeEpochFeature(i * 0.5, { hrMean: 55 }),
-      ),
-      ...Array.from({ length: 10 }, (_, i) =>
-        makeEpochFeature(10 + i * 0.5, { hrMean: 75 }),
-      ),
-    ];
-    const detection: SleepDetectionSummary = {
-      nightDate: new Date(Date.UTC(2026, 3, 6)),
-      bedtime: epochs[0].timestamp,
-      wakeTime: epochs[epochs.length - 1].timestamp,
-      durationHours: 0.25,
-      interruptionCount: 0,
-      continuity: 1,
-      regularity: 0.8,
-      validCoverage: 1,
-      confidence: 1,
-    };
-
-    const summaries = classifySleepStages(model, epochs, [detection]);
-    expect(summaries).toHaveLength(1);
-    expect(summaries[0].deepMinutes).toBeGreaterThan(0);
-    expect(summaries[0].awakeMinutes).toBeGreaterThan(0);
-    expect(summaries[0].epochMinutes).toBe(0.5);
-    expect(summaries[0].source).toBe('RF-v1');
-  });
-
-  it('flags low confidence but still emits per-stage minutes', () => {
-    const model = loadModel(TINY_MODEL);
-    const epochs = Array.from({ length: 4 }, (_, i) =>
-      makeEpochFeature(i * 0.5, { hrMean: 55, signalCompleteness: 0.2 }),
+describe('classifySleepStages (quantile)', () => {
+  it('emits a summary with quantile-v1 source', () => {
+    const epochs = Array.from({ length: 100 }, (_, i) =>
+      makeEpochFeature(i * 0.5, { hrMean: 60 + Math.sin(i / 5) * 5, sdnn: 40 + (i % 7) * 5 }),
     );
-    const detection: SleepDetectionSummary = {
-      nightDate: new Date(Date.UTC(2026, 3, 6)),
-      bedtime: epochs[0].timestamp,
-      wakeTime: epochs[epochs.length - 1].timestamp,
-      durationHours: 0.03,
-      interruptionCount: 0,
-      continuity: 0.1,
-      regularity: 0.5,
-      validCoverage: 0.1,
-      confidence: 0.2,
-    };
-
-    const summaries = classifySleepStages(model, epochs, [detection]);
+    const detection = makeDetection(
+      epochs[0].timestamp,
+      epochs[epochs.length - 1].timestamp,
+    );
+    const summaries = classifySleepStages(epochs, [detection]);
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].confidence).toBeLessThan(0.5);
-    expect(summaries[0].unknownMinutes).toBe(0);
-    const totalStageMin =
+    expect(summaries[0].source).toBe('quantile-v1');
+    expect(summaries[0].epochMinutes).toBe(0.5);
+  });
+
+  it('produces all four stages on a varied night', () => {
+    const epochs = Array.from({ length: 120 }, (_, i) => {
+      const segment = Math.floor(i / 30);
+      const hr = [58, 60, 64, 62][segment];
+      const motion = [0.001, 0.001, 0.04, 0.002][segment];
+      const sdnn = [30, 45, 60, 50][segment];
+      return makeEpochFeature(i * 0.5, { hrMean: hr, motionMagnitude: motion, sdnn });
+    });
+    const detection = makeDetection(
+      epochs[0].timestamp,
+      epochs[epochs.length - 1].timestamp,
+    );
+    const summaries = classifySleepStages(epochs, [detection]);
+    const s = summaries[0];
+    expect(s.remMinutes + s.coreMinutes + s.deepMinutes + s.awakeMinutes).toBeGreaterThan(0);
+    expect(s.deepMinutes).toBeGreaterThan(0);
+    expect(s.coreMinutes).toBeGreaterThan(0);
+  });
+
+  it('forces wake when skinContact is 0', () => {
+    const epochs = Array.from({ length: 60 }, (_, i) =>
+      makeEpochFeature(i * 0.5, { skinContact: i < 10 ? 0 : 1 }),
+    );
+    const detection = makeDetection(
+      epochs[0].timestamp,
+      epochs[epochs.length - 1].timestamp,
+    );
+    const summaries = classifySleepStages(epochs, [detection]);
+    expect(summaries[0].awakeMinutes).toBeGreaterThan(0);
+    const earlyEpochs = summaries[0].epochTimeline.slice(0, 5);
+    expect(earlyEpochs.every((e) => e.stage === 'awake')).toBe(true);
+  });
+
+  it('sums stage minutes to approximately the in-bed duration', () => {
+    const epochs = Array.from({ length: 80 }, (_, i) =>
+      makeEpochFeature(i * 0.5, { hrMean: 60 + (i % 9) }),
+    );
+    const detection = makeDetection(
+      epochs[0].timestamp,
+      epochs[epochs.length - 1].timestamp,
+    );
+    const inBedMin = Math.round(
+      (detection.wakeTime.getTime() - detection.bedtime.getTime()) / 60_000,
+    );
+    const summaries = classifySleepStages(epochs, [detection]);
+    const totalMin =
       summaries[0].remMinutes +
       summaries[0].coreMinutes +
       summaries[0].deepMinutes +
       summaries[0].awakeMinutes;
-    expect(totalStageMin).toBeGreaterThan(0);
+    expect(Math.abs(totalMin - inBedMin)).toBeLessThanOrEqual(2);
+  });
+
+  it('reduces confidence when feature completeness is low', () => {
+    const epochs = Array.from({ length: 40 }, (_, i) =>
+      makeEpochFeature(i * 0.5, { signalCompleteness: 0.2 }),
+    );
+    const detection = makeDetection(
+      epochs[0].timestamp,
+      epochs[epochs.length - 1].timestamp,
+      { confidence: 0.3, validCoverage: 0.2, continuity: 0.3 },
+    );
+    const summaries = classifySleepStages(epochs, [detection]);
+    expect(summaries[0].confidence).toBeLessThan(0.5);
+    expect(summaries[0].unknownMinutes).toBe(0);
     for (const epoch of summaries[0].epochTimeline) {
       expect(epoch.stage).not.toBe('unknown');
     }
+  });
+
+  it('returns empty array when no epochs match detection', () => {
+    const detection = makeDetection(
+      new Date(Date.UTC(2026, 3, 6)),
+      new Date(Date.UTC(2026, 3, 6, 8)),
+    );
+    expect(classifySleepStages([], [detection])).toEqual([]);
   });
 });
