@@ -1,8 +1,4 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Ionicons } from "@expo/vector-icons"
-import { BlurView } from "expo-blur"
-import { LinearGradient } from "expo-linear-gradient"
-import Svg, { Defs, RadialGradient, Stop, Ellipse } from "react-native-svg"
 import {
   Platform,
   RefreshControl,
@@ -14,21 +10,38 @@ import {
   View,
   ViewStyle,
 } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
-import Animated, { FadeIn, FadeInRight, FadeOut, FadeOutLeft, useSharedValue, withTiming, Easing } from "react-native-reanimated"
-
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInRight,
+  FadeOut,
+  FadeOutLeft,
+  useAnimatedScrollHandler,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { Text } from "@/components/Text"
+
+import { BlurHeader } from "@/components/BlurHeader"
+import { HomeFab } from "@/components/home/HomeFab"
+import { RecoveryHero } from "@/components/home/RecoveryHero"
+import { StatGrid, type StatGridItem } from "@/components/home/StatGrid"
+import { TodayTape } from "@/components/home/TodayTape"
 import { CircularProgress } from "@/components/reactx/circular-progress"
 import { Glow } from "@/components/reactx/glow"
 import { RollingCounter } from "@/components/reactx/rolling-counter"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
-import { useDashboard } from "@/context/DashboardContext"
-import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
+import { Text } from "@/components/Text"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
+import { useDashboard } from "@/context/DashboardContext"
 import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopClient"
+import { buildTodayTape, type TapeEvent } from "@/utils/buildTodayTape"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
+import { recoveryVerdict } from "@/utils/recoveryVerdict"
 
 import { getDaySwipeAction, shouldLockHomeScroll } from "./HomeScreen.utils"
 
@@ -117,16 +130,18 @@ export const HomeScreen: FC = () => {
 
   const liveHeartRateTitle = liveDeviceState.realtimeHeartRate
     ? String(liveDeviceState.realtimeHeartRate)
-    : homeView?.cards.liveHeartRate.title ?? "--"
+    : (homeView?.cards.liveHeartRate.title ?? "--")
   const liveHeartRateSubtitle = liveDeviceState.realtimeHeartRate
     ? "Live"
-    : homeView?.cards.liveHeartRate.subtitle ?? "Offline"
+    : (homeView?.cards.liveHeartRate.subtitle ?? "Offline")
   const isHomeViewPending = !homeView || homeView.selectedDate !== selectedDate
   const hasFailedLoad = useRef(false)
   if (error) hasFailedLoad.current = true
   if (homeView) hasFailedLoad.current = false
   const isHomeViewLoading = isHomeViewPending && !hasFailedLoad.current
-  const contentKey = isHomeViewPending ? `loading-${selectedDate}` : homeView?.selectedDate ?? selectedDate
+  const contentKey = isHomeViewPending
+    ? `loading-${selectedDate}`
+    : (homeView?.selectedDate ?? selectedDate)
   const selectedDateTitle = useMemo(() => formatSelectedDateTitle(selectedDate), [selectedDate])
 
   const hasRouteName = useCallback(
@@ -158,17 +173,14 @@ export const HomeScreen: FC = () => {
     goToNextDay()
   }, [goToNextDay])
 
-  const handleDaySwipeChanged = useCallback(
-    ({ nativeEvent }: PanGestureHandlerGestureEvent) => {
-      setIsHorizontalDaySwipeActive(
-        shouldLockHomeScroll({
-          translationX: nativeEvent.translationX,
-          translationY: nativeEvent.translationY,
-        }),
-      )
-    },
-    [],
-  )
+  const handleDaySwipeChanged = useCallback(({ nativeEvent }: PanGestureHandlerGestureEvent) => {
+    setIsHorizontalDaySwipeActive(
+      shouldLockHomeScroll({
+        translationX: nativeEvent.translationX,
+        translationY: nativeEvent.translationY,
+      }),
+    )
+  }, [])
 
   const finishDaySwipe = useCallback(
     (translationX: number, translationY: number) => {
@@ -185,9 +197,110 @@ export const HomeScreen: FC = () => {
     [moveToNextDay, moveToPreviousDay],
   )
 
+  const scrollY = useSharedValue(0)
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y
+    },
+  })
+
+  const recoveryProgress = homeView?.rings.recovery.progress ?? 0
+  const recoveryLabelText = homeView?.rings.recovery.value
+    ? `${homeView.rings.recovery.value}%`
+    : "--"
+  const recoveryNumeric = homeView?.rings.recovery.value
+    ? parseFloat(homeView.rings.recovery.value)
+    : null
+  const verdict = recoveryVerdict(recoveryNumeric)
+
+  const statItems: StatGridItem[] = [
+    {
+      key: "sleep",
+      label: "Sleep",
+      value: homeView?.rings.sleep.value ?? "--",
+      desc: undefined,
+      tint: colors.ringSleep,
+      onPress: () => navigateTo("SleepDetail", "sleep-detail", { date: selectedDate }),
+    },
+    {
+      key: "strain",
+      label: "Strain",
+      value: homeView?.rings.strain.value ?? "--",
+      desc: undefined,
+      tint: colors.ringStrain,
+      onPress: () => navigateTo("StrainActivity", "strain-activity"),
+    },
+    {
+      key: "hrv",
+      label: "HRV",
+      value: homeView?.activities.recoveryIndex || "--",
+      desc: "ms",
+      tint: colors.ringHrv,
+      onPress: () => navigateTo("HomeMetric", "home-metric", { metric: "recovery" }),
+    },
+    {
+      key: "journal",
+      label: "Journal",
+      value: String(journalEntries.length),
+      desc: journalEntries.length === 1 ? "entry" : "entries",
+      tint: colors.tint,
+      onPress: () => navigateTo("JournalHistory", "journal-history"),
+    },
+  ]
+
+  const tapeEvents = useMemo<TapeEvent[]>(
+    () =>
+      buildTodayTape({
+        homeView,
+        journalEntries,
+        now: Date.now(),
+        colors: {
+          ringRecovery: colors.ringRecovery,
+          ringSleep: colors.ringSleep,
+          ringStrain: colors.ringStrain,
+          ringHrv: colors.ringHrv,
+          tint: colors.tint,
+        },
+        selectedDate,
+      }),
+    [
+      homeView,
+      journalEntries,
+      selectedDate,
+      colors.ringRecovery,
+      colors.ringSleep,
+      colors.ringStrain,
+      colors.ringHrv,
+      colors.tint,
+    ],
+  )
+
+  function handleTapePress(event: TapeEvent) {
+    switch (event.type) {
+      case "sleep":
+        navigateTo("SleepDetail", "sleep-detail", { date: selectedDate })
+        break
+      case "recovery":
+      case "vital":
+        navigateTo("HomeMetric", "home-metric", { metric: "recovery" })
+        break
+      case "journal":
+        navigateTo(
+          "JournalEntry",
+          "journal-entry",
+          event.payload?.journalEntryId ? { id: event.payload.journalEntryId } : undefined,
+        )
+        break
+      case "workout":
+        navigateTo("StrainActivity", "strain-activity")
+        break
+    }
+  }
+
   return (
     <PanGestureHandler
-      minDist={8}
+      activeOffsetX={[-15, 15]}
+      failOffsetY={[-15, 15]}
       onGestureEvent={handleDaySwipeChanged}
       onEnded={({ nativeEvent }) =>
         finishDaySwipe(Number(nativeEvent.translationX ?? 0), Number(nativeEvent.translationY ?? 0))
@@ -195,43 +308,20 @@ export const HomeScreen: FC = () => {
       onCancelled={() => setIsHorizontalDaySwipeActive(false)}
       onFailed={() => setIsHorizontalDaySwipeActive(false)}
     >
-      <View style={themed($screenWrap)}>
-        <View pointerEvents="none" style={themed($backgroundGlowLayer)}>
-          {/* Primary glow – top-right */}
-          <Svg style={$glowPrimarySvg} viewBox="0 0 600 600">
-            <Defs>
-              <RadialGradient id="glowPrimary" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor={colors.glowPrimary} stopOpacity={0.18} />
-                <Stop offset="30%" stopColor={colors.glowPrimaryFade} stopOpacity={0.09} />
-                <Stop offset="100%" stopColor={colors.glowBackground} stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Ellipse cx="300" cy="300" rx="300" ry="300" fill="url(#glowPrimary)" />
-          </Svg>
-          {/* Secondary glow – left-middle */}
-          <Svg style={$glowSecondarySvg} viewBox="0 0 540 540">
-            <Defs>
-              <RadialGradient id="glowSecondary" cx="50%" cy="50%" r="50%">
-                <Stop offset="0%" stopColor={colors.glowPrimary} stopOpacity={0.12} />
-                <Stop offset="35%" stopColor={colors.glowPrimaryFade} stopOpacity={0.05} />
-                <Stop offset="100%" stopColor={colors.glowBackground} stopOpacity={0} />
-              </RadialGradient>
-            </Defs>
-            <Ellipse cx="270" cy="270" rx="270" ry="270" fill="url(#glowSecondary)" />
-          </Svg>
-        </View>
-        <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-          <ScrollView
-            contentContainerStyle={themed($container)}
-            refreshControl={
-              <RefreshControl
-                refreshing={isRefreshing}
-                onRefresh={refreshDashboard}
-                tintColor={colors.tint}
-              />
-            }
-            scrollEnabled={!isHorizontalDaySwipeActive}
-          >
+      <SafeAreaView style={themed($screenWrap)} edges={["top"]}>
+        <Animated.ScrollView
+          contentContainerStyle={themed($container)}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={refreshDashboard}
+              tintColor={colors.tint}
+            />
+          }
+          scrollEnabled={!isHorizontalDaySwipeActive}
+        >
           <View style={themed($topStrip)}>
             <DateSwitcher
               title={selectedDateTitle}
@@ -262,67 +352,51 @@ export const HomeScreen: FC = () => {
                 entering={FadeIn.duration(120)}
                 exiting={FadeOut.duration(90)}
               >
-                <PrimaryMetricsList
-                  items={[
-                    {
-                      id: "sleep",
-                      label: "Sleep",
-                      value: homeView?.rings.sleep.value ?? "--",
-                      progress: homeView?.rings.sleep.progress ?? 0,
-                      icon: "moon-outline",
-                      onPress: () => navigateTo("SleepDetail", "sleep-detail", { date: selectedDate }),
-                    },
-                    {
-                      id: "recovery",
-                      label: "Recovery",
-                      value: homeView?.rings.recovery.value ?? "--",
-                      progress: homeView?.rings.recovery.progress ?? 0,
-                      icon: "sparkles-outline",
-                      onPress: () => navigateTo("HomeMetric", "home-metric", { metric: "recovery" }),
-                    },
-                    {
-                      id: "strain",
-                      label: "Strain",
-                      value: homeView?.rings.strain.value ?? "--",
-                      progress: homeView?.rings.strain.progress ?? 0,
-                      icon: "flash-outline",
-                      onPress: () => navigateTo("StrainActivity", "strain-activity"),
-                    },
-                  ]}
+                <RecoveryHero
+                  value={recoveryProgress}
+                  label={recoveryLabelText}
+                  verdict={verdict.verdict}
+                  verdictDetail={verdict.detail}
+                  onPress={() =>
+                    navigateTo("HomeMetric", "home-metric", { metric: "recovery" })
+                  }
                 />
 
-                <View style={themed($myDayHeader)}>
-                  <Text text="My Day" size="xxl" weight="bold" style={themed($myDayTitle)} />
-                  <TouchableOpacity style={themed($plusButton)} onPress={() => navigateTo("JournalEntry", "journal-entry")}>
-                    <Ionicons name="add" size={26} color={colors.onPrimary} />
-                  </TouchableOpacity>
-                </View>
+                <Text
+                  text="STATS"
+                  style={{
+                    color: colors.textDim,
+                    fontSize: 8,
+                    fontWeight: "700",
+                    letterSpacing: 1.4,
+                    marginBottom: 8,
+                    marginLeft: 2,
+                  }}
+                />
+                <StatGrid items={statItems} />
 
-                <JournalChips entries={journalEntries} />
-
-                <View style={themed($actionList)}>
-                  <HomeActionRow
-                    title="Your day in review"
-                    icon="moon-outline"
-                    onPress={() => navigateTo("HomeDetails", "home-details")}
-                  />
-                  <HomeActionRow
-                    title="Today's activities"
-                    icon="walk-outline"
-                    onPress={() => navigateTo("HomeMetric", "home-metric", { metric: "activities" })}
-                  />
-                  <HomeActionRow
-                    title="Journal history"
-                    icon="journal-outline"
-                    onPress={() => navigateTo("JournalHistory", "journal-history")}
-                  />
-                </View>
+                <Text
+                  text="TODAY'S TAPE"
+                  style={{
+                    color: colors.textDim,
+                    fontSize: 8,
+                    fontWeight: "700",
+                    letterSpacing: 1.4,
+                    marginTop: 28,
+                    marginBottom: 8,
+                    marginLeft: 2,
+                  }}
+                />
+                <TodayTape events={tapeEvents} onEventPress={handleTapePress} />
               </Animated.View>
             )}
           </View>
-          </ScrollView>
-        </SafeAreaView>
-      </View>
+        </Animated.ScrollView>
+
+        <HomeFab onPress={() => navigateTo("JournalEntry", "journal-entry")} />
+
+        <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
+      </SafeAreaView>
     </PanGestureHandler>
   )
 }
@@ -440,7 +514,6 @@ function PrimaryMetricsList({
   }>
 }) {
   const colors = LOCAL_THEME.colors
-  const isDark = LOCAL_THEME.isDark
 
   const recovery = items.find((i) => i.id === "recovery")
   const pills = items.filter((i) => i.id !== "recovery")
@@ -449,7 +522,10 @@ function PrimaryMetricsList({
   const ringProgressSV = useSharedValue(0)
 
   useEffect(() => {
-    ringProgressSV.value = withTiming(ringPercent, { duration: 800, easing: Easing.out(Easing.ease) })
+    ringProgressSV.value = withTiming(ringPercent, {
+      duration: 800,
+      easing: Easing.out(Easing.ease),
+    })
   }, [ringPercent, ringProgressSV])
 
   const blobColor = (id: string) => {
@@ -460,11 +536,7 @@ function PrimaryMetricsList({
   return (
     <View style={themed($primaryMetricsList)}>
       {/* Left: large recovery ring */}
-      <TouchableOpacity
-        activeOpacity={0.88}
-        onPress={recovery?.onPress}
-        style={$ringContainer}
-      >
+      <TouchableOpacity activeOpacity={0.88} onPress={recovery?.onPress} style={$ringContainer}>
         <CircularProgress
           progress={ringProgressSV}
           size={148}
@@ -485,12 +557,7 @@ function PrimaryMetricsList({
                 />
                 <Text text="%" size="lg" weight="bold" style={themed($ringPercentSign)} />
               </View>
-              <Text
-                text="Recovery"
-                size="xxs"
-                weight="medium"
-                style={themed($ringLabel)}
-              />
+              <Text text="Recovery" size="xxs" weight="medium" style={themed($ringLabel)} />
             </View>
           )}
         />
@@ -508,39 +575,34 @@ function PrimaryMetricsList({
               style={$glassCardShadow}
             >
               <View style={$glassCardClip}>
-                {/* Dark card base */}
                 <View style={themed($glassCardBase)} />
 
-                {/* Color blob – top-right only */}
-                <Svg style={$glassBlob} viewBox="0 0 200 200">
-                  <Defs>
-                    <RadialGradient id={`blob-${item.id}`} cx="50%" cy="50%" r="50%">
-                      <Stop offset="0%" stopColor={blob} stopOpacity={0.7} />
-                      <Stop offset="30%" stopColor={blob} stopOpacity={0.3} />
-                      <Stop offset="60%" stopColor={blob} stopOpacity={0.08} />
-                      <Stop offset="100%" stopColor={blob} stopOpacity={0} />
-                    </RadialGradient>
-                  </Defs>
-                  <Ellipse cx="100" cy="100" rx="100" ry="100" fill={`url(#blob-${item.id})`} />
-                </Svg>
-
-                {/* Frost / blur overlay */}
-                {Platform.OS === "ios" ? (
-                  <BlurView intensity={74} tint={isDark ? "dark" : "light"} style={$glassBlurOverlay} />
-                ) : (
-                  <View style={[$glassBlurOverlay, { backgroundColor: colors.cardBase }]} />
-                )}
-
-                {/* Subtle border overlay */}
+                {/* Single tinted dot indicator instead of color blob */}
+                <View
+                  style={[
+                    $cardAccentDot,
+                    { backgroundColor: blob },
+                  ]}
+                />
                 <View style={themed($glassBorder)} />
 
                 {/* Content */}
                 <View style={$glassCardContent}>
                   <View style={$glassCardTop}>
-                    <Text text={item.label} size="xs" weight="medium" style={themed($glassCardLabel)} />
+                    <Text
+                      text={item.label}
+                      size="xs"
+                      weight="medium"
+                      style={themed($glassCardLabel)}
+                    />
                     <Ionicons name="chevron-forward" size={16} color={colors.iconDim} />
                   </View>
-                  <Text text={item.value} size="xxl" weight="bold" style={themed($glassCardValue)} />
+                  <Text
+                    text={item.value}
+                    size="xxl"
+                    weight="bold"
+                    style={themed($glassCardValue)}
+                  />
                 </View>
               </View>
             </TouchableOpacity>
@@ -551,7 +613,10 @@ function PrimaryMetricsList({
   )
 }
 
-function chipDetail(factor: (typeof JOURNAL_FACTORS)[number] | undefined, intensity: number): string | null {
+function chipDetail(
+  factor: (typeof JOURNAL_FACTORS)[number] | undefined,
+  intensity: number,
+): string | null {
   if (!factor) return `${intensity}`
   const { input } = factor
   if (input.kind === "toggle") return null
@@ -592,13 +657,7 @@ function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
               weight="medium"
               style={{ color: colors.text }}
             />
-            {detail && (
-              <Text
-                text={detail}
-                size="xxs"
-                style={{ color: colors.textDim }}
-              />
-            )}
+            {detail && <Text text={detail} size="xxs" style={{ color: colors.textDim }} />}
           </Animated.View>
         )
       })}
@@ -640,27 +699,6 @@ const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.screenBackground,
   flex: 1,
 })
-
-const $backgroundGlowLayer: ThemedStyle<ViewStyle> = () => ({
-  ...StyleSheet.absoluteFillObject,
-  overflow: "hidden",
-})
-
-const $glowPrimarySvg: ViewStyle = {
-  height: 600,
-  position: "absolute",
-  right: -220,
-  top: -160,
-  width: 600,
-}
-
-const $glowSecondarySvg: ViewStyle = {
-  height: 540,
-  left: -240,
-  position: "absolute",
-  top: 140,
-  width: 540,
-}
 
 
 const $topStrip: ThemedStyle<ViewStyle> = () => ({
@@ -814,22 +852,21 @@ const $pillStack: ViewStyle = {
 }
 
 const $glassCardShadow: ViewStyle = {
-  borderRadius: 22,
+  borderRadius: 8,
   minHeight: 90,
-  // Drop shadow matching reference: X:0 Y:16 Blur:28.5 Color:#000 5%
   ...Platform.select({
     ios: {
       shadowColor: "#000",
-      shadowOffset: { width: 0, height: 16 },
-      shadowOpacity: 0.05,
-      shadowRadius: 28.5,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
     },
-    android: { elevation: 8 },
+    android: { elevation: 6 },
   }),
 }
 
 const $glassCardClip: ViewStyle = {
-  borderRadius: 22,
+  borderRadius: 8,
   overflow: "hidden",
   flex: 1,
 }
@@ -839,23 +876,20 @@ const $glassCardBase: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.cardBase,
 })
 
-const $glassBlob: ViewStyle = {
-  height: 120,
+const $cardAccentDot: ViewStyle = {
+  borderRadius: 4,
+  height: 8,
   position: "absolute",
-  right: -55,
-  top: -55,
-  width: 120,
-}
-
-const $glassBlurOverlay: ViewStyle = {
-  ...StyleSheet.absoluteFillObject,
+  right: 16,
+  top: 16,
+  width: 8,
 }
 
 const $glassBorder: ThemedStyle<ViewStyle> = ({ colors }) => ({
   ...StyleSheet.absoluteFillObject,
   borderColor: colors.surfaceCardBorder,
-  borderRadius: 22,
-  borderWidth: 1,
+  borderRadius: 8,
+  borderWidth: colors.surfaceCardBorder === "transparent" ? 0 : 1,
 })
 
 const $glassCardContent: ViewStyle = {
