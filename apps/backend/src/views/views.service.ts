@@ -511,15 +511,14 @@ export class ViewsService {
       ),
       factorInsights: factorInsights.map((correlation) => ({
         factorTag: correlation.factorTag,
-        deepDelta:
-          Math.abs(correlation.avgDeepDelta) > 2
-            ? `${correlation.avgDeepDelta > 0 ? '+' : ''}${Math.round(correlation.avgDeepDelta)}m deep`
-            : null,
-        remDelta:
-          Math.abs(correlation.avgRemDelta) > 2
-            ? `${correlation.avgRemDelta > 0 ? '+' : ''}${Math.round(correlation.avgRemDelta)}m REM`
-            : null,
-        sampleCount: correlation.sampleCount,
+        occurrences: correlation.sampleCount,
+        deepMin: Math.round(correlation.avgDeepDelta ?? 0),
+        remMin: Math.round(correlation.avgRemDelta ?? 0),
+        awakeMin: 0,
+        effectSize: Math.max(
+          Math.abs(correlation.avgDeepDelta ?? 0),
+          Math.abs(correlation.avgRemDelta ?? 0),
+        ),
       })),
       planner: {
         targetSleepMinutes: data.sleepPlan?.targetSleepMinutes ?? 480,
