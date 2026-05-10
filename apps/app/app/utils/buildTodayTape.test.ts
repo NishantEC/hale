@@ -48,8 +48,13 @@ function makeHomeView(rings: Partial<HomeViewModel["rings"]>): HomeViewModel {
       sourceBlend: "",
       storageMode: "",
       persistenceHealth: "",
+      disclaimer: "",
     },
-  } as HomeViewModel
+    trendSummary: { summary: "", samples: [] },
+    stressTrend: [],
+    strainTrend: [],
+    noDataReasons: {},
+  }
 }
 
 const COLORS = {
