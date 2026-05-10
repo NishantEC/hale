@@ -1,5 +1,6 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  Pressable,
   RefreshControl,
   StyleSheet,
   TextStyle,
@@ -22,7 +23,6 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BlurHeader } from "@/components/BlurHeader"
-import { HomeFab } from "@/components/home/HomeFab"
 import { RecoveryHero } from "@/components/home/RecoveryHero"
 import { StatGrid, type StatGridItem } from "@/components/home/StatGrid"
 import { TodayTape } from "@/components/home/TodayTape"
@@ -315,12 +315,28 @@ export const HomeScreen: FC = () => {
               onNext={moveToNextDay}
             />
 
-            <DevicePill
-              batteryLabel={batteryLabel}
-              isCharging={liveDeviceState.isCharging}
-              isConnected={liveDeviceState.connectionState === "ready"}
-              onPress={() => navigateTo("DeviceSettings", "device-settings")}
-            />
+            <View style={$topStripRight}>
+              <DevicePill
+                batteryLabel={batteryLabel}
+                isCharging={liveDeviceState.isCharging}
+                isConnected={liveDeviceState.connectionState === "ready"}
+                onPress={() => navigateTo("DeviceSettings", "device-settings")}
+              />
+
+              <Pressable
+                onPress={() => navigateTo("JournalEntry", "journal-entry")}
+                hitSlop={8}
+                accessibilityLabel="Log a journal entry"
+                accessibilityRole="button"
+                style={({ pressed }) => [
+                  $navAddButton,
+                  { backgroundColor: colors.tint },
+                  pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
+                ]}
+              >
+                <Ionicons name="add" size={20} color={colors.onPrimary} />
+              </Pressable>
+            </View>
           </View>
 
           <View style={themed($dayContentWrap)}>
@@ -376,8 +392,6 @@ export const HomeScreen: FC = () => {
             )}
           </View>
         </Animated.ScrollView>
-
-        <HomeFab onPress={() => navigateTo("JournalEntry", "journal-entry")} />
 
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
       </SafeAreaView>
@@ -509,6 +523,20 @@ const $topStrip: ThemedStyle<ViewStyle> = () => ({
   justifyContent: "space-between",
   marginBottom: 6,
 })
+
+const $topStripRight: ViewStyle = {
+  alignItems: "center",
+  flexDirection: "row",
+  gap: 10,
+}
+
+const $navAddButton: ViewStyle = {
+  alignItems: "center",
+  borderRadius: 9999,
+  height: 32,
+  justifyContent: "center",
+  width: 32,
+}
 
 const $dateSwitcher: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
