@@ -4,6 +4,8 @@
 
 > Currency caveat: GitHub commit dates change after this snapshot. Star/commit counts cited reflect what was visible at search time. URLs are direct so the user can verify.
 
+> **See also:** [`research/whoop-features-deep-dive.md`](./research/whoop-features-deep-dive.md) — every shipped WHOOP feature (Healthspan / WHOOP Age, Day Strain, Recovery, Sleep Need, Stress Monitor, Heart Screener, Pregnancy Coach, Strength Trainer, WHOOP Coach, etc.) with inputs, methodology, citations, and gaps vs our stack. Index: [`research/README.md`](./research/README.md).
+
 ---
 
 ## 1. WHOOP-specific projects
