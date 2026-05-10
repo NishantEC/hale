@@ -97,19 +97,34 @@ export function classifyEpoch(
 }
 
 function traverseTree(tree: DecisionTree, features: number[]): number[] {
-  let nodeIdx = 0;
-  while (true) {
-    const node = tree.nodes[nodeIdx];
-    if (node.featureIndex === -1 || node.value != null) {
-      return node.value ?? [0.25, 0.25, 0.25, 0.25];
-    }
-    const featureVal = features[node.featureIndex];
-    if (isNaN(featureVal) || featureVal <= node.threshold) {
-      nodeIdx = node.left;
-    } else {
-      nodeIdx = node.right;
-    }
+  return traverseTreeRec(tree, 0, features);
+}
+
+function traverseTreeRec(
+  tree: DecisionTree,
+  nodeIdx: number,
+  features: number[],
+): number[] {
+  const node = tree.nodes[nodeIdx];
+  if (node.featureIndex === -1 || node.value != null) {
+    return node.value ?? [0.25, 0.25, 0.25, 0.25];
   }
+  const featureVal = features[node.featureIndex];
+  if (Number.isNaN(featureVal)) {
+    const leftProbs = traverseTreeRec(tree, node.left, features);
+    const rightProbs = traverseTreeRec(tree, node.right, features);
+    return [
+      (leftProbs[0] + rightProbs[0]) / 2,
+      (leftProbs[1] + rightProbs[1]) / 2,
+      (leftProbs[2] + rightProbs[2]) / 2,
+      (leftProbs[3] + rightProbs[3]) / 2,
+    ];
+  }
+  return traverseTreeRec(
+    tree,
+    featureVal <= node.threshold ? node.left : node.right,
+    features,
+  );
 }
 
 // --- Full night classification pipeline ---
@@ -137,9 +152,8 @@ export function classifySleepStages(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
     );
 
-    let classifications = sorted.map((epoch) => classifyEpoch(model, epoch));
-
-    classifications = applySmoothingRules(classifications, sorted);
+    const rawClassifications = sorted.map((epoch) => classifyEpoch(model, epoch));
+    const classifications = applySmoothingRules(rawClassifications, sorted);
 
     const validCount = sorted.filter((e) => e.signalCompleteness > 0.5).length;
     const featureCompleteness = validCount / Math.max(1, sorted.length);
@@ -165,29 +179,18 @@ export function classifySleepStages(
       1,
     );
 
-    // Minute totals must be integers — sleep_stages columns are SQL int.
-    // Rounding loses at most 30s of granularity (EPOCH_MINUTES = 0.5);
-    // the precise per-epoch breakdown lives in epochTimeline JSONB anyway.
-    const totalMinutes = Math.round(sorted.length * EPOCH_MINUTES);
-
-    if (confidence < 0.5) {
-      const unknownTimeline: SleepStageEpoch[] = sorted.map((e) => ({
-        timestamp: e.timestamp,
-        stage: 'unknown' as const,
-      }));
-      summaries.push({
-        nightDate: detection.nightDate,
-        remMinutes: 0,
-        coreMinutes: 0,
-        deepMinutes: 0,
-        awakeMinutes: 0,
-        unknownMinutes: totalMinutes,
-        confidence,
-        source: 'RF-v1',
-        epochTimeline: unknownTimeline,
-        epochMinutes: EPOCH_MINUTES,
-      });
-      continue;
+    if (process.env.DEBUG_SLEEP_STAGES) {
+      const rawCounts = stageCounts(rawClassifications);
+      const finalCounts = stageCounts(classifications);
+      const nanFeatureRate = countNanFeatures(sorted);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[sleep-stage] night=${detection.nightDate.toISOString().slice(0, 10)} ` +
+          `epochs=${sorted.length} featureCompleteness=${featureCompleteness.toFixed(2)} ` +
+          `transitionScore=${transitionScore.toFixed(2)} avgConf=${avgConfidence.toFixed(2)} ` +
+          `confidence=${confidence.toFixed(2)} nanFeatureRate=${nanFeatureRate.toFixed(2)} ` +
+          `raw=${JSON.stringify(rawCounts)} final=${JSON.stringify(finalCounts)}`,
+      );
     }
 
     const stageMap: Record<InternalStage, OutputStage> = {
@@ -257,13 +260,15 @@ function smoothShortRuns(
 ): EpochClassification[] {
   if (classifications.length < 3) return [...classifications];
   const result = [...classifications];
+  const RARE_STAGES = new Set<InternalStage>(['REM', 'Wake']);
   let i = 0;
   while (i < result.length) {
     const current = result[i].stage;
     let end = i + 1;
     while (end < result.length && result[end].stage === current) end++;
     const runLen = end - i;
-    if (runLen < minRunLength) {
+    const isRare = RARE_STAGES.has(current);
+    if (runLen < minRunLength && !(isRare && result[i].confidence >= 0.45)) {
       const left = i > 0 ? result[i - 1].stage : null;
       const right = end < result.length ? result[end].stage : null;
       const replacement = (left === right ? left : left ?? right) ?? 'Light';
@@ -322,9 +327,19 @@ function lowConfidenceFallback(
 ): EpochClassification[] {
   const result = [...classifications];
   const windowSize = 10;
+  const overallCounts: Record<string, number> = {};
+  for (const c of classifications) {
+    overallCounts[c.stage] = (overallCounts[c.stage] ?? 0) + 1;
+  }
+  const total = classifications.length;
+  const RARE_STAGES = new Set<InternalStage>(['REM', 'Wake']);
 
   for (let i = 0; i < result.length; i++) {
     if (result[i].confidence >= 0.4) continue;
+
+    const original = result[i].stage;
+    const originalShare = (overallCounts[original] ?? 0) / Math.max(1, total);
+    if (RARE_STAGES.has(original) && originalShare >= 0.05) continue;
 
     const start = Math.max(0, i - Math.floor(windowSize / 2));
     const end = Math.min(result.length, i + Math.floor(windowSize / 2) + 1);
@@ -347,6 +362,24 @@ function lowConfidenceFallback(
     result[i] = { ...result[i], stage: maxStage };
   }
   return result;
+}
+
+function stageCounts(classifications: EpochClassification[]): Record<string, number> {
+  const counts: Record<string, number> = { Wake: 0, Light: 0, Deep: 0, REM: 0 };
+  for (const c of classifications) counts[c.stage] = (counts[c.stage] ?? 0) + 1;
+  return counts;
+}
+
+function countNanFeatures(epochs: EpochFeature[]): number {
+  if (epochs.length === 0) return 0;
+  let nanTotal = 0;
+  for (const epoch of epochs) {
+    for (const key of FEATURE_KEYS) {
+      const val = epoch[key];
+      if (typeof val !== 'number' || Number.isNaN(val)) nanTotal++;
+    }
+  }
+  return nanTotal / (epochs.length * FEATURE_KEYS.length);
 }
 
 function skinContactOverride(

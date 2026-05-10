@@ -138,7 +138,7 @@ describe('classifySleepStages', () => {
     expect(summaries[0].source).toBe('RF-v1');
   });
 
-  it('marks entire night as unknown when confidence is too low', () => {
+  it('flags low confidence but still emits per-stage minutes', () => {
     const model = loadModel(TINY_MODEL);
     const epochs = Array.from({ length: 4 }, (_, i) =>
       makeEpochFeature(i * 0.5, { hrMean: 55, signalCompleteness: 0.2 }),
@@ -157,7 +157,16 @@ describe('classifySleepStages', () => {
 
     const summaries = classifySleepStages(model, epochs, [detection]);
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].unknownMinutes).toBeGreaterThan(0);
     expect(summaries[0].confidence).toBeLessThan(0.5);
+    expect(summaries[0].unknownMinutes).toBe(0);
+    const totalStageMin =
+      summaries[0].remMinutes +
+      summaries[0].coreMinutes +
+      summaries[0].deepMinutes +
+      summaries[0].awakeMinutes;
+    expect(totalStageMin).toBeGreaterThan(0);
+    for (const epoch of summaries[0].epochTimeline) {
+      expect(epoch.stage).not.toBe('unknown');
+    }
   });
 });
