@@ -1,5 +1,4 @@
-import { useEffect } from "react"
-import { Pressable, StyleSheet, View } from "react-native"
+import { Pressable, StyleSheet } from "react-native"
 import Animated, {
   interpolate,
   useAnimatedStyle,
@@ -7,7 +6,6 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withSpring,
-  withTiming,
 } from "react-native-reanimated"
 import Ionicons from "@expo/vector-icons/Ionicons"
 
@@ -23,8 +21,6 @@ export type TabCellProps = {
   focused: boolean
   onPress: () => void
 }
-
-const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons)
 
 export function TabCell({ label, iconOutline, iconFilled, focused, onPress }: TabCellProps) {
   const colors = LOCAL_THEME.colors
