@@ -9,6 +9,7 @@ export const PILL_PADDING = 5
 export const FAB_SIZE = 66
 export const CHIP_RADIUS = 28
 export const ICON_SIZE = 24
+export const FAB_ICON_SIZE = 26
 export const LABEL_SIZE = 11
 
 export const SPRING_DEFAULT: WithSpringConfig = {

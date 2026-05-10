@@ -12,7 +12,7 @@ import Ionicons from "@expo/vector-icons/Ionicons"
 
 import { LOCAL_THEME } from "@/utils/localTheme"
 
-import { FAB_SIZE, PULSE_DURATION_MS, SPRING_DEFAULT, SPRING_PUNCHY } from "./tokens"
+import { FAB_ICON_SIZE, FAB_SIZE, PULSE_DURATION_MS, SPRING_DEFAULT, SPRING_PUNCHY } from "./tokens"
 
 export type PlusFabProps = {
   isOpen: boolean
@@ -80,7 +80,7 @@ export function PlusFab({ isOpen, onPress }: PlusFabProps) {
           style={[StyleSheet.absoluteFill, styles.fabBackground, { backgroundColor: colors.tint }]}
         />
         <Animated.View style={iconStyle}>
-          <Ionicons name="add" size={26} color={colors.onPrimary} />
+          <Ionicons name="add" size={FAB_ICON_SIZE} color={colors.onPrimary} />
         </Animated.View>
       </Pressable>
     </Animated.View>
