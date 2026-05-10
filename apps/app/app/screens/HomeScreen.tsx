@@ -1,8 +1,6 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  Platform,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   TextStyle,
   TouchableOpacity,
@@ -14,14 +12,12 @@ import { Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, {
-  Easing,
   FadeIn,
   FadeInRight,
   FadeOut,
   FadeOutLeft,
   useAnimatedScrollHandler,
   useSharedValue,
-  withTiming,
 } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -30,13 +26,9 @@ import { HomeFab } from "@/components/home/HomeFab"
 import { RecoveryHero } from "@/components/home/RecoveryHero"
 import { StatGrid, type StatGridItem } from "@/components/home/StatGrid"
 import { TodayTape } from "@/components/home/TodayTape"
-import { CircularProgress } from "@/components/reactx/circular-progress"
-import { Glow } from "@/components/reactx/glow"
-import { RollingCounter } from "@/components/reactx/rolling-counter"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { Text } from "@/components/Text"
-import { JOURNAL_FACTORS } from "@/constants/journalFactors"
 import { useDashboard } from "@/context/DashboardContext"
 import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopClient"
 import { buildTodayTape, type TapeEvent } from "@/utils/buildTodayTape"
@@ -128,12 +120,6 @@ export const HomeScreen: FC = () => {
         ? "..."
         : "--"
 
-  const liveHeartRateTitle = liveDeviceState.realtimeHeartRate
-    ? String(liveDeviceState.realtimeHeartRate)
-    : (homeView?.cards.liveHeartRate.title ?? "--")
-  const liveHeartRateSubtitle = liveDeviceState.realtimeHeartRate
-    ? "Live"
-    : (homeView?.cards.liveHeartRate.subtitle ?? "Offline")
   const isHomeViewPending = !homeView || homeView.selectedDate !== selectedDate
   const hasFailedLoad = useRef(false)
   if (error) hasFailedLoad.current = true
@@ -357,9 +343,7 @@ export const HomeScreen: FC = () => {
                   label={recoveryLabelText}
                   verdict={verdict.verdict}
                   verdictDetail={verdict.detail}
-                  onPress={() =>
-                    navigateTo("HomeMetric", "home-metric", { metric: "recovery" })
-                  }
+                  onPress={() => navigateTo("HomeMetric", "home-metric", { metric: "recovery" })}
                 />
 
                 <Text
@@ -476,215 +460,33 @@ function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
 }
 
 function HomeDaySkeleton() {
-  // themed helper is imported from @/utils/localTheme
-
   return (
     <View style={themed($homeDaySkeleton)}>
-      <View style={themed($primaryMetricsSkeletonList)}>
-        <SkeletonBlock style={themed($primaryMetricRowSkeleton)} />
-        <SkeletonBlock style={themed($primaryMetricRowSkeleton)} />
-        <SkeletonBlock style={themed($primaryMetricRowSkeleton)} />
+      <View style={{ alignItems: "center", marginTop: 16, marginBottom: 24 }}>
+        <SkeletonBlock style={{ width: 160, height: 160, borderRadius: 80 }} />
+        <SkeletonBlock style={{ width: 120, height: 14, borderRadius: 4, marginTop: 12 }} />
       </View>
-
-      <SkeletonBlock style={themed($compactMetricsSkeleton)} />
-
-      <View style={themed($myDayHeader)}>
-        <SkeletonBlock style={themed($myDayTitleSkeleton)} />
-        <SkeletonBlock style={themed($plusSkeleton)} />
+      <SkeletonBlock style={{ width: 50, height: 10, borderRadius: 4, marginBottom: 8 }} />
+      <View style={{ gap: 8 }}>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
+          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
+          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
+        </View>
       </View>
-
-      <View style={themed($actionList)}>
-        <SkeletonBlock style={themed($actionRowSkeleton)} />
-        <SkeletonBlock style={themed($actionRowSkeleton)} />
-      </View>
-    </View>
-  )
-}
-
-function PrimaryMetricsList({
-  items,
-}: {
-  items: Array<{
-    id: string
-    label: string
-    value: string
-    progress: number
-    icon: keyof typeof Ionicons.glyphMap
-    onPress: () => void
-  }>
-}) {
-  const colors = LOCAL_THEME.colors
-
-  const recovery = items.find((i) => i.id === "recovery")
-  const pills = items.filter((i) => i.id !== "recovery")
-
-  const ringPercent = Math.round(Math.max(0, Math.min(1, recovery?.progress ?? 0)) * 100)
-  const ringProgressSV = useSharedValue(0)
-
-  useEffect(() => {
-    ringProgressSV.value = withTiming(ringPercent, {
-      duration: 800,
-      easing: Easing.out(Easing.ease),
-    })
-  }, [ringPercent, ringProgressSV])
-
-  const blobColor = (id: string) => {
-    if (id === "sleep") return colors.ringSleep
-    return colors.ringStrain
-  }
-
-  return (
-    <View style={themed($primaryMetricsList)}>
-      {/* Left: large recovery ring */}
-      <TouchableOpacity activeOpacity={0.88} onPress={recovery?.onPress} style={$ringContainer}>
-        <CircularProgress
-          progress={ringProgressSV}
-          size={148}
-          strokeWidth={6}
-          progressCircleColor={colors.ringRecovery}
-          outerCircleColor={colors.surfaceElevated}
-          backgroundColor="transparent"
-          gap={0}
-          renderIcon={() => (
-            <View style={$ringCenterContent}>
-              <View style={$ringValueRow}>
-                <RollingCounter
-                  value={ringPercent}
-                  height={36}
-                  width={22}
-                  fontSize={32}
-                  color={colors.onSurface}
-                />
-                <Text text="%" size="lg" weight="bold" style={themed($ringPercentSign)} />
-              </View>
-              <Text text="Recovery" size="xxs" weight="medium" style={themed($ringLabel)} />
-            </View>
-          )}
-        />
-      </TouchableOpacity>
-
-      {/* Right: stacked glass cards */}
-      <View style={$pillStack}>
-        {pills.map((item) => {
-          const blob = blobColor(item.id)
-          return (
-            <TouchableOpacity
-              key={item.id}
-              activeOpacity={0.88}
-              onPress={item.onPress}
-              style={$glassCardShadow}
-            >
-              <View style={$glassCardClip}>
-                <View style={themed($glassCardBase)} />
-
-                {/* Single tinted dot indicator instead of color blob */}
-                <View
-                  style={[
-                    $cardAccentDot,
-                    { backgroundColor: blob },
-                  ]}
-                />
-                <View style={themed($glassBorder)} />
-
-                {/* Content */}
-                <View style={$glassCardContent}>
-                  <View style={$glassCardTop}>
-                    <Text
-                      text={item.label}
-                      size="xs"
-                      weight="medium"
-                      style={themed($glassCardLabel)}
-                    />
-                    <Ionicons name="chevron-forward" size={16} color={colors.iconDim} />
-                  </View>
-                  <Text
-                    text={item.value}
-                    size="xxl"
-                    weight="bold"
-                    style={themed($glassCardValue)}
-                  />
-                </View>
-              </View>
-            </TouchableOpacity>
-          )
-        })}
+      <SkeletonBlock
+        style={{ width: 80, height: 10, borderRadius: 4, marginTop: 28, marginBottom: 8 }}
+      />
+      <View style={{ gap: 6 }}>
+        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
+        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
+        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
+        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
       </View>
     </View>
-  )
-}
-
-function chipDetail(
-  factor: (typeof JOURNAL_FACTORS)[number] | undefined,
-  intensity: number,
-): string | null {
-  if (!factor) return `${intensity}`
-  const { input } = factor
-  if (input.kind === "toggle") return null
-  if (input.kind === "quantity") return `${intensity} ${input.unit}`
-  if (input.kind === "scale") return input.labels[intensity - 1] ?? `${intensity}`
-  return `${intensity}`
-}
-
-function JournalChips({ entries }: { entries: JournalEntryResponse[] }) {
-  const colors = LOCAL_THEME.colors
-  if (entries.length === 0) return null
-
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={$chipScroll}
-      contentContainerStyle={$chipScrollContent}
-    >
-      {entries.map((entry, index) => {
-        const factor = JOURNAL_FACTORS.find((f) => f.tag === entry.factorTag)
-        const color = factor?.color ?? colors.tint
-        const detail = chipDetail(factor, entry.intensity)
-        return (
-          <Animated.View
-            key={entry.id}
-            entering={FadeIn.delay(index * 60).duration(200)}
-            style={[themed($chip), { borderLeftColor: color, borderLeftWidth: 3 }]}
-          >
-            <Ionicons
-              name={(factor?.icon ?? "ellipse-outline") as keyof typeof Ionicons.glyphMap}
-              size={14}
-              color={color}
-            />
-            <Text
-              text={factor?.label ?? entry.factorTag}
-              size="xxs"
-              weight="medium"
-              style={{ color: colors.text }}
-            />
-            {detail && <Text text={detail} size="xxs" style={{ color: colors.textDim }} />}
-          </Animated.View>
-        )
-      })}
-    </ScrollView>
-  )
-}
-
-function HomeActionRow({
-  title,
-  icon,
-  onPress,
-}: {
-  title: string
-  icon: keyof typeof Ionicons.glyphMap
-  onPress: () => void
-}) {
-  const colors = LOCAL_THEME.colors
-
-  return (
-    <TouchableOpacity activeOpacity={0.9} style={themed($actionRow)} onPress={onPress}>
-      <View style={themed($actionIconWrap)}>
-        <Ionicons name={icon} size={22} color={colors.iconDefault} />
-      </View>
-      <Text text={title} size="lg" weight="semiBold" style={themed($actionTitle)} />
-      <View style={{ flex: 1 }} />
-      <Ionicons name="chevron-forward" size={24} color={colors.iconDefault} />
-    </TouchableOpacity>
   )
 }
 
@@ -699,7 +501,6 @@ const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.screenBackground,
   flex: 1,
 })
-
 
 const $topStrip: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
@@ -781,203 +582,4 @@ const $dayContentWrap: ThemedStyle<ViewStyle> = () => ({
 
 const $homeDaySkeleton: ThemedStyle<ViewStyle> = () => ({
   gap: 22,
-})
-
-const $primaryMetricsSkeletonList: ThemedStyle<ViewStyle> = () => ({
-  gap: 10,
-})
-
-const $primaryMetricRowSkeleton: ThemedStyle<ViewStyle> = () => ({
-  borderRadius: 14,
-  height: 44,
-})
-
-const $compactMetricsSkeleton: ThemedStyle<ViewStyle> = () => ({
-  borderRadius: 24,
-  height: 112,
-})
-
-const $myDayTitleSkeleton: ThemedStyle<ViewStyle> = () => ({
-  borderRadius: 999,
-  height: 26,
-  width: 120,
-})
-
-const $plusSkeleton: ThemedStyle<ViewStyle> = () => ({
-  borderRadius: 999,
-  height: 42,
-  width: 42,
-})
-
-const $actionRowSkeleton: ThemedStyle<ViewStyle> = () => ({
-  borderRadius: 22,
-  height: 78,
-})
-
-const $primaryMetricsList: ThemedStyle<ViewStyle> = () => ({
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 16,
-  marginBottom: 18,
-})
-
-const $ringContainer: ViewStyle = {
-  alignItems: "center",
-  justifyContent: "center",
-}
-
-const $ringCenterContent: ViewStyle = {
-  alignItems: "center",
-  justifyContent: "center",
-}
-
-const $ringValueRow: ViewStyle = {
-  alignItems: "baseline",
-  flexDirection: "row",
-}
-
-const $ringPercentSign: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.onSurface,
-  marginLeft: 1,
-})
-
-const $ringLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-  marginTop: 2,
-})
-
-const $pillStack: ViewStyle = {
-  flex: 1,
-  gap: 12,
-}
-
-const $glassCardShadow: ViewStyle = {
-  borderRadius: 8,
-  minHeight: 90,
-  ...Platform.select({
-    ios: {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-    },
-    android: { elevation: 6 },
-  }),
-}
-
-const $glassCardClip: ViewStyle = {
-  borderRadius: 8,
-  overflow: "hidden",
-  flex: 1,
-}
-
-const $glassCardBase: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  ...StyleSheet.absoluteFillObject,
-  backgroundColor: colors.cardBase,
-})
-
-const $cardAccentDot: ViewStyle = {
-  borderRadius: 4,
-  height: 8,
-  position: "absolute",
-  right: 16,
-  top: 16,
-  width: 8,
-}
-
-const $glassBorder: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  ...StyleSheet.absoluteFillObject,
-  borderColor: colors.surfaceCardBorder,
-  borderRadius: 8,
-  borderWidth: colors.surfaceCardBorder === "transparent" ? 0 : 1,
-})
-
-const $glassCardContent: ViewStyle = {
-  flex: 1,
-  justifyContent: "space-between",
-  paddingHorizontal: 18,
-  paddingVertical: 16,
-}
-
-const $glassCardTop: ViewStyle = {
-  alignItems: "center",
-  flexDirection: "row",
-  justifyContent: "space-between",
-}
-
-const $glassCardLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textDim,
-  letterSpacing: 0.3,
-})
-
-const $glassCardValue: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.onSurface,
-  fontVariant: ["tabular-nums"],
-  fontSize: 28,
-  lineHeight: 34,
-  marginTop: 4,
-})
-
-const $myDayHeader: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flexDirection: "row",
-  justifyContent: "space-between",
-  marginTop: 28,
-})
-
-const $myDayTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
-
-const $plusButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  backgroundColor: colors.tint,
-  borderRadius: 999,
-  height: 64,
-  justifyContent: "center",
-  width: 64,
-})
-
-const $actionList: ThemedStyle<ViewStyle> = () => ({
-  gap: 20,
-})
-
-const $actionRow: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  backgroundColor: colors.surfaceElevated,
-  borderColor: colors.divider,
-  borderRadius: 22,
-  borderWidth: 1,
-  flexDirection: "row",
-  gap: 12,
-  minHeight: 92,
-  paddingHorizontal: 18,
-})
-
-const $actionIconWrap: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  width: 28,
-})
-
-const $actionTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
-
-const $chipScroll: ViewStyle = {
-  marginBottom: 8,
-  marginTop: 12,
-}
-
-const $chipScrollContent: ViewStyle = {
-  gap: 8,
-}
-
-const $chip: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  backgroundColor: colors.surfaceElevated,
-  borderRadius: 12,
-  flexDirection: "row",
-  gap: 6,
-  paddingHorizontal: 12,
-  paddingVertical: 8,
 })
