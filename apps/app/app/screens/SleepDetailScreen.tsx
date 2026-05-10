@@ -2,18 +2,20 @@ import { FC, useRef, useEffect } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import {
   RefreshControl,
-  ScrollView,
   TextStyle,
   TouchableOpacity,
   View,
   ViewStyle,
   useWindowDimensions,
 } from "react-native"
+import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useRoute } from "@react-navigation/native"
-import { router, Stack } from "expo-router"
+import { router } from "expo-router"
 
 import { HypnogramChart } from "@/components/HypnogramChart"
 import { LabsAccordion } from "@/components/LabsAccordion"
+import { ScreenHeader, SCREEN_HEADER_HEIGHT } from "@/components/ScreenHeader"
 import { SleepHero } from "@/components/SleepHero"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
@@ -27,12 +29,20 @@ export const SleepDetailScreen: FC = () => {
   const colors = LOCAL_THEME.colors
   const route = useRoute<any>()
   const { width } = useWindowDimensions()
+  const insets = useSafeAreaInsets()
   const {
     sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate, setSelectedDate,
   } = useDashboard()
 
   const date: string = (route.params?.date as string) ?? selectedDate
   const lastShownError = useRef<string | null>(null)
+
+  const scrollY = useSharedValue(0)
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y
+  })
+
+  const scrollTopPadding = insets.top + SCREEN_HEADER_HEIGHT + 8
 
   useEffect(() => {
     if (error && error !== lastShownError.current) {
@@ -58,13 +68,14 @@ export const SleepDetailScreen: FC = () => {
   if (!sleepView || sleepView.emptyState.isEmpty) {
     return (
       <View style={themed($screenWrap)}>
-        <Stack.Screen options={sleepDetailHeaderOptions(formattedDate, null, colors)} />
-        <ScrollView
-          contentInsetAdjustmentBehavior="automatic"
-          contentContainerStyle={themed($container)}
+        <ScreenHeader title={formattedDate} />
+        <Animated.ScrollView
+          contentContainerStyle={[themed($container), { paddingTop: scrollTopPadding }]}
           refreshControl={
             <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={colors.tint} />
           }
+          onScroll={onScroll}
+          scrollEventThrottle={16}
         >
           <View style={themed($emptyState)}>
             <Text
@@ -79,7 +90,7 @@ export const SleepDetailScreen: FC = () => {
               style={themed($mutedCenter)}
             />
           </View>
-        </ScrollView>
+        </Animated.ScrollView>
       </View>
     )
   }
@@ -177,7 +188,7 @@ export const SleepDetailScreen: FC = () => {
     { label: "Sleep Consistency", value: lookupMetric("Consistency") },
   ]
 
-  const renderAlarmRightAction = () => (
+  const alarmRightAction = (
     <TouchableOpacity onPress={onPressAlarm} hitSlop={12} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
       <Ionicons name="alarm-outline" size={18} color={colors.text} />
       <Text text={alarmLabel} size="xs" style={{ color: colors.text }} />
@@ -186,13 +197,18 @@ export const SleepDetailScreen: FC = () => {
 
   return (
     <View style={themed($screenWrap)}>
-      <Stack.Screen options={sleepDetailHeaderOptions(formattedDate, renderAlarmRightAction, colors)} />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={themed($container)}
+      <ScreenHeader
+        title={formattedDate}
+        rightAction={alarmRightAction}
+        scrollY={scrollY}
+      />
+      <Animated.ScrollView
+        contentContainerStyle={[themed($container), { paddingTop: scrollTopPadding }]}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={colors.tint} />
         }
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       >
           <SleepHero
             durationMinutes={durationMinutes}
@@ -271,28 +287,9 @@ export const SleepDetailScreen: FC = () => {
           </View>
 
           <LabsAccordion rows={labsRows} />
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   )
-}
-
-function sleepDetailHeaderOptions(
-  title: string,
-  renderRight: (() => React.ReactElement) | null,
-  colors: typeof LOCAL_THEME.colors,
-) {
-  return {
-    headerShown: true,
-    headerLargeTitle: true,
-    headerLargeTitleShadowVisible: false,
-    headerTransparent: true,
-    headerBlurEffect: LOCAL_THEME.isDark ? "systemMaterialDark" : "systemMaterialLight",
-    headerTitle: title,
-    headerBackTitleVisible: false,
-    headerTintColor: colors.text,
-    headerLargeStyle: { backgroundColor: colors.screenBackground },
-    ...(renderRight ? { headerRight: renderRight } : {}),
-  } as const
 }
 
 const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
