@@ -1,5 +1,6 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -315,28 +316,12 @@ export const HomeScreen: FC = () => {
               onNext={moveToNextDay}
             />
 
-            <View style={$topStripRight}>
-              <DevicePill
-                batteryLabel={batteryLabel}
-                isCharging={liveDeviceState.isCharging}
-                isConnected={liveDeviceState.connectionState === "ready"}
-                onPress={() => navigateTo("DeviceSettings", "device-settings")}
-              />
-
-              <Pressable
-                onPress={() => navigateTo("JournalEntry", "journal-entry")}
-                hitSlop={8}
-                accessibilityLabel="Log a journal entry"
-                accessibilityRole="button"
-                style={({ pressed }) => [
-                  $navAddButton,
-                  { backgroundColor: colors.tint },
-                  pressed && { opacity: 0.85, transform: [{ scale: 0.95 }] },
-                ]}
-              >
-                <Ionicons name="add" size={20} color={colors.onPrimary} />
-              </Pressable>
-            </View>
+            <DevicePill
+              batteryLabel={batteryLabel}
+              isCharging={liveDeviceState.isCharging}
+              isConnected={liveDeviceState.connectionState === "ready"}
+              onPress={() => navigateTo("DeviceSettings", "device-settings")}
+            />
           </View>
 
           <View style={themed($dayContentWrap)}>
@@ -392,6 +377,20 @@ export const HomeScreen: FC = () => {
             )}
           </View>
         </Animated.ScrollView>
+
+        <Pressable
+          onPress={() => navigateTo("JournalEntry", "journal-entry")}
+          hitSlop={8}
+          accessibilityLabel="Log a journal entry"
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            $tabBarFab,
+            { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceCardBorder },
+            pressed && { opacity: 0.85, transform: [{ scale: 0.96 }] },
+          ]}
+        >
+          <Ionicons name="add" size={22} color={colors.tint} />
+        </Pressable>
 
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
       </SafeAreaView>
@@ -524,18 +523,26 @@ const $topStrip: ThemedStyle<ViewStyle> = () => ({
   marginBottom: 6,
 })
 
-const $topStripRight: ViewStyle = {
-  alignItems: "center",
-  flexDirection: "row",
-  gap: 10,
-}
-
-const $navAddButton: ViewStyle = {
+const $tabBarFab: ViewStyle = {
   alignItems: "center",
   borderRadius: 9999,
-  height: 32,
+  borderWidth: 1,
+  bottom: 32,
+  height: 44,
   justifyContent: "center",
-  width: 32,
+  position: "absolute",
+  right: 20,
+  width: 44,
+  zIndex: 20,
+  ...Platform.select({
+    ios: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.5,
+      shadowRadius: 16,
+    },
+    android: { elevation: 8 },
+  }),
 }
 
 const $dateSwitcher: ThemedStyle<ViewStyle> = ({ colors }) => ({
