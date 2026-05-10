@@ -1,8 +1,8 @@
 import { FC } from "react"
 import { Pressable, View, ViewStyle } from "react-native"
+import Svg, { Defs, Ellipse, RadialGradient, Stop } from "react-native-svg"
 
 import { Text } from "@/components/Text"
-import { hexWithAlpha } from "@/utils/hexWithAlpha"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 type Props = {
@@ -16,10 +16,22 @@ type Props = {
 
 export const StatTile: FC<Props> = ({ label, value, desc, tint, onPress }) => {
   const colors = LOCAL_THEME.colors
+  // Stable per-tile gradient id so multiple tiles in a screen don't collide.
+  const gradientId = `stat-halo-${tint.replace(/[^a-zA-Z0-9]/g, "")}`
 
   const content = (
     <View style={[$tile, { backgroundColor: colors.surfaceCard }]}>
-      <View style={[$halo, { backgroundColor: hexWithAlpha(tint, 0.18) }]} pointerEvents="none" />
+      <Svg style={$halo} viewBox="0 0 100 100" pointerEvents="none">
+        <Defs>
+          <RadialGradient id={gradientId} cx="50%" cy="50%" r="50%">
+            <Stop offset="0%" stopColor={tint} stopOpacity={0.55} />
+            <Stop offset="40%" stopColor={tint} stopOpacity={0.25} />
+            <Stop offset="75%" stopColor={tint} stopOpacity={0.06} />
+            <Stop offset="100%" stopColor={tint} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Ellipse cx="50" cy="50" rx="50" ry="50" fill={`url(#${gradientId})`} />
+      </Svg>
       <Text
         text={label.toUpperCase()}
         style={{
@@ -72,9 +84,8 @@ const $tile: ViewStyle = {
 
 const $halo: ViewStyle = {
   position: "absolute",
-  top: -24,
-  right: -24,
-  width: 72,
-  height: 72,
-  borderRadius: 36,
+  top: -36,
+  right: -36,
+  width: 120,
+  height: 120,
 }

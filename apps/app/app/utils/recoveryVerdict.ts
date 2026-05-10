@@ -16,8 +16,8 @@ const LOW: RecoveryVerdict = {
   detail: "Recovery is low. Consider rest or active recovery.",
 }
 const NONE: RecoveryVerdict = {
-  verdict: "Awaiting data.",
-  detail: "Sync your strap to see today's recovery.",
+  verdict: "",
+  detail: "",
 }
 
 export function recoveryVerdict(value: number | null | undefined): RecoveryVerdict {

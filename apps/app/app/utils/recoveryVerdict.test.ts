@@ -38,21 +38,12 @@ describe("recoveryVerdict", () => {
     })
   })
 
-  it("returns the no-data bucket when value is null or undefined", () => {
-    expect(recoveryVerdict(null)).toEqual({
-      verdict: "Awaiting data.",
-      detail: "Sync your strap to see today's recovery.",
-    })
-    expect(recoveryVerdict(undefined)).toEqual({
-      verdict: "Awaiting data.",
-      detail: "Sync your strap to see today's recovery.",
-    })
+  it("returns empty strings when value is null or undefined", () => {
+    expect(recoveryVerdict(null)).toEqual({ verdict: "", detail: "" })
+    expect(recoveryVerdict(undefined)).toEqual({ verdict: "", detail: "" })
   })
 
-  it("returns the no-data bucket when value is NaN", () => {
-    expect(recoveryVerdict(NaN)).toEqual({
-      verdict: "Awaiting data.",
-      detail: "Sync your strap to see today's recovery.",
-    })
+  it("returns empty strings when value is NaN", () => {
+    expect(recoveryVerdict(NaN)).toEqual({ verdict: "", detail: "" })
   })
 })

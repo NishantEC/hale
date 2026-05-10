@@ -66,26 +66,30 @@ export const RecoveryHero: FC<Props> = ({ value, label, verdict, verdictDetail, 
         />
       </Pressable>
 
-      <Text
-        text={verdict}
-        style={{
-          color: colors.text,
-          fontSize: 17,
-          fontWeight: "700",
-          letterSpacing: -0.3,
-          marginTop: 12,
-          textAlign: "center",
-        }}
-      />
-      <Text
-        text={verdictDetail}
-        style={{
-          color: colors.textDim,
-          fontSize: 13,
-          marginTop: 3,
-          textAlign: "center",
-        }}
-      />
+      {verdict ? (
+        <Text
+          text={verdict}
+          style={{
+            color: colors.text,
+            fontSize: 17,
+            fontWeight: "700",
+            letterSpacing: -0.3,
+            marginTop: 12,
+            textAlign: "center",
+          }}
+        />
+      ) : null}
+      {verdictDetail ? (
+        <Text
+          text={verdictDetail}
+          style={{
+            color: colors.textDim,
+            fontSize: 13,
+            marginTop: 3,
+            textAlign: "center",
+          }}
+        />
+      ) : null}
     </View>
   )
 }
