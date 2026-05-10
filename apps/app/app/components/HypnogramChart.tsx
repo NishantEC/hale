@@ -14,15 +14,8 @@ import Animated, {
 import { Gesture, GestureDetector } from "react-native-gesture-handler"
 
 import { Text } from "@/components/Text"
-
-// Inline color palette — was previously sourced from the theme context.
-const HYPNOGRAM_COLORS = {
-  text: "#FFFFFF",
-  textDim: "rgba(255,255,255,0.72)",
-  textMuted: "rgba(255,255,255,0.5)",
-  cardBase: "rgba(255,255,255,0.92)",
-  surfaceCardBorder: "rgba(0,0,0,0.06)",
-}
+import { LOCAL_THEME } from "@/utils/localTheme"
+import { useColorMode } from "@/context/ThemeContext"
 
 // ── Types ───────────────────────────────────────────────────
 
@@ -55,6 +48,7 @@ const BORDER_WIDTH = 2
 const ROW_HEIGHT = (CHART_HEIGHT - 16) / LANE_COUNT
 const BAR_HEIGHT = ROW_HEIGHT * 0.45
 const BAR_TOP_OFFSET = BAR_HEIGHT * 0.8
+const LABEL_COLUMN_WIDTH = 0
 
 // ── Helpers ─────────────────────────────────────────────────
 
@@ -163,7 +157,8 @@ const CursorOverlay = React.forwardRef<
   { setData: (d: CursorData) => void },
   CursorOverlayProps
 >(({ panX, opacity, minPanX, maxPanX, chartWidth }, ref) => {
-  const colors = HYPNOGRAM_COLORS
+  useColorMode()
+  const colors = LOCAL_THEME.colors
   const [data, setData] = useState<CursorData | null>(null)
   const cardLayout = useSharedValue({ width: 0, height: 0 })
 
@@ -228,8 +223,10 @@ const CursorOverlay = React.forwardRef<
 // ── Main component ──────────────────────────────────────────
 
 export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: HypnogramChartProps) {
-  const colors = HYPNOGRAM_COLORS
+  useColorMode()
+  const colors = LOCAL_THEME.colors
   const chartWidth = width
+  const drawWidth = Math.max(0, chartWidth - LABEL_COLUMN_WIDTH)
 
   const segments = useMemo(() => epochsToSegments(epochs), [epochs])
   const totalMinutes = epochs.length
@@ -249,15 +246,15 @@ export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: H
 
   // Min/max pan positions (leftmost / rightmost segment edges)
   const minPanX = segments.length > 0
-    ? lerp(segments[0].fromMin, 0, totalMinutes, 0, chartWidth)
+    ? lerp(segments[0].fromMin, 0, totalMinutes, 0, drawWidth)
     : 0
   const maxPanX = segments.length > 0
-    ? lerp(segments[segments.length - 1].toMin, 0, totalMinutes, 0, chartWidth)
-    : chartWidth
+    ? lerp(segments[segments.length - 1].toMin, 0, totalMinutes, 0, drawWidth)
+    : drawWidth
 
   const seekSegment = useCallback((x: number) => {
     // Map x position back to minutes
-    const minute = lerp(x, 0, chartWidth, 0, totalMinutes)
+    const minute = lerp(x, 0, drawWidth, 0, totalMinutes)
 
     // Find segment containing this minute
     const segment = segments.find(s => minute >= s.fromMin && minute < s.toMin)
@@ -272,7 +269,7 @@ export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: H
       : ""
 
     cursorRef.current?.setData({ segment, durationMin, fromTime, toTime })
-  }, [segments, totalMinutes, chartWidth, epochs])
+  }, [segments, totalMinutes, drawWidth, epochs])
 
   const gesture = Gesture.Pan()
     .onBegin((event) => {
@@ -306,8 +303,8 @@ export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: H
   // ── Underlay mask elements (bubbles + connectors) ─────────
   const underlayElements = segments.map((item, index) => {
     const topOffset = SleepStage[item.type].position * ROW_HEIGHT + BAR_TOP_OFFSET
-    const leftOffset = lerp(item.fromMin, 0, totalMinutes, 0, chartWidth) - BORDER_WIDTH
-    const barWidth = lerp(item.toMin - item.fromMin, 0, totalMinutes, 0, chartWidth) + BORDER_WIDTH
+    const leftOffset = lerp(item.fromMin, 0, totalMinutes, 0, drawWidth) - BORDER_WIDTH
+    const barWidth = lerp(item.toMin - item.fromMin, 0, totalMinutes, 0, drawWidth) + BORDER_WIDTH
 
     const prev = index > 0 ? segments[index - 1] : null
     const next = index < segments.length - 1 ? segments[index + 1] : null
@@ -381,8 +378,8 @@ export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: H
   // ── Foreground bars ───────────────────────────────────────
   const barElements = segments.map((segment, index) => {
     const top = SleepStage[segment.type].position * ROW_HEIGHT + BAR_TOP_OFFSET + BORDER_WIDTH
-    const left = lerp(segment.fromMin, 0, totalMinutes, 0, chartWidth)
-    const w = lerp(segment.toMin - segment.fromMin, 0, totalMinutes, 0, chartWidth) - BORDER_WIDTH
+    const left = lerp(segment.fromMin, 0, totalMinutes, 0, drawWidth)
+    const w = lerp(segment.toMin - segment.fromMin, 0, totalMinutes, 0, drawWidth) - BORDER_WIDTH
 
     return (
       <View
@@ -398,44 +395,47 @@ export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: H
   const axisRows = STAGE_KEYS.map((key, index) => (
     <View key={key} style={{ height: ROW_HEIGHT }}>
       {index > 0 && <View style={[styles.horizontal, { backgroundColor: colors.surfaceCardBorder }]} />}
-      <View style={styles.rowLabelWrap}>
-        <RNText style={[styles.stageLabel, { color: colors.textMuted }]}>{SleepStage[key].label}</RNText>
-        <RNText style={[styles.stageDuration, { color: colors.textMuted }]}>{formatMinutes(stageDurations[key] ?? 0)}</RNText>
-      </View>
     </View>
   ))
 
   return (
     <View style={{ gap: 6 }}>
-      {/* Gesture-wrapped chart */}
-      <GestureDetector gesture={gesture}>
-        <View style={[styles.chartContainer, { width: chartWidth, height: CHART_HEIGHT, borderColor: colors.surfaceCardBorder }]}>
-          {axisRows}
+      <View style={[styles.chartContainer, { width: chartWidth, height: CHART_HEIGHT, borderColor: colors.surfaceCardBorder }]}>
+        {axisRows}
 
-          <MaskedView
-            style={styles.maskedView}
-            maskElement={<>{underlayElements}</>}
+        <GestureDetector gesture={gesture}>
+          <View
+            style={{
+              position: "absolute",
+              left: LABEL_COLUMN_WIDTH,
+              top: 0,
+              width: drawWidth,
+              height: CHART_HEIGHT,
+            }}
           >
-            <GradientFill chartWidth={chartWidth} />
-          </MaskedView>
+            <MaskedView
+              style={styles.maskedView}
+              maskElement={<>{underlayElements}</>}
+            >
+              <GradientFill chartWidth={drawWidth} />
+            </MaskedView>
 
-          {barElements}
+            {barElements}
 
-          {/* Cursor overlay */}
-          <CursorOverlay
-            ref={cursorRef}
-            panX={panX}
-            opacity={cursorOpacity}
-            minPanX={minPanX}
-            maxPanX={maxPanX}
-            chartWidth={chartWidth}
-          />
-        </View>
-      </GestureDetector>
+            <CursorOverlay
+              ref={cursorRef}
+              panX={panX}
+              opacity={cursorOpacity}
+              minPanX={minPanX}
+              maxPanX={maxPanX}
+              chartWidth={drawWidth}
+            />
+          </View>
+        </GestureDetector>
+      </View>
 
-      {/* Time axis */}
       {(bedtimeLabel || wakeTimeLabel) && (
-        <View style={styles.timeAxis}>
+        <View style={[styles.timeAxis, { paddingLeft: LABEL_COLUMN_WIDTH + 4 }]}>
           <Text text={bedtimeLabel ?? "--"} size="xxs" style={[styles.axisText, { color: colors.textMuted }]} />
           <Text text={wakeTimeLabel ?? "--"} size="xxs" style={[styles.axisText, { color: colors.textMuted }]} />
         </View>
@@ -483,19 +483,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: StyleSheet.hairlineWidth,
     backgroundColor: "rgba(255,255,255,0.10)",
-  },
-  rowLabelWrap: {
-    paddingLeft: 6,
-    paddingTop: 4,
-  },
-  stageLabel: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.50)",
-    fontWeight: "500",
-  },
-  stageDuration: {
-    fontSize: 9,
-    color: "rgba(255,255,255,0.30)",
   },
   timeAxis: {
     flexDirection: "row",
