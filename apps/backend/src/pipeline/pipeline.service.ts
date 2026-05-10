@@ -404,7 +404,7 @@ export class PipelineService {
     );
 
     const dailyScores = effectiveFeatures.map((feature) =>
-      computeDailyScore(feature, recomputedBaseline, targetMinutes),
+      computeDailyScore(feature, recomputedBaseline, targetMinutes, effectiveFeatures),
     );
 
     const sleepScoreByNightKey = new Map<number, number | null>();

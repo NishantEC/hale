@@ -228,31 +228,125 @@ export function recomputeBaselineProfile(
   };
 }
 
+/**
+ * Reverse-engineered WHOOP recovery weights (see
+ * research/whoop-features-deep-dive.md §3.3). The strap weights HRV
+ * heaviest because it's the most sensitive autonomic-balance signal;
+ * RHR catches lingering fatigue/illness; sleep duration is a tiebreaker.
+ */
+const RECOVERY_WEIGHTS = { hrv: 0.7, rhr: 0.2, sleep: 0.1 };
+const RECOVERY_HISTORY_WINDOW_DAYS = 60;
+const RECOVERY_MIN_HISTORY = 7;
+
+function meanStd(values: number[]): { mean: number; std: number } {
+  if (values.length === 0) return { mean: 0, std: 0 };
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const variance =
+    values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+  return { mean, std: Math.sqrt(variance) };
+}
+
+/**
+ * Compute the daily-balance (recovery) component from per-metric
+ * z-scores against the user's own rolling 60-night baseline. Returns
+ * a value in [0, 100]. Returns null when history is too short to be
+ * statistically meaningful — caller should fall back to a continuity-
+ * only score in that case.
+ */
+function computeRecoveryZScore(
+  featureSet: NightFeatureSet,
+  history: NightFeatureSet[],
+  targetSleepMinutes: number,
+): number | null {
+  // Use up to RECOVERY_HISTORY_WINDOW_DAYS prior nights with valid data.
+  // Exclude tonight to avoid the leak-into-baseline pitfall.
+  const tonight = featureSet.nightDate.getTime();
+  const cutoff = tonight - RECOVERY_HISTORY_WINDOW_DAYS * 86_400_000;
+  const valid = history
+    .filter(
+      (f) =>
+        f.nightDate.getTime() < tonight &&
+        f.nightDate.getTime() >= cutoff &&
+        f.validCoverage >= 0.35 &&
+        f.restingHeartRate > 0 &&
+        f.rmssd > 0,
+    )
+    .sort((a, b) => b.nightDate.getTime() - a.nightDate.getTime());
+
+  if (valid.length < RECOVERY_MIN_HISTORY) return null;
+
+  const hrvStats = meanStd(valid.map((f) => f.rmssd));
+  const rhrStats = meanStd(valid.map((f) => f.restingHeartRate));
+  const sleepStats = meanStd(valid.map((f) => f.sleepEstimateHours));
+
+  // z-scores. RHR is inverted (lower = better recovery).
+  const safeStd = (s: number) => (s > 0.5 ? s : 0.5);
+  const hrvZ = clamp(
+    (featureSet.rmssd - hrvStats.mean) / safeStd(hrvStats.std),
+    -3,
+    3,
+  );
+  const rhrZ = clamp(
+    -(featureSet.restingHeartRate - rhrStats.mean) / safeStd(rhrStats.std),
+    -3,
+    3,
+  );
+  const sleepZ = clamp(
+    (featureSet.sleepEstimateHours - sleepStats.mean) /
+      safeStd(sleepStats.std),
+    -3,
+    3,
+  );
+
+  // Sleep-target attainment as a secondary clamp on the sleep term —
+  // someone who slept 4h still gets penalized even if their baseline
+  // is also short.
+  const targetHours = targetSleepMinutes / 60;
+  const targetMiss = clamp(featureSet.sleepEstimateHours / targetHours, 0, 1);
+  const sleepTerm = sleepZ * targetMiss;
+
+  const combined =
+    RECOVERY_WEIGHTS.hrv * hrvZ +
+    RECOVERY_WEIGHTS.rhr * rhrZ +
+    RECOVERY_WEIGHTS.sleep * sleepTerm;
+
+  // Map the weighted z-score onto 0–100 with 65 as the personal
+  // neutral. ±2σ pure z gives ~95/35.
+  return clamp(Math.round(65 + combined * 15), 0, 100);
+}
+
 export function computeDailyScore(
   featureSet: NightFeatureSet,
   baseline: BaselineProfile,
   targetSleepMinutes: number,
+  history: NightFeatureSet[] = [],
 ): DailyWellnessScore {
-  // RHR/HRV deltas vs baseline are only meaningful once the baseline is
-  // warmed up (≥5 nights). Before that, baseline.restingHeartRate and
-  // baseline.rmssd are 0, which makes the deltas compare against zero
-  // and destroys the score (e.g. rhrPenalty = 59 × 1.5 = 88).
-  const rhrPenalty = baseline.isWarmedUp
-    ? Math.max(0, featureSet.restingHeartRate - baseline.restingHeartRate) * 1.5
-    : 0;
-  const hrvBoost = baseline.isWarmedUp
-    ? clamp((featureSet.rmssd - baseline.rmssd) * 0.45, -18, 18)
-    : 0;
+  // Preferred path: per-user z-score against rolling 60-night history.
+  // Fallback path: when history is too short, lean on within-night
+  // continuity/regularity since absolute deltas vs an empty baseline
+  // produce nonsense (a healthy 59 bpm became a 88-point penalty).
+  const zScoreRecovery = computeRecoveryZScore(
+    featureSet,
+    history,
+    targetSleepMinutes,
+  );
+
   const continuityBoost = (featureSet.continuity - 0.5) * 35;
   const regularityBoost = (featureSet.regularity - 0.5) * 20;
 
-  const dailyBalance = clamp(
-    Math.round(
-      65 + hrvBoost + continuityBoost + regularityBoost - rhrPenalty,
-    ),
+  const fallbackRecovery = clamp(
+    Math.round(65 + continuityBoost + regularityBoost),
     0,
     100,
   );
+
+  const dailyBalance = zScoreRecovery ?? fallbackRecovery;
+
+  // loadPressure scaling kept consistent regardless of which recovery
+  // path fired — uses the gap from typical-good (70).
+  const rhrPenalty = baseline.isWarmedUp
+    ? Math.max(0, featureSet.restingHeartRate - baseline.restingHeartRate) * 1.5
+    : 0;
 
   const loadPressure = clamp(
     Math.round(35 + Math.max(0, 70 - dailyBalance) + rhrPenalty * 0.8),
