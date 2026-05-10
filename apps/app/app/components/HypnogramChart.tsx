@@ -26,6 +26,7 @@ type HypnogramChartProps = {
   width: number
   bedtimeLabel?: string
   wakeTimeLabel?: string
+  epochMinutes?: number
 }
 
 // ── Stage config (same colours as reference repo) ───────────
@@ -207,7 +208,7 @@ const CursorOverlay = React.forwardRef<
       >
         <RNText style={[styles.cursorLabel, { color: colors.textDim }]}>{label}</RNText>
         <RNText style={[styles.cursorLabel, { color: colors.textDim }]}>
-          <RNText style={[styles.cursorDuration, { color: colors.text }]}>{data.durationMin}</RNText>
+          <RNText style={[styles.cursorDuration, { color: colors.text }]}>{Math.round(data.durationMin)}</RNText>
           {" min"}
         </RNText>
         <RNText style={[styles.cursorLabel, { color: colors.textDim }]}>
@@ -222,22 +223,22 @@ const CursorOverlay = React.forwardRef<
 
 // ── Main component ──────────────────────────────────────────
 
-export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: HypnogramChartProps) {
+export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel, epochMinutes = 0.5 }: HypnogramChartProps) {
   useColorMode()
   const colors = LOCAL_THEME.colors
   const chartWidth = width
   const drawWidth = Math.max(0, chartWidth - LABEL_COLUMN_WIDTH)
 
   const segments = useMemo(() => epochsToSegments(epochs), [epochs])
-  const totalMinutes = epochs.length
+  const totalMinutes = epochs.length // internal x-axis scale; in epoch units
 
   const stageDurations = useMemo(() => {
     const c: Record<string, number> = { awake: 0, rem: 0, core: 0, deep: 0 }
     for (const seg of segments) {
-      c[seg.type] = (c[seg.type] ?? 0) + (seg.toMin - seg.fromMin)
+      c[seg.type] = (c[seg.type] ?? 0) + (seg.toMin - seg.fromMin) * epochMinutes
     }
     return c
-  }, [segments])
+  }, [segments, epochMinutes])
 
   // ── Cursor state ────────────────────────────────────────────
   const cursorRef = React.useRef<{ setData: (d: CursorData) => void }>(null)
@@ -262,14 +263,14 @@ export function HypnogramChart({ epochs, width, bedtimeLabel, wakeTimeLabel }: H
 
     if (!segment) return
 
-    const durationMin = segment.toMin - segment.fromMin
+    const durationMin = (segment.toMin - segment.fromMin) * epochMinutes
     const fromTime = epochs[segment.fromMin] ? formatTime(epochs[segment.fromMin].timestamp) : ""
     const toTime = epochs[Math.min(segment.toMin, epochs.length - 1)]
       ? formatTime(epochs[Math.min(segment.toMin, epochs.length - 1)].timestamp)
       : ""
 
     cursorRef.current?.setData({ segment, durationMin, fromTime, toTime })
-  }, [segments, totalMinutes, drawWidth, epochs])
+  }, [segments, totalMinutes, drawWidth, epochs, epochMinutes])
 
   const gesture = Gesture.Pan()
     .onBegin((event) => {
