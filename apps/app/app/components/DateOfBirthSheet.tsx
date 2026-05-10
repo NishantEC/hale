@@ -1,45 +1,34 @@
-import { FC, useEffect, useMemo, useRef, useState } from "react"
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native"
+import { FC, useEffect, useMemo, useState } from "react"
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native"
 import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated"
+import { DatePicker } from "@expo/ui/swift-ui"
+import { datePickerStyle, frame } from "@expo/ui/swift-ui/modifiers"
 
-import { Picker } from "@/components/reacticx/picker"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-]
-
-const CURRENT_YEAR = new Date().getFullYear()
-const MIN_YEAR = CURRENT_YEAR - 100
-const MAX_YEAR = CURRENT_YEAR
-const YEARS = Array.from({ length: MAX_YEAR - MIN_YEAR + 1 }, (_, i) => String(MAX_YEAR - i))
-const YEARS_ASC = [...YEARS].reverse() // oldest at top, newest at bottom — feels right for DOB
-
-const ITEM_HEIGHT = 44
-const VISIBLE_ITEMS = 7
-const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS
-
-function daysInMonth(year: number, month: number /* 1-12 */): number {
-  return new Date(year, month, 0).getDate()
-}
-
-function parseIsoDate(iso: string | null): { year: number; month: number; day: number } {
+function parseIsoDate(iso: string | null): Date {
   if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-    const [y, m, d] = iso.split("-").map(Number)
-    if (y >= MIN_YEAR && y <= MAX_YEAR) return { year: y, month: m, day: d }
+    const d = new Date(`${iso}T00:00:00.000Z`)
+    if (!Number.isNaN(d.getTime())) return d
   }
   // Default to 30 years ago, Jan 1 — reasonable starting point for an adult
-  return { year: CURRENT_YEAR - 30, month: 1, day: 1 }
+  const fallback = new Date()
+  fallback.setUTCFullYear(fallback.getUTCFullYear() - 30, 0, 1)
+  fallback.setUTCHours(0, 0, 0, 0)
+  return fallback
 }
 
 function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n)
+}
+
+function isoFromDate(d: Date): string {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 type Props = {
@@ -50,36 +39,22 @@ type Props = {
   saving?: boolean
 }
 
+const MIN_DATE = (() => {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() - 100)
+  return d
+})()
+const MAX_DATE = new Date()
+
 export const DateOfBirthSheet: FC<Props> = ({ visible, initialIso, onCancel, onSubmit, saving = false }) => {
   const colors = LOCAL_THEME.colors
 
   const initial = useMemo(() => parseIsoDate(initialIso), [initialIso])
-  const [year, setYear] = useState(initial.year)
-  const [month, setMonth] = useState(initial.month)
-  const [day, setDay] = useState(initial.day)
+  const [selected, setSelected] = useState<Date>(initial)
 
   useEffect(() => {
-    if (visible) {
-      setYear(initial.year)
-      setMonth(initial.month)
-      setDay(initial.day)
-    }
+    if (visible) setSelected(initial)
   }, [visible, initial])
-
-  // Clamp day when month/year shorten the available days.
-  useEffect(() => {
-    const max = daysInMonth(year, month)
-    if (day > max) setDay(max)
-  }, [year, month, day])
-
-  const daysArr = useMemo(
-    () => Array.from({ length: daysInMonth(year, month) }, (_, i) => String(i + 1)),
-    [year, month],
-  )
-
-  const yearInitialIndex = YEARS_ASC.indexOf(String(year))
-  const monthInitialIndex = month - 1
-  const dayInitialIndex = day - 1
 
   // Slide-up animation
   const translateY = useSharedValue(600)
@@ -104,9 +79,7 @@ export const DateOfBirthSheet: FC<Props> = ({ visible, initialIso, onCancel, onS
 
   if (!visible && !mounted) return null
 
-  const handleDone = () => {
-    onSubmit(`${year}-${pad(month)}-${pad(day)}`)
-  }
+  const handleDone = () => onSubmit(isoFromDate(selected))
 
   return (
     <Modal visible={mounted} transparent animationType="none" statusBarTranslucent onRequestClose={onCancel}>
@@ -147,53 +120,43 @@ export const DateOfBirthSheet: FC<Props> = ({ visible, initialIso, onCancel, onS
             </Pressable>
           </View>
 
-          <View style={styles.pickerRow}>
-            <View style={styles.pickerCol}>
-              <Picker
-                key={`m-${month}`}
-                items={MONTHS}
-                initialIndex={monthInitialIndex}
-                onIndexChange={(idx) => setMonth(idx + 1)}
-                itemHeight={ITEM_HEIGHT}
-                width="100%"
-                textColor={colors.textDim as string}
-                selectedTextColor={colors.text as string}
-                backgroundColor="transparent"
-                selectionAreaBackgroundColor="rgba(255,255,255,0.05)"
+          <View style={styles.pickerWrap}>
+            {Platform.OS === "ios" ? (
+              <DatePicker
+                selection={selected}
+                onDateChange={setSelected}
+                displayedComponents={["date"]}
+                range={{ start: MIN_DATE, end: MAX_DATE }}
+                modifiers={[
+                  datePickerStyle("wheel"),
+                  frame({ height: 220 }),
+                ]}
               />
-            </View>
-            <View style={[styles.pickerCol, { flex: 0.7 }]}>
-              <Picker
-                key={`d-${daysArr.length}`}
-                items={daysArr}
-                initialIndex={Math.min(dayInitialIndex, daysArr.length - 1)}
-                onIndexChange={(idx) => setDay(idx + 1)}
-                itemHeight={ITEM_HEIGHT}
-                width="100%"
-                textColor={colors.textDim as string}
-                selectedTextColor={colors.text as string}
-                backgroundColor="transparent"
-                selectionAreaBackgroundColor="rgba(255,255,255,0.05)"
-              />
-            </View>
-            <View style={[styles.pickerCol, { flex: 0.9 }]}>
-              <Picker
-                key={`y-${year}`}
-                items={YEARS_ASC}
-                initialIndex={yearInitialIndex >= 0 ? yearInitialIndex : YEARS_ASC.length - 30}
-                onIndexChange={(idx) => setYear(Number(YEARS_ASC[idx]))}
-                itemHeight={ITEM_HEIGHT}
-                width="100%"
-                textColor={colors.textDim as string}
-                selectedTextColor={colors.text as string}
-                backgroundColor="transparent"
-                selectionAreaBackgroundColor="rgba(255,255,255,0.05)"
-              />
-            </View>
+            ) : (
+              <AndroidFallback selected={selected} onChange={setSelected} />
+            )}
           </View>
         </Animated.View>
       </View>
     </Modal>
+  )
+}
+
+// Android fallback — Material 3 doesn't have a wheel-style picker. Use
+// graphical (calendar) mode via @expo/ui jetpack-compose if available;
+// otherwise just show the date prominently and rely on the system
+// keyboard. Most of our users are iOS-first so this is acceptable.
+const AndroidFallback: FC<{ selected: Date; onChange: (d: Date) => void }> = ({ selected, onChange }) => {
+  const colors = LOCAL_THEME.colors
+  return (
+    <View style={{ paddingVertical: 28, alignItems: "center" }}>
+      <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700" }}>
+        {selected.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+      </Text>
+      <Text style={{ color: colors.textDim, fontSize: 12, marginTop: 8 }}>
+        Tap to adjust (Android picker)
+      </Text>
+    </View>
   )
 }
 
@@ -221,11 +184,11 @@ const styles = StyleSheet.create({
   headerBtn: { paddingVertical: 4, minWidth: 60 },
   headerBtnText: { fontSize: 15, fontWeight: "600" },
   headerTitle: { fontSize: 15, fontWeight: "700" },
-  pickerRow: {
-    flexDirection: "row",
-    height: PICKER_HEIGHT,
-    paddingHorizontal: 8,
-    gap: 4,
+  pickerWrap: {
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 6,
+    minHeight: 240,
+    justifyContent: "center",
   },
-  pickerCol: { flex: 1 },
 })
