@@ -17,14 +17,18 @@ export const INSPECTOR_WEB_URL = process.env.EXPO_PUBLIC_INSPECTOR_URL || 'https
 
 let sessionToken: string | null = null;
 
+// React Native's fetch doesn't send Origin by default. better-auth's CSRF
+// check rejects requests with a missing/null origin (403 "missing or null
+// origin") AND rejects an Origin that isn't in trustedOrigins (403 "invalid
+// origin"). Send a value that's already in the deployed server's
+// trustedOrigins list so the request is accepted without a backend redeploy.
+// Configurable via EXPO_PUBLIC_AUTH_ORIGIN if needed.
+const AUTH_ORIGIN = process.env.EXPO_PUBLIC_AUTH_ORIGIN || 'http://localhost:3009';
+
 function withBaseHeaders(headers: HeadersInit = {}): HeadersInit {
   return {
     'ngrok-skip-browser-warning': 'true',
-    // React Native's fetch doesn't send Origin by default. better-auth's
-    // CSRF check rejects requests with a missing/null origin (403). Send
-    // the API base URL itself so the server treats this as a trusted
-    // same-origin request.
-    Origin: BASE_URL,
+    Origin: AUTH_ORIGIN,
     ...headers,
   };
 }
