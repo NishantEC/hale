@@ -223,13 +223,16 @@ export function computeDailyScore(
   baseline: BaselineProfile,
   targetSleepMinutes: number,
 ): DailyWellnessScore {
-  const rhrPenalty =
-    Math.max(0, featureSet.restingHeartRate - baseline.restingHeartRate) * 1.5;
-  const hrvBoost = clamp(
-    (featureSet.rmssd - baseline.rmssd) * 0.45,
-    -18,
-    18,
-  );
+  // RHR/HRV deltas vs baseline are only meaningful once the baseline is
+  // warmed up (≥5 nights). Before that, baseline.restingHeartRate and
+  // baseline.rmssd are 0, which makes the deltas compare against zero
+  // and destroys the score (e.g. rhrPenalty = 59 × 1.5 = 88).
+  const rhrPenalty = baseline.isWarmedUp
+    ? Math.max(0, featureSet.restingHeartRate - baseline.restingHeartRate) * 1.5
+    : 0;
+  const hrvBoost = baseline.isWarmedUp
+    ? clamp((featureSet.rmssd - baseline.rmssd) * 0.45, -18, 18)
+    : 0;
   const continuityBoost = (featureSet.continuity - 0.5) * 35;
   const regularityBoost = (featureSet.regularity - 0.5) * 20;
 
