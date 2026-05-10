@@ -18,7 +18,11 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import { Text } from "@/components/Text"
 import { useAuth } from "@/context/AuthContext"
-import { login as apiLogin, register as apiRegister } from "@/services/api/noopClient"
+import {
+  login as apiLogin,
+  register as apiRegister,
+  AuthError,
+} from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 export const LoginScreen: FC = () => {
@@ -58,27 +62,46 @@ export const LoginScreen: FC = () => {
       // Persist to MMKV right before the API call so the AuthProvider
       // (and any downstream readers) see the same email we authed with.
       setAuthEmail(normalizedEmail)
-      const success = isSignUp
-        ? await apiRegister(normalizedEmail, authPassword)
-        : await apiLogin(normalizedEmail, authPassword)
-      if (success) {
-        const token = await AsyncStorage.getItem("sessionToken")
-        if (token) {
-          setIsSubmitted(false)
-          setAuthPassword("")
-          setAuthToken(token)
-        } else {
-          setAuthError("Authentication succeeded but no token was returned.")
-        }
+      if (isSignUp) {
+        await apiRegister(normalizedEmail, authPassword)
       } else {
-        setAuthError(
-          isSignUp ? "Registration failed. Please try again." : "Invalid email or password.",
-        )
+        await apiLogin(normalizedEmail, authPassword)
       }
-    } catch (e: any) {
-      setAuthError(e?.message ?? "Network error. Please try again.")
+      const token = await AsyncStorage.getItem("sessionToken")
+      if (!token) {
+        setAuthError("Sign-in succeeded but no session token was stored.")
+        return
+      }
+      setIsSubmitted(false)
+      setAuthPassword("")
+      setAuthToken(token)
+    } catch (e: unknown) {
+      if (e instanceof AuthError) {
+        setAuthError(authErrorMessage(e, isSignUp))
+      } else if (e instanceof Error) {
+        setAuthError(e.message || "Network error. Please try again.")
+      } else {
+        setAuthError("Network error. Please try again.")
+      }
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  function authErrorMessage(err: AuthError, signingUp: boolean): string {
+    switch (err.code) {
+      case "INVALID_EMAIL_OR_PASSWORD":
+        return "Invalid email or password."
+      case "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL":
+        return "An account with that email already exists. Try signing in."
+      case "PASSWORD_TOO_SHORT":
+        return "Password must be at least 8 characters."
+      case "VALIDATION_ERROR":
+        return err.message
+      default:
+        return signingUp
+          ? `Sign-up failed (${err.status}). ${err.message}`
+          : `Sign-in failed (${err.status}). ${err.message}`
     }
   }
 

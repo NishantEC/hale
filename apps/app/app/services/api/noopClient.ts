@@ -427,13 +427,39 @@ export function isAuthenticated() {
   return sessionToken !== null;
 }
 
+export class AuthError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly code: string | null,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+async function readAuthErrorBody(res: Response): Promise<{ code: string | null; message: string }> {
+  try {
+    const data = (await res.json()) as { code?: string; message?: string };
+    return {
+      code: data.code ?? null,
+      message: data.message ?? `HTTP ${res.status}`,
+    };
+  } catch {
+    return { code: null, message: `HTTP ${res.status}` };
+  }
+}
+
 export async function register(email: string, password: string): Promise<boolean> {
   const res = await fetch(`${BASE_URL}/api/auth/sign-up/email`, {
     method: 'POST',
     headers: withBaseHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ email, password, name: email }),
   });
-  if (!res.ok) return false;
+  if (!res.ok) {
+    const { code, message } = await readAuthErrorBody(res);
+    throw new AuthError(res.status, code, message);
+  }
   const data = await res.json();
   sessionToken = data.token;
   await AsyncStorage.setItem('sessionToken', data.token);
@@ -441,25 +467,19 @@ export async function register(email: string, password: string): Promise<boolean
 }
 
 export async function login(email: string, password: string): Promise<boolean> {
-  const res = await fetch(`${BASE_URL}/api/auth/sign-up/email`, {
+  const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
     method: 'POST',
     headers: withBaseHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ email, password }),
   });
   if (!res.ok) {
-    // Try sign-in instead
-    const res2 = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
-      method: 'POST',
-      headers: withBaseHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ email, password }),
-    });
-    if (!res2.ok) return false;
-    const data = await res2.json();
-    sessionToken = data.token;
-    await AsyncStorage.setItem('sessionToken', data.token);
-    return true;
+    const { code, message } = await readAuthErrorBody(res);
+    throw new AuthError(res.status, code, message);
   }
   const data = await res.json();
+  if (!data?.token) {
+    throw new AuthError(res.status, 'NO_TOKEN', 'Sign-in succeeded but the server returned no token.');
+  }
   sessionToken = data.token;
   await AsyncStorage.setItem('sessionToken', data.token);
   return true;
@@ -587,6 +607,8 @@ export interface TrendsViewModel {
   consistencyTrend: SeriesPoint[];
   strainTrend: SeriesPoint[];
   stressTrend: SeriesPoint[];
+  respiratoryRateTrend: SeriesPoint[];
+  spo2Trend: SeriesPoint[];
   summaries: {
     hrv: { current: number | null; weekAgo: number | null; trend: string | null };
     restingHr: { current: number | null; weekAgo: number | null; trend: string | null };
@@ -600,6 +622,67 @@ export async function fetchTrendsView(days: number = 30): Promise<TrendsViewMode
 
 export async function updateSleepPlan(input: SleepPlanInput): Promise<{ ok: boolean; sleepView: SleepViewModel }> {
   return apiPut('/views/sleep-plan', input);
+}
+
+export interface HealthkitSyncPayload {
+  summaries?: Array<{
+    dayDate: string;
+    steps?: number | null;
+    activeEnergyKcal?: number | null;
+    exerciseMinutes?: number | null;
+    standMinutes?: number | null;
+    walkingDistanceMeters?: number | null;
+    flightsClimbed?: number | null;
+    restingHeartRate?: number | null;
+    hrvSdnnMs?: number | null;
+    oxygenSaturationAverage?: number | null;
+    respiratoryRateAverage?: number | null;
+  }>;
+  workouts?: Array<{
+    uuid: string;
+    activityName: string;
+    startDate: string;
+    endDate: string;
+    durationMinutes: number;
+    totalEnergyKcal?: number | null;
+    totalDistanceMeters?: number | null;
+    averageHeartRate?: number | null;
+    source?: string | null;
+  }>;
+}
+
+export async function pushHealthkitSync(
+  payload: HealthkitSyncPayload,
+): Promise<{ ok: boolean; summariesUpserted: number; workoutsUpserted: number }> {
+  return apiPost('/healthkit/sync', payload);
+}
+
+export interface BarometerSamplePayload {
+  samples: Array<{
+    timestamp: string;
+    pressureHpa: number;
+    relativeAltitudeMeters: number | null;
+  }>;
+}
+
+export async function pushBarometerSamples(
+  payload: BarometerSamplePayload,
+): Promise<{ ok: boolean; inserted: number }> {
+  return apiPost('/healthkit/barometer', payload);
+}
+
+export interface MotionActivityPayload {
+  samples: Array<{
+    timestamp: string;
+    activity: 'stationary' | 'walking' | 'running' | 'automotive' | 'cycling' | 'unknown';
+    confidence: 'low' | 'medium' | 'high';
+  }>;
+}
+
+export async function pushMotionActivity(
+  payload: MotionActivityPayload,
+): Promise<{ ok: boolean; inserted: number }> {
+  return apiPost('/healthkit/motion-activity', payload);
 }
 
 export async function fetchDebugOverview(date: string): Promise<DebugOverview> {
