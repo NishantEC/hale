@@ -31,62 +31,63 @@ export function SleepHero(props: SleepHeroProps) {
     ? `${props.bedtimeLabel} – ${props.wakeTimeLabel}`
     : null
 
-  return (
-    <View style={{ alignItems: "center", paddingVertical: 18 }}>
-      <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-        <Text text={`${h}h`} style={{ fontSize: 56, fontWeight: "300", color: colors.text }} />
-        <Text text={` ${m}m`} style={{ fontSize: 28, fontWeight: "300", color: colors.text, opacity: 0.85 }} />
-      </View>
-      {range ? <Text text={range} size="xs" style={{ color: colors.textDim, marginTop: 6 }} /> : null}
+  const durationText = h > 0 && m > 0 ? `${h}h ${m}m` : h > 0 ? `${h}h` : `${m}m`
 
-      {showScore ? (
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 8,
-            marginTop: 14,
-            paddingHorizontal: 14,
-            paddingVertical: 6,
-            borderRadius: 16,
-            backgroundColor: "rgba(255,164,43,0.12)",
-          }}
-        >
-          <Text text={String(props.score)} style={{ color: "#ffa42b", fontWeight: "600", fontSize: 18 }} />
-          <Text text={props.scoreLabel} size="xs" style={{ color: "#ffa42b", opacity: 0.85 }} />
+  return (
+    <View style={{ paddingVertical: 18, paddingHorizontal: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ flex: 1 }}>
+          <Text
+            text={durationText}
+            style={{ fontSize: 44, lineHeight: 52, fontWeight: "300", color: colors.text }}
+          />
+          {range ? (
+            <Text text={range} size="xs" style={{ color: colors.textDim, marginTop: 4 }} />
+          ) : null}
+        </View>
+        <View style={{ alignItems: "flex-end" }}>
+          {showScore ? (
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 14,
+                backgroundColor: "rgba(255,164,43,0.12)",
+              }}
+            >
+              <Text text={String(props.score)} style={{ color: "#ffa42b", fontWeight: "600", fontSize: 18, lineHeight: 22 }} />
+              <Text text={props.scoreLabel} size="xs" style={{ color: "#ffa42b", opacity: 0.85 }} />
+            </View>
+          ) : (
+            <View
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 14,
+                backgroundColor: colors.surfaceSubtle,
+              }}
+            >
+              <Text text="Building baseline" size="xs" style={{ color: colors.textDim }} />
+            </View>
+          )}
           {showDelta ? (
             <Text
               text={`${sign}${props.scoreDelta} vs week`}
               size="xxs"
-              style={{
-                color: colors.textDim,
-                paddingLeft: 6,
-                marginLeft: 4,
-                borderLeftWidth: 1,
-                borderLeftColor: colors.surfaceCardBorder,
-              }}
+              style={{ color: colors.textDim, marginTop: 4 }}
             />
           ) : null}
         </View>
-      ) : (
-        <View
-          style={{
-            marginTop: 14,
-            paddingHorizontal: 14,
-            paddingVertical: 6,
-            borderRadius: 16,
-            backgroundColor: colors.surfaceSubtle,
-          }}
-        >
-          <Text text="Building baseline" size="xs" style={{ color: colors.textDim }} />
-        </View>
-      )}
+      </View>
 
       {props.detail ? (
         <Text
           text={props.detail}
           size="xs"
-          style={{ color: colors.textDim, marginTop: 14, paddingHorizontal: 12, textAlign: "center", lineHeight: 18 }}
+          style={{ color: colors.textDim, marginTop: 14, lineHeight: 18 }}
         />
       ) : null}
     </View>
