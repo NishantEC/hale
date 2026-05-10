@@ -38,16 +38,18 @@ export class HealthkitService {
     summaries: NonNullable<HealthkitSyncDto['summaries']>,
   ): Promise<number> {
     if (summaries.length === 0) return 0;
+    const toInt = (v: number | null | undefined): number | null =>
+      v == null || !Number.isFinite(v) ? null : Math.round(v);
     const entities = summaries.map((s) => {
       const e = new HealthkitDailySummary();
       e.userId = userId;
       e.dayDate = s.dayDate;
-      e.steps = s.steps ?? null;
+      e.steps = toInt(s.steps);
       e.activeEnergyKcal = s.activeEnergyKcal ?? null;
       e.exerciseMinutes = s.exerciseMinutes ?? null;
       e.standMinutes = s.standMinutes ?? null;
       e.walkingDistanceMeters = s.walkingDistanceMeters ?? null;
-      e.flightsClimbed = s.flightsClimbed ?? null;
+      e.flightsClimbed = toInt(s.flightsClimbed);
       e.restingHeartRate = s.restingHeartRate ?? null;
       e.hrvSdnnMs = s.hrvSdnnMs ?? null;
       e.oxygenSaturationAverage = s.oxygenSaturationAverage ?? null;
