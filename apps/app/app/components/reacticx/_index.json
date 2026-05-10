@@ -1,0 +1,510 @@
+{
+  "accordion": {
+    "category": "molecules",
+    "path": "src/components/molecules/accordion"
+  },
+  "action-card": {
+    "category": "base",
+    "path": "src/components/base/action-card"
+  },
+  "animated-chip": {
+    "category": "molecules",
+    "path": "src/components/molecules/animated-chip"
+  },
+  "animated-curve-text": {
+    "category": "molecules",
+    "path": "src/components/molecules/animated-curve-text"
+  },
+  "animated-header-scrollview": {
+    "category": "organisms",
+    "path": "src/components/organisms/animated-header-scrollview"
+  },
+  "animated-input-bar": {
+    "category": "base",
+    "path": "src/components/base/animated-input-bar"
+  },
+  "animated-masked-text": {
+    "category": "molecules",
+    "path": "src/components/molecules/animated-masked-text"
+  },
+  "animated-scroll-progress": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/animated-scroll-progress"
+  },
+  "animated-text": {
+    "category": "organisms",
+    "path": "src/components/organisms/animated-text"
+  },
+  "animated-theme-toggle": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/animated-theme-toggle"
+  },
+  "apple-intelligence": {
+    "category": "organisms",
+    "path": "src/components/organisms/apple-intelligence"
+  },
+  "aura-lift": {
+    "category": "organisms",
+    "path": "src/components/organisms/aura-lift"
+  },
+  "aurora": {
+    "category": "molecules",
+    "path": "src/components/molecules/aurora"
+  },
+  "avatar": {
+    "category": "base",
+    "path": "src/components/base/avatar"
+  },
+  "avatar-group": {
+    "category": "base",
+    "path": "src/components/base/avatar-group"
+  },
+  "badge": {
+    "category": "base",
+    "path": "src/components/base/badge"
+  },
+  "blur-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/blur-carousel"
+  },
+  "bottom-input-bar": {
+    "category": "ai",
+    "path": "src/components/ai/bottom-input-bar"
+  },
+  "bottom-sheet": {
+    "category": "templates",
+    "path": "src/components/templates/bottom-sheet"
+  },
+  "bottom-sheet-stack": {
+    "category": "templates",
+    "path": "src/components/templates/bottom-sheet-stack"
+  },
+  "Breadcrumbs": {
+    "category": "molecules",
+    "path": "src/components/molecules/Breadcrumbs"
+  },
+  "button": {
+    "category": "base",
+    "path": "src/components/base/button"
+  },
+  "card": {
+    "category": "molecules",
+    "path": "src/components/molecules/card"
+  },
+  "chat-v1": {
+    "category": "templates",
+    "path": "src/components/templates/chat-v1"
+  },
+  "check-box": {
+    "category": "organisms",
+    "path": "src/components/organisms/check-box"
+  },
+  "chroma-ring": {
+    "category": "organisms",
+    "path": "src/components/organisms/chroma-ring"
+  },
+  "cinematic-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/cinematic-carousel"
+  },
+  "circle-loader": {
+    "category": "molecules",
+    "path": "src/components/molecules/circle-loader"
+  },
+  "circular-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/circular-carousel"
+  },
+  "circular-list": {
+    "category": "molecules",
+    "path": "src/components/molecules/circular-list"
+  },
+  "circular-loader": {
+    "category": "molecules",
+    "path": "src/components/molecules/circular-loader"
+  },
+  "circular-progress": {
+    "category": "organisms",
+    "path": "src/components/organisms/circular-progress"
+  },
+  "circular-text": {
+    "category": "organisms",
+    "path": "src/components/organisms/circular-text"
+  },
+  "countdown": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/countdown"
+  },
+  "curved-bottom-tabs": {
+    "category": "base",
+    "path": "src/components/base/curved-bottom-tabs"
+  },
+  "curved-marquee": {
+    "category": "organisms",
+    "path": "src/components/organisms/curved-marquee"
+  },
+  "dialog": {
+    "category": "organisms",
+    "path": "src/components/organisms/dialog"
+  },
+  "disclosure-group": {
+    "category": "molecules",
+    "path": "src/components/molecules/disclosure-group"
+  },
+  "dropdown": {
+    "category": "organisms",
+    "path": "src/components/organisms/dropdown"
+  },
+  "dynamic-island": {
+    "category": "molecules",
+    "path": "src/components/molecules/dynamic-island"
+  },
+  "dynamic-text": {
+    "category": "molecules",
+    "path": "src/components/molecules/dynamic-text"
+  },
+  "elastic-slider": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/elastic-slider"
+  },
+  "empty-state": {
+    "category": "base",
+    "path": "src/components/base/empty-state"
+  },
+  "energy-orb": {
+    "category": "organisms",
+    "path": "src/components/organisms/energy-orb"
+  },
+  "fade-component": {
+    "category": "base",
+    "path": "src/components/base/fade-component"
+  },
+  "fade-text": {
+    "category": "organisms",
+    "path": "src/components/organisms/fade-text"
+  },
+  "flexi-button": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/flexi-button"
+  },
+  "flip-card": {
+    "category": "base",
+    "path": "src/components/base/flip-card"
+  },
+  "floating-sheet": {
+    "category": "templates",
+    "path": "src/components/templates/sheet/floating-sheet"
+  },
+  "glow": {
+    "category": "base",
+    "path": "src/components/base/glow"
+  },
+  "gooey-switch": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/gooey-switch"
+  },
+  "gooey-text": {
+    "category": "molecules",
+    "path": "src/components/molecules/gooey-text"
+  },
+  "grainy-gradient": {
+    "category": "organisms",
+    "path": "src/components/organisms/grainy-gradient"
+  },
+  "hamburger": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/hamburger"
+  },
+  "horizontal": {
+    "category": "atoms",
+    "path": "src/components/atoms/divider/horizontal"
+  },
+  "infinite-menu": {
+    "category": "organisms",
+    "path": "src/components/organisms/infinite-menu"
+  },
+  "lanyard": {
+    "category": "molecules",
+    "path": "src/components/molecules/lanyard"
+  },
+  "liquid-metal": {
+    "category": "organisms",
+    "path": "src/components/organisms/liquid-metal"
+  },
+  "List": {
+    "category": "molecules",
+    "path": "src/components/molecules/List"
+  },
+  "marquee": {
+    "category": "base",
+    "path": "src/components/base/marquee"
+  },
+  "matched-geometry": {
+    "category": "organisms",
+    "path": "src/components/organisms/matched-geometry"
+  },
+  "material-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/material-carousel"
+  },
+  "media-list": {
+    "category": "templates",
+    "path": "src/components/templates/media-list"
+  },
+  "mesh-gradient": {
+    "category": "organisms",
+    "path": "src/components/organisms/mesh-gradient"
+  },
+  "mobile-dock": {
+    "category": "organisms",
+    "path": "src/components/organisms/mobile-dock"
+  },
+  "morphing-tabbar": {
+    "category": "molecules",
+    "path": "src/components/molecules/morphing-tabbar"
+  },
+  "orbiting-dots": {
+    "category": "molecules",
+    "path": "src/components/molecules/orbiting-dots"
+  },
+  "otp-input": {
+    "category": "base",
+    "path": "src/components/base/otp-input"
+  },
+  "Pagination": {
+    "category": "molecules",
+    "path": "src/components/molecules/Pagination"
+  },
+  "parallax-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/parallax-carousel"
+  },
+  "parallax-header": {
+    "category": "templates",
+    "path": "src/components/templates/parallax-header"
+  },
+  "picker": {
+    "category": "organisms",
+    "path": "src/components/organisms/picker"
+  },
+  "pressable": {
+    "category": "atoms",
+    "path": "src/components/atoms/pressable"
+  },
+  "progress": {
+    "category": "organisms",
+    "path": "src/components/organisms/progress"
+  },
+  "property-detail-v1": {
+    "category": "templates",
+    "path": "src/components/templates/property-detail-v1"
+  },
+  "pulsing-dots": {
+    "category": "molecules",
+    "path": "src/components/molecules/pulsing-dots"
+  },
+  "qr-code": {
+    "category": "base",
+    "path": "src/components/base/qr-code"
+  },
+  "radial-intro": {
+    "category": "organisms",
+    "path": "src/components/organisms/radial-intro"
+  },
+  "radiant-button": {
+    "category": "base",
+    "path": "src/components/base/radiant-button"
+  },
+  "ripple": {
+    "category": "base",
+    "path": "src/components/base/ripple"
+  },
+  "rolling-counter": {
+    "category": "organisms",
+    "path": "src/components/organisms/rolling-counter"
+  },
+  "rotate-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/rotate-carousel"
+  },
+  "rotating-square": {
+    "category": "molecules",
+    "path": "src/components/molecules/rotating-square"
+  },
+  "ruler": {
+    "category": "base",
+    "path": "src/components/base/ruler"
+  },
+  "scale-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/scale-carousel"
+  },
+  "scroll-progress": {
+    "category": "molecules",
+    "path": "src/components/molecules/scroll-progress"
+  },
+  "scrollable-search": {
+    "category": "base",
+    "path": "src/components/base/scrollable-search"
+  },
+  "search-bar": {
+    "category": "molecules",
+    "path": "src/components/molecules/search-bar"
+  },
+  "seek-bar": {
+    "category": "molecules",
+    "path": "src/components/molecules/seek-bar"
+  },
+  "segmented-control": {
+    "category": "organisms",
+    "path": "src/components/organisms/segmented-control"
+  },
+  "settings-v1": {
+    "category": "templates",
+    "path": "src/components/templates/settings-v1"
+  },
+  "Shimmer": {
+    "category": "molecules",
+    "path": "src/components/molecules/Shimmer"
+  },
+  "shimmer-wave-text": {
+    "category": "base",
+    "path": "src/components/base/shimmer-wave-text"
+  },
+  "sign-up-v1": {
+    "category": "templates",
+    "path": "src/components/templates/sign-up-v1"
+  },
+  "sign-up-v2": {
+    "category": "templates",
+    "path": "src/components/templates/sign-up-v2"
+  },
+  "skia-ripple": {
+    "category": "organisms",
+    "path": "src/components/organisms/skia-ripple"
+  },
+  "spectral-wave": {
+    "category": "organisms",
+    "path": "src/components/organisms/spectral-wave"
+  },
+  "spin-button": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/spin-button"
+  },
+  "spinner-arc": {
+    "category": "molecules",
+    "path": "src/components/molecules/spinner-arc"
+  },
+  "split-view": {
+    "category": "molecules",
+    "path": "src/components/molecules/split-view"
+  },
+  "squiggly-slider": {
+    "category": "molecules",
+    "path": "src/components/molecules/squiggly-slider"
+  },
+  "squircle-view": {
+    "category": "base",
+    "path": "src/components/base/squircle-view"
+  },
+  "stack-aware-tabs": {
+    "category": "base",
+    "path": "src/components/base/stack-aware-tabs"
+  },
+  "stack-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/stack-carousel"
+  },
+  "stacked-cards": {
+    "category": "molecules",
+    "path": "src/components/molecules/stacked-cards"
+  },
+  "stacked-chips": {
+    "category": "micro-interactions",
+    "path": "src/components/micro-interactions/stacked-chips"
+  },
+  "staggered-text": {
+    "category": "organisms",
+    "path": "src/components/organisms/staggered-text"
+  },
+  "stepper": {
+    "category": "molecules",
+    "path": "src/components/molecules/stepper"
+  },
+  "subtitle": {
+    "category": "base",
+    "path": "src/components/base/subtitle"
+  },
+  "tabs": {
+    "category": "base",
+    "path": "src/components/base/tabs"
+  },
+  "theme-switch": {
+    "category": "organisms",
+    "path": "src/components/organisms/theme-switch"
+  },
+  "thinking-state": {
+    "category": "ai",
+    "path": "src/components/ai/thinking-state"
+  },
+  "tilt-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/tilt-carousel"
+  },
+  "title": {
+    "category": "base",
+    "path": "src/components/base/title"
+  },
+  "Toast": {
+    "category": "molecules",
+    "path": "src/components/molecules/Toast"
+  },
+  "unstable_aurora": {
+    "category": "organisms",
+    "path": "src/components/organisms/unstable_aurora"
+  },
+  "unstable_infinite-menu": {
+    "category": "organisms",
+    "path": "src/components/organisms/unstable_infinite-menu"
+  },
+  "unstable_metallic-paint": {
+    "category": "organisms",
+    "path": "src/components/organisms/unstable_metallic-paint"
+  },
+  "unstable_orb": {
+    "category": "organisms",
+    "path": "src/components/organisms/unstable_orb"
+  },
+  "unstable_siri_orb": {
+    "category": "organisms",
+    "path": "src/components/organisms/unstable_siri_orb"
+  },
+  "v1": {
+    "category": "screens",
+    "path": "src/components/screens/empty-state/v1"
+  },
+  "vertical": {
+    "category": "atoms",
+    "path": "src/components/atoms/divider/vertical"
+  },
+  "vertical-flow-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/vertical-flow-carousel"
+  },
+  "vertical-page-carousel": {
+    "category": "molecules",
+    "path": "src/components/molecules/vertical-page-carousel"
+  },
+  "vertical-wheel": {
+    "category": "molecules",
+    "path": "src/components/molecules/vertical-wheel"
+  },
+  "wave-scrawler": {
+    "category": "organisms",
+    "path": "src/components/organisms/wave-scrawler"
+  },
+  "whats-new": {
+    "category": "templates",
+    "path": "src/components/templates/whats-new"
+  }
+}
