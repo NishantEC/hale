@@ -1,7 +1,6 @@
-import { FC, useRef, useEffect, useState } from "react"
+import { FC, useRef, useEffect } from "react"
 import { Ionicons } from "@expo/vector-icons"
 import {
-  LayoutAnimation,
   RefreshControl,
   ScrollView,
   TextStyle,
@@ -14,45 +13,28 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { useRoute } from "@react-navigation/native"
 import { router } from "expo-router"
 
-import { BarSeriesChart } from "@/components/BarSeriesChart"
-import { DetailScreenHeader } from "@/components/DetailScreenHeader"
+import { DateSwitcher } from "@/components/DateSwitcher"
 import { HypnogramChart } from "@/components/HypnogramChart"
-import { InlineLineChart } from "@/components/InlineLineChart"
-import { SleepHeartRateChart } from "@/components/SleepHeartRateChart"
+import { LabsAccordion } from "@/components/LabsAccordion"
+import { SleepHero } from "@/components/SleepHero"
+import { StagePills } from "@/components/StagePills"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
+import { TrendSparkline } from "@/components/TrendSparkline"
+import { VitalCard } from "@/components/VitalCard"
+import { WhyPanel } from "@/components/WhyPanel"
 import { useDashboard } from "@/context/DashboardContext"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
-
-const KEY_METRIC_LABELS = ["Efficiency", "Resting HR", "HRV (RMSSD)", "Interruptions"]
-const ADVANCED_METRIC_LABELS = [
-  "Blood Oxygen", "Skin Temp", "Consistency", "Sleep Score",
-  "Architecture Score", "SpO2 Dips", "Core Temp", "LF/HF Ratio",
-  "Recovery", "Sleep Reserve", "Respiratory Rate",
-]
-
-function scoreColor(score: number, colors: any): string {
-  if (score >= 80) return colors.statusGreen
-  if (score >= 60) return colors.statusAmber
-  return colors.statusRed
-}
-
-function scoreQuality(score: number): string {
-  if (score >= 80) return "Good"
-  if (score >= 60) return "Fair"
-  return "Poor"
-}
 
 export const SleepDetailScreen: FC = () => {
   const colors = LOCAL_THEME.colors
   const route = useRoute<any>()
   const { width } = useWindowDimensions()
   const {
-    sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate,
+    sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate, setSelectedDate,
   } = useDashboard()
 
   const date: string = (route.params?.date as string) ?? selectedDate
-  const [detailsExpanded, setDetailsExpanded] = useState(false)
   const lastShownError = useRef<string | null>(null)
 
   useEffect(() => {
@@ -67,15 +49,6 @@ export const SleepDetailScreen: FC = () => {
 
   const chartWidth = width - 48
 
-  // Resolve sleep score
-  const scorePoint =
-    sleepView?.sleepScoreTrend?.find((p) => p.timestamp.startsWith(date)) ??
-    (sleepView?.sleepScoreTrend?.length
-      ? sleepView.sleepScoreTrend[sleepView.sleepScoreTrend.length - 1]
-      : null)
-  const scoreValue = scorePoint ? Math.round(scorePoint.value) : null
-
-  // Format date for nav bar
   const formattedDate = (() => {
     const [year, month, day] = date.split("-").map(Number)
     return new Intl.DateTimeFormat("en-US", {
@@ -85,31 +58,6 @@ export const SleepDetailScreen: FC = () => {
     }).format(new Date(year, month - 1, day, 12))
   })()
 
-  const toggleDetails = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-    setDetailsExpanded((prev) => !prev)
-  }
-
-
-  // --- Nav Bar ---
-  const alarmAction = (
-    <TouchableOpacity
-      style={themed($navSide)}
-      onPress={() => router.push("/sleep-planner" as any)}
-    >
-      <Ionicons
-        name={sleepView?.planner.alarmEnabled ? "alarm" : "alarm-outline"}
-        size={22}
-        color={sleepView?.planner.alarmEnabled ? colors.tint : colors.textDim}
-      />
-    </TouchableOpacity>
-  )
-
-  const NavBar = (
-    <DetailScreenHeader title={formattedDate} rightAction={alarmAction} />
-  )
-
-  // --- Empty State ---
   if (!sleepView || sleepView.emptyState.isEmpty) {
     return (
       <View style={themed($screenWrap)}>
@@ -120,7 +68,6 @@ export const SleepDetailScreen: FC = () => {
               <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={colors.tint} />
             }
           >
-          {NavBar}
           <View style={themed($emptyState)}>
             <Text
               text={sleepView?.emptyState.title ?? "No sleep data"}
@@ -140,17 +87,75 @@ export const SleepDetailScreen: FC = () => {
     )
   }
 
-  // --- Key metrics ---
-  const keyMetrics = KEY_METRIC_LABELS.map((label) =>
-    sleepView.metrics.find((m) => m.label === label),
-  ).filter(Boolean) as Array<{ label: string; value: string; detail: string | null }>
+  const onPrevDay = () => {
+    const d = new Date(selectedDate + "T12:00:00Z")
+    d.setUTCDate(d.getUTCDate() - 1)
+    setSelectedDate(d.toISOString().slice(0, 10))
+  }
+  const onNextDay = () => {
+    const d = new Date(selectedDate + "T12:00:00Z")
+    d.setUTCDate(d.getUTCDate() + 1)
+    setSelectedDate(d.toISOString().slice(0, 10))
+  }
 
-  // --- Advanced metrics (from Phase 2-4 improvements) ---
-  const advancedMetrics = ADVANCED_METRIC_LABELS.map((label) =>
-    sleepView.metrics.find((m) => m.label === label),
-  ).filter(Boolean) as Array<{ label: string; value: string; detail: string | null }>
+  const formatAlarmTime = (mins: number): string => {
+    const h = Math.floor(mins / 60), m = mins % 60
+    const ampm = h >= 12 ? "PM" : "AM"
+    const h12 = h % 12 || 12
+    return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`
+  }
+  const alarmLabel = sleepView.planner.alarmEnabled
+    ? formatAlarmTime(sleepView.planner.alarmMinutes)
+    : "Set alarm"
+  const onPressAlarm = () => router.push("/sleep-planner" as any)
 
-  const halfWidth = (width - 48 - 12) / 2
+  const durationMinutes = (() => {
+    const s = sleepView.header.duration
+    const m = /(?:(\d+)h)?\s*(?:(\d+)m)?/.exec(s)
+    if (!m) return sleepView.epochTimeline.length
+    const val = (Number(m[1] ?? 0) * 60) + Number(m[2] ?? 0)
+    return val || sleepView.epochTimeline.length
+  })()
+
+  const totalMin = sleepView.epochTimeline.length || durationMinutes
+  const stageMin = (id: string): number => {
+    const row = sleepView.stageRows.find((r) => r.id === id)
+    return row ? Math.round(row.barFraction * totalMin) : 0
+  }
+  const awakeMin = stageMin("awake")
+  const remMin = stageMin("rem")
+  const coreMin = stageMin("core") || stageMin("light")
+  const deepMin = stageMin("deep")
+
+  const lookupMetric = (label: string): string => {
+    const m = sleepView.metrics.find((x) => x.label === label)
+    return m?.value ?? "--"
+  }
+
+  const skinTempDeltaValue = (() => {
+    const raw = sleepView.vitalsDelta?.skinTempDelta
+    if (raw == null || !Number.isFinite(raw)) return "--"
+    return `${raw > 0 ? "+" : ""}${raw}°C`
+  })()
+
+  const toDate = (ts: string) => ts.slice(0, 10)
+  const durationTrendPoints = (sleepView.durationTrend.samples ?? []).map((p) => ({
+    date: toDate(p.timestamp),
+    value: p.value,
+  }))
+  const scoreTrendPoints = (sleepView.sleepScoreTrend ?? []).map((p) => ({
+    date: toDate(p.timestamp),
+    value: p.value,
+  }))
+
+  const hasJournalEntries = (sleepView.factorInsights ?? []).length > 0
+
+  const labsRows: Array<{ label: string; value: string }> = [
+    { label: "Blood Oxygen", value: lookupMetric("Blood Oxygen") },
+    { label: "SpO2 Dips", value: lookupMetric("SpO2 Dips") },
+    { label: "Respiratory Rate", value: lookupMetric("Respiratory Rate") },
+    { label: "Sleep Consistency", value: lookupMetric("Consistency") },
+  ]
 
   return (
     <View style={themed($screenWrap)}>
@@ -161,156 +166,110 @@ export const SleepDetailScreen: FC = () => {
             <RefreshControl refreshing={isRefreshing} onRefresh={refreshDashboard} tintColor={colors.tint} />
           }
         >
-        {/* 1. Nav Bar — [back]  [date centered]  [alarm icon] */}
-        {NavBar}
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <TouchableOpacity onPress={() => router.back()} hitSlop={12}>
+              <Ionicons name="chevron-back" size={22} color={colors.text} />
+            </TouchableOpacity>
+            <DateSwitcher
+              title={formattedDate}
+              onPrevious={onPrevDay}
+              onNext={onNextDay}
+            />
+            <TouchableOpacity onPress={onPressAlarm} hitSlop={12} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Ionicons name="alarm-outline" size={18} color={colors.text} />
+              <Text text={alarmLabel} size="xs" style={{ color: colors.text }} />
+            </TouchableOpacity>
+          </View>
 
-        {/* 2. Hero Score */}
-        <View style={themed($heroSection)}>
-          {scoreValue !== null ? (
-            <>
-              <Text
-                text={String(scoreValue)}
-                style={[themed($heroScore), { color: scoreColor(scoreValue, colors) }]}
-              />
-              <Text
-                text={scoreQuality(scoreValue)}
-                size="sm"
-                weight="semiBold"
-                style={{ color: scoreColor(scoreValue, colors) }}
-              />
-              <Text text={sleepView.header.duration} size="sm" style={themed($heroDuration)} />
-            </>
-          ) : (
-            <>
-              <Text text={sleepView.header.duration} style={themed($heroScore)} />
-              <Text text="SLEEP" size="xs" weight="bold" style={themed($heroLabel)} />
-            </>
-          )}
-        </View>
+          <SleepHero
+            durationMinutes={durationMinutes}
+            bedtimeLabel={sleepView?.header.bedtime}
+            wakeTimeLabel={sleepView?.header.wakeTime}
+            score={sleepView?.score?.value ?? null}
+            scoreLabel={sleepView?.score?.label ?? "Unknown"}
+            scoreConfidence={sleepView?.score?.confidence ?? "Low"}
+            scoreDelta={sleepView?.score?.deltaVsWeek ?? null}
+            detail={sleepView?.score?.detail ?? ""}
+          />
 
-        {/* 3. Hypnogram */}
-        {sleepView.epochTimeline.length > 0 && (
-          <View style={themed($section)}>
+          {sleepView?.epochTimeline.length ? (
             <HypnogramChart
               epochs={sleepView.epochTimeline}
               width={chartWidth}
               bedtimeLabel={sleepView.header.bedtime}
               wakeTimeLabel={sleepView.header.wakeTime}
             />
-          </View>
-        )}
+          ) : null}
 
-        {/* 4. Key Metrics Row */}
-        {keyMetrics.length > 0 && (
-          <View style={themed($metricsRow)}>
-            {keyMetrics.map((metric) => (
-              <View key={metric.label} style={themed($metricCell)}>
-                <Text text={metric.label} size="xxs" style={themed($metricLabel)} />
-                <Text text={metric.value} size="sm" weight="semiBold" style={themed($metricValue)} />
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* 4b. Advanced Metrics Grid */}
-        {advancedMetrics.length > 0 && (
-          <View style={themed($metricsRow)}>
-            {advancedMetrics.map((metric) => (
-              <View key={metric.label} style={themed($metricCell)}>
-                <Text text={metric.label} size="xxs" style={themed($metricLabel)} />
-                <Text text={metric.value} size="sm" weight="semiBold" style={themed($metricValue)} />
-                {metric.detail ? (
-                  <Text text={metric.detail} size="xxs" style={themed($metricLabel)} />
-                ) : null}
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* 5. Collapsible: HR Chart + Trends + Insights */}
-        <TouchableOpacity style={themed($expandRow)} onPress={toggleDetails} activeOpacity={0.7}>
-          <Text text="More Details" size="xs" weight="semiBold" style={themed($expandLabel)} />
-          <Ionicons
-            name={detailsExpanded ? "chevron-up" : "chevron-down"}
-            size={18}
-            color={colors.textMuted}
+          <StagePills
+            awakeMin={awakeMin}
+            remMin={remMin}
+            coreMin={coreMin}
+            deepMin={deepMin}
           />
-        </TouchableOpacity>
 
-        {detailsExpanded && (
-          <View style={themed($collapsedContent)}>
-            {/* Heart Rate Chart */}
-            {sleepView.hrChart.samples.length > 0 && (
-              <View style={themed($section)}>
-                <Text text="HEART RATE" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-                <SleepHeartRateChart
-                  samples={sleepView.hrChart.samples}
-                  epochs={sleepView.epochTimeline}
-                  width={chartWidth}
-                  height={120}
-                />
-                <View style={themed($chartAxis)}>
-                  <Text text={sleepView.header.bedtime} size="xxs" style={themed($axisText)} />
-                  <Text text={sleepView.header.wakeTime} size="xxs" style={themed($axisText)} />
-                </View>
-              </View>
-            )}
+          <WhyPanel
+            factors={sleepView?.factorInsights ?? []}
+            hasJournal={hasJournalEntries}
+            fallbackInsight={null}
+            onPressLogJournal={() => router.push("/journal-entry" as any)}
+            onPressFactor={(tag) => router.push(`/journal-history?factor=${encodeURIComponent(tag)}` as any)}
+          />
 
-            {/* Trends */}
-            <View style={themed($trendsRow)}>
-              <View style={[themed($trendColumn), { width: halfWidth }]}>
-                <Text text="DURATION — 7 NIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-                <BarSeriesChart
-                  points={sleepView.durationTrend.samples}
-                  width={halfWidth}
-                  height={80}
-                  fill={colors.tint}
-                  referenceValue={sleepView.durationTrend.targetHours}
-                />
-              </View>
-              <View style={[themed($trendColumn), { width: halfWidth }]}>
-                <Text text="SCORE — 7 NIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-                <InlineLineChart
-                  points={sleepView.sleepScoreTrend}
-                  width={halfWidth}
-                  height={80}
-                  stroke={colors.tint}
-                />
-              </View>
-            </View>
-
-            {/* Insights */}
-            {sleepView.factorInsights.length > 0 && (
-              <View style={themed($section)}>
-                <Text text="INSIGHTS" size="xxs" weight="bold" style={themed($sectionEyebrow)} />
-                <View style={themed($insightList)}>
-                  {sleepView.factorInsights.map((insight) => (
-                    <View key={insight.factorTag} style={themed($insightRow)}>
-                      <Text text={insight.factorTag} size="xs" weight="semiBold" style={themed($insightTag)} />
-                      <View style={themed($insightRight)}>
-                        {insight.deepDelta ? (
-                          <Text text={insight.deepDelta} size="xxs" style={themed($insightPositive)} />
-                        ) : null}
-                        {insight.remDelta ? (
-                          <Text text={insight.remDelta} size="xxs" style={themed($insightNeutral)} />
-                        ) : null}
-                        <Text text={`(${insight.sampleCount}n)`} size="xxs" style={themed($insightMuted)} />
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            )}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 22 }}>
+            <VitalCard
+              label="Efficiency"
+              value={lookupMetric("Efficiency")}
+              delta={sleepView?.vitalsDelta?.efficiency ?? null}
+              deltaUnit="%"
+            />
+            <VitalCard
+              label="Resting HR"
+              value={lookupMetric("Resting HR")}
+              delta={sleepView?.vitalsDelta?.rhr ?? null}
+              deltaUnit="bpm"
+              deltaPositiveIsGood={false}
+            />
           </View>
-        )}
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            <VitalCard
+              label="HRV (RMSSD)"
+              value={lookupMetric("HRV (RMSSD)")}
+              delta={sleepView?.vitalsDelta?.hrv ?? null}
+              deltaUnit="ms"
+            />
+            <VitalCard
+              label="Skin Temp Δ"
+              value={skinTempDeltaValue}
+              delta={sleepView?.vitalsDelta?.skinTempDelta ?? null}
+              deltaUnit="°C"
+            />
+          </View>
 
+          <View style={{ marginTop: 22, padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
+            <TrendSparkline
+              label="Duration · 7-night"
+              points={durationTrendPoints}
+              currentDate={selectedDate}
+              color="#3FB1E7"
+              onPressPoint={(d) => setSelectedDate(d)}
+            />
+            <View style={{ height: 12 }} />
+            <TrendSparkline
+              label="Score · 7-night"
+              points={scoreTrendPoints}
+              currentDate={selectedDate}
+              color="#ffa42b"
+              onPressPoint={(d) => setSelectedDate(d)}
+            />
+          </View>
+
+          <LabsAccordion rows={labsRows} />
         </ScrollView>
       </SafeAreaView>
     </View>
   )
 }
-
-// ═══════════════════════ Styles ═══════════════════════
 
 const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.screenBackground,
@@ -331,136 +290,6 @@ const $navSide: ThemedStyle<ViewStyle> = () => ({
   width: 36,
 })
 
-// Hero
-const $heroSection: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  gap: 4,
-  paddingVertical: 8,
-})
-
-const $heroScore: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.onSurface,
-  fontSize: 56,
-  fontWeight: "bold",
-  lineHeight: 64,
-})
-
-const $heroDuration: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-  marginTop: 2,
-})
-
-const $heroLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.tint,
-  letterSpacing: 1,
-  marginTop: 2,
-})
-
-// Sections
-const $section: ThemedStyle<ViewStyle> = () => ({
-  gap: 8,
-})
-
-const $sectionEyebrow: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-  letterSpacing: 1,
-})
-
-// Chart axis
-const $chartAxis: ThemedStyle<ViewStyle> = () => ({
-  flexDirection: "row",
-  justifyContent: "space-between",
-})
-
-const $axisText: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-})
-
-// Key Metrics Row
-const $metricsRow: ThemedStyle<ViewStyle> = () => ({
-  flexDirection: "row",
-})
-
-const $metricCell: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "flex-start",
-  flex: 1,
-  gap: 3,
-})
-
-const $metricLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-  letterSpacing: 0.3,
-})
-
-const $metricValue: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
-
-// Expand / Collapse row
-const $expandRow: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  borderColor: colors.divider,
-  borderRadius: 12,
-  borderWidth: 1,
-  flexDirection: "row",
-  gap: 6,
-  justifyContent: "center",
-  paddingVertical: 12,
-})
-
-const $expandLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-})
-
-const $collapsedContent: ThemedStyle<ViewStyle> = () => ({
-  gap: 24,
-})
-
-// Trends
-const $trendsRow: ThemedStyle<ViewStyle> = () => ({
-  flexDirection: "row",
-  gap: 12,
-})
-
-const $trendColumn: ThemedStyle<ViewStyle> = () => ({
-  gap: 8,
-})
-
-// Insights
-const $insightList: ThemedStyle<ViewStyle> = () => ({
-  gap: 12,
-})
-
-const $insightRow: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flexDirection: "row",
-  gap: 12,
-  justifyContent: "space-between",
-})
-
-const $insightTag: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-  flex: 1,
-})
-
-const $insightRight: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "flex-end",
-  gap: 2,
-})
-
-const $insightPositive: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.statusGreen,
-})
-
-const $insightNeutral: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-})
-
-const $insightMuted: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
-})
-
-// Empty State
 const $emptyState: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
   flex: 1,
