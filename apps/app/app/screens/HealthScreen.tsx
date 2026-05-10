@@ -1,5 +1,16 @@
 import { FC, useCallback, useEffect, useMemo, useState } from "react"
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import {
+  ActivityIndicator,
+  LayoutAnimation,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  UIManager,
+  View,
+} from "react-native"
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -9,11 +20,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
-
 import Svg, { Defs, RadialGradient, Stop, Circle } from "react-native-svg"
 
-import { Dialog } from "@/components/reacticx/dialog"
-import { DisclosureGroup } from "@/components/reacticx/disclosure-group"
 import {
   fetchHealthView,
   HealthAssessment,
@@ -21,6 +29,11 @@ import {
   HealthViewModel,
 } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
+
+// Enable LayoutAnimation on Android (default off). Cheap, no worklets.
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true)
+}
 
 const ORB_SIZE = 280
 
@@ -144,6 +157,7 @@ const Header: FC<{
   onNext: () => void
 }> = ({ weekStart, canGoForward, onPrev, onNext }) => {
   const colors = LOCAL_THEME.colors
+  const [infoOpen, setInfoOpen] = useState(false)
 
   return (
     <View style={styles.headerWrap}>
@@ -155,42 +169,51 @@ const Header: FC<{
           <Text style={[styles.headerLabel, { color: colors.text }]}>HEALTHSPAN</Text>
           <Text style={[styles.headerSub, { color: colors.textDim }]}>{nextUpdateLabel()}</Text>
         </View>
-        <Dialog>
-          <Dialog.Trigger asChild>
-            <Pressable style={styles.iconBtn} hitSlop={10}>
-              <Ionicons name="information-circle-outline" size={22} color={colors.textDim} />
-            </Pressable>
-          </Dialog.Trigger>
-          <Dialog.Content>
-            <View
-              style={{
-                backgroundColor: colors.surfaceCard,
-                borderColor: colors.surfaceCardBorder,
-                borderWidth: 1,
-                borderRadius: 16,
-                padding: 22,
-              }}
-            >
-              <Text style={[styles.dialogTitle, { color: colors.text }]}>About Healthspan</Text>
-              <Text style={[styles.dialogBody, { color: colors.textDim }]}>
-                noop Age estimates how your behaviors are tracking against a healthy adult of your
-                chronological age. Each input (sleep, cardio, strength, RHR, VO₂max…) contributes
-                years above or below your chronological age based on published longevity research.
-                {"\n\n"}
-                Pace of Aging compares this week to last — 1.0× means you're aging at the chronological
-                clock. Lower is better.
-                {"\n\n"}
-                Not a medical assessment.
-              </Text>
-              <Dialog.Close>
-                <View style={[styles.dialogCta, { backgroundColor: colors.tint }]}>
-                  <Text style={{ color: colors.background, fontSize: 14, fontWeight: "700" }}>Got it</Text>
-                </View>
-              </Dialog.Close>
-            </View>
-          </Dialog.Content>
-        </Dialog>
+        <Pressable style={styles.iconBtn} hitSlop={10} onPress={() => setInfoOpen(true)}>
+          <Ionicons name="information-circle-outline" size={22} color={colors.textDim} />
+        </Pressable>
       </View>
+
+      <Modal
+        visible={infoOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInfoOpen(false)}
+      >
+        <Pressable
+          style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.55)", justifyContent: "center", paddingHorizontal: 28 }]}
+          onPress={() => setInfoOpen(false)}
+        >
+          <Pressable
+            style={{
+              backgroundColor: colors.surfaceCard,
+              borderColor: colors.surfaceCardBorder,
+              borderWidth: 1,
+              borderRadius: 16,
+              padding: 22,
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.dialogTitle, { color: colors.text }]}>About Healthspan</Text>
+            <Text style={[styles.dialogBody, { color: colors.textDim }]}>
+              noop Age estimates how your behaviors are tracking against a healthy adult of your
+              chronological age. Each input (sleep, cardio, strength, RHR, VO₂max…) contributes
+              years above or below your chronological age based on published longevity research.
+              {"\n\n"}
+              Pace of Aging compares this week to last — 1.0× means you're aging at the chronological
+              clock. Lower is better.
+              {"\n\n"}
+              Not a medical assessment.
+            </Text>
+            <Pressable
+              onPress={() => setInfoOpen(false)}
+              style={[styles.dialogCta, { backgroundColor: colors.tint }]}
+            >
+              <Text style={{ color: colors.background, fontSize: 14, fontWeight: "700" }}>Got it</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View style={styles.weekStrip}>
         <Pressable onPress={onPrev} hitSlop={10} style={styles.chevBtn}>
@@ -362,20 +385,35 @@ const Section: FC<{ title: string; items: HealthContributor[] }> = ({ title, ite
         <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
       </View>
       {items.map((c) => (
-        <DisclosureGroup key={c.key}>
-          <DisclosureGroup.Trigger
-            chevronColor={colors.textDim as string}
-            style={[styles.metric, { backgroundColor: colors.cardBase, borderColor: colors.surfaceCardBorder }]}
-          >
-            <MetricSummary contributor={c} />
-          </DisclosureGroup.Trigger>
-          <DisclosureGroup.Items maxHeight={200}>
-            <View style={styles.metricDetail}>
-              <MetricBar contributor={c} />
-            </View>
-          </DisclosureGroup.Items>
-        </DisclosureGroup>
+        <MetricCard key={c.key} contributor={c} />
       ))}
+    </View>
+  )
+}
+
+const MetricCard: FC<{ contributor: HealthContributor }> = ({ contributor }) => {
+  const colors = LOCAL_THEME.colors
+  const [open, setOpen] = useState(false)
+  const toggle = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+    setOpen((x) => !x)
+  }, [])
+  return (
+    <View style={[styles.metric, { backgroundColor: colors.cardBase, borderColor: colors.surfaceCardBorder }]}>
+      <Pressable onPress={toggle} style={styles.metricTrigger}>
+        <MetricSummary contributor={contributor} />
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={14}
+          color={colors.textMuted}
+          style={{ marginLeft: 6 }}
+        />
+      </Pressable>
+      {open ? (
+        <View style={styles.metricDetail}>
+          <MetricBar contributor={contributor} />
+        </View>
+      ) : null}
     </View>
   )
 }
@@ -603,6 +641,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: "700" },
 
   metric: { borderWidth: 1, borderRadius: 14, marginBottom: 10 },
+  metricTrigger: { flexDirection: "row", alignItems: "center", padding: 14 },
   metricRow: { flexDirection: "row", alignItems: "center", flex: 1 },
   metricLabel: { fontSize: 10, letterSpacing: 1.4, fontWeight: "700" },
   metricValue: { fontSize: 16, fontWeight: "600", marginTop: 4 },

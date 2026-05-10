@@ -36,6 +36,6 @@ module.exports = ({ config }: ConfigContext): Partial<ExpoConfig> => {
         ],
       },
     },
-    plugins: [...existingPlugins, "expo-router"],
+    plugins: [...existingPlugins, "expo-router", "@react-native-community/datetimepicker"],
   }
 }

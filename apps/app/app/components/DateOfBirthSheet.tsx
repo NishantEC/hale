@@ -6,8 +6,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated"
-import { DatePicker } from "@expo/ui/swift-ui"
-import { datePickerStyle, frame } from "@expo/ui/swift-ui/modifiers"
+import DateTimePicker from "@react-native-community/datetimepicker"
 
 import { LOCAL_THEME } from "@/utils/localTheme"
 
@@ -16,7 +15,6 @@ function parseIsoDate(iso: string | null): Date {
     const d = new Date(`${iso}T00:00:00.000Z`)
     if (!Number.isNaN(d.getTime())) return d
   }
-  // Default to 30 years ago, Jan 1 — reasonable starting point for an adult
   const fallback = new Date()
   fallback.setUTCFullYear(fallback.getUTCFullYear() - 30, 0, 1)
   fallback.setUTCHours(0, 0, 0, 0)
@@ -64,11 +62,11 @@ export const DateOfBirthSheet: FC<Props> = ({ visible, initialIso, onCancel, onS
   useEffect(() => {
     if (visible) {
       setMounted(true)
-      translateY.value = withTiming(0, { duration: 250 })
-      backdropOpacity.value = withTiming(0.55, { duration: 250 })
+      translateY.value = withTiming(0, { duration: 220 })
+      backdropOpacity.value = withTiming(0.55, { duration: 220 })
     } else if (mounted) {
-      translateY.value = withTiming(600, { duration: 200 })
-      backdropOpacity.value = withTiming(0, { duration: 200 }, (finished) => {
+      translateY.value = withTiming(600, { duration: 180 })
+      backdropOpacity.value = withTiming(0, { duration: 180 }, (finished) => {
         if (finished) runOnJS(setMounted)(false)
       })
     }
@@ -108,12 +106,7 @@ export const DateOfBirthSheet: FC<Props> = ({ visible, initialIso, onCancel, onS
               <Text style={[styles.headerBtnText, { color: colors.textDim }]}>Cancel</Text>
             </Pressable>
             <Text style={[styles.headerTitle, { color: colors.text }]}>Date of Birth</Text>
-            <Pressable
-              onPress={handleDone}
-              hitSlop={10}
-              disabled={saving}
-              style={styles.headerBtn}
-            >
+            <Pressable onPress={handleDone} hitSlop={10} disabled={saving} style={styles.headerBtn}>
               <Text style={[styles.headerBtnText, { color: colors.tint, opacity: saving ? 0.6 : 1 }]}>
                 {saving ? "Saving…" : "Done"}
               </Text>
@@ -121,42 +114,22 @@ export const DateOfBirthSheet: FC<Props> = ({ visible, initialIso, onCancel, onS
           </View>
 
           <View style={styles.pickerWrap}>
-            {Platform.OS === "ios" ? (
-              <DatePicker
-                selection={selected}
-                onDateChange={setSelected}
-                displayedComponents={["date"]}
-                range={{ start: MIN_DATE, end: MAX_DATE }}
-                modifiers={[
-                  datePickerStyle("wheel"),
-                  frame({ height: 220 }),
-                ]}
-              />
-            ) : (
-              <AndroidFallback selected={selected} onChange={setSelected} />
-            )}
+            <DateTimePicker
+              value={selected}
+              mode="date"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              minimumDate={MIN_DATE}
+              maximumDate={MAX_DATE}
+              themeVariant={LOCAL_THEME.isDark ? "dark" : "light"}
+              onChange={(_, d) => {
+                if (d) setSelected(d)
+              }}
+              style={styles.picker}
+            />
           </View>
         </Animated.View>
       </View>
     </Modal>
-  )
-}
-
-// Android fallback — Material 3 doesn't have a wheel-style picker. Use
-// graphical (calendar) mode via @expo/ui jetpack-compose if available;
-// otherwise just show the date prominently and rely on the system
-// keyboard. Most of our users are iOS-first so this is acceptable.
-const AndroidFallback: FC<{ selected: Date; onChange: (d: Date) => void }> = ({ selected, onChange }) => {
-  const colors = LOCAL_THEME.colors
-  return (
-    <View style={{ paddingVertical: 28, alignItems: "center" }}>
-      <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700" }}>
-        {selected.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
-      </Text>
-      <Text style={{ color: colors.textDim, fontSize: 12, marginTop: 8 }}>
-        Tap to adjust (Android picker)
-      </Text>
-    </View>
   )
 }
 
@@ -185,10 +158,11 @@ const styles = StyleSheet.create({
   headerBtnText: { fontSize: 15, fontWeight: "600" },
   headerTitle: { fontSize: 15, fontWeight: "700" },
   pickerWrap: {
-    paddingHorizontal: 14,
     paddingTop: 6,
     paddingBottom: 6,
-    minHeight: 240,
+    minHeight: 220,
     justifyContent: "center",
+    alignItems: "center",
   },
+  picker: { width: "100%" },
 })
