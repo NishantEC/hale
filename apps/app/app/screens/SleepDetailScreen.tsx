@@ -108,7 +108,28 @@ export const SleepDetailScreen: FC = () => {
     : "Set alarm"
   const onPressAlarm = () => router.push("/sleep-planner" as any)
 
-  const durationMinutes = sleepView.epochTimeline.length || (() => {
+  const formatLocalTime = (iso: string): string => {
+    const d = new Date(iso)
+    const hh = d.getHours()
+    const mm = d.getMinutes()
+    const ampm = hh >= 12 ? "PM" : "AM"
+    const h12 = hh % 12 || 12
+    return `${h12}:${mm.toString().padStart(2, "0")} ${ampm}`
+  }
+
+  const epochTimeline = sleepView.epochTimeline ?? []
+  const firstEpochIso = epochTimeline[0]?.timestamp
+  const lastEpochIso = epochTimeline[epochTimeline.length - 1]?.timestamp
+  const localBedtimeLabel = firstEpochIso ? formatLocalTime(firstEpochIso) : sleepView.header.bedtime
+  const localWakeTimeLabel = lastEpochIso ? formatLocalTime(lastEpochIso) : sleepView.header.wakeTime
+
+  const durationMinutes = (() => {
+    if (firstEpochIso && lastEpochIso) {
+      const diffMs = new Date(lastEpochIso).getTime() - new Date(firstEpochIso).getTime()
+      const fromDiff = Math.round(diffMs / 60000)
+      if (fromDiff > 0) return fromDiff
+    }
+    if (epochTimeline.length) return epochTimeline.length
     const s = sleepView.header.duration
     const hourOnly = /^(\d+)h$/.exec(s)
     const minOnly = /^(\d+)m$/.exec(s)
@@ -195,8 +216,8 @@ export const SleepDetailScreen: FC = () => {
 
           <SleepHero
             durationMinutes={durationMinutes}
-            bedtimeLabel={sleepView?.header.bedtime}
-            wakeTimeLabel={sleepView?.header.wakeTime}
+            bedtimeLabel={localBedtimeLabel}
+            wakeTimeLabel={localWakeTimeLabel}
             score={nightScore}
             scoreLabel={nightScoreLabel}
             scoreConfidence={sleepView?.score?.confidence ?? "Low"}
@@ -208,8 +229,8 @@ export const SleepDetailScreen: FC = () => {
             <HypnogramChart
               epochs={sleepView.epochTimeline}
               width={chartWidth}
-              bedtimeLabel={sleepView.header.bedtime}
-              wakeTimeLabel={sleepView.header.wakeTime}
+              bedtimeLabel={localBedtimeLabel}
+              wakeTimeLabel={localWakeTimeLabel}
             />
           ) : null}
 
