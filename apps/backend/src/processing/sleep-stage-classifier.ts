@@ -165,7 +165,10 @@ export function classifySleepStages(
       1,
     );
 
-    const totalMinutes = sorted.length * EPOCH_MINUTES;
+    // Minute totals must be integers — sleep_stages columns are SQL int.
+    // Rounding loses at most 30s of granularity (EPOCH_MINUTES = 0.5);
+    // the precise per-epoch breakdown lives in epochTimeline JSONB anyway.
+    const totalMinutes = Math.round(sorted.length * EPOCH_MINUTES);
 
     if (confidence < 0.5) {
       const unknownTimeline: SleepStageEpoch[] = sorted.map((e) => ({
@@ -199,14 +202,18 @@ export function classifySleepStages(
       stage: stageMap[c.stage],
     }));
 
-    const remMinutes =
-      classifications.filter((c) => c.stage === 'REM').length * EPOCH_MINUTES;
-    const coreMinutes =
-      classifications.filter((c) => c.stage === 'Light').length * EPOCH_MINUTES;
-    const deepMinutes =
-      classifications.filter((c) => c.stage === 'Deep').length * EPOCH_MINUTES;
-    const awakeMinutes =
-      classifications.filter((c) => c.stage === 'Wake').length * EPOCH_MINUTES;
+    const remMinutes = Math.round(
+      classifications.filter((c) => c.stage === 'REM').length * EPOCH_MINUTES,
+    );
+    const coreMinutes = Math.round(
+      classifications.filter((c) => c.stage === 'Light').length * EPOCH_MINUTES,
+    );
+    const deepMinutes = Math.round(
+      classifications.filter((c) => c.stage === 'Deep').length * EPOCH_MINUTES,
+    );
+    const awakeMinutes = Math.round(
+      classifications.filter((c) => c.stage === 'Wake').length * EPOCH_MINUTES,
+    );
 
     summaries.push({
       nightDate: detection.nightDate,

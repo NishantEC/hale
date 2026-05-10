@@ -36,7 +36,7 @@ export class SleepStage {
   @Column('jsonb', { nullable: true })
   epochTimeline: object;
 
-  @Column('int', { default: 1 })
+  @Column('double precision', { default: 1 })
   epochMinutes: number;
 
   @UpdateDateColumn()
