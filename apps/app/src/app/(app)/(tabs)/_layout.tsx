@@ -6,8 +6,9 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 
 const TAB_CONFIG = {
   index: { icon: "home-outline", activeIcon: "home", label: "Home" },
-  sleep: { icon: "moon-outline", activeIcon: "moon", label: "Sleep" },
   trends: { icon: "stats-chart-outline", activeIcon: "stats-chart", label: "Trends" },
+  journal: { icon: "add-circle-outline", activeIcon: "add-circle", label: "Log" },
+  sleep: { icon: "moon-outline", activeIcon: "moon", label: "Sleep" },
   settings: { icon: "settings-outline", activeIcon: "settings", label: "Settings" },
 } as const
 

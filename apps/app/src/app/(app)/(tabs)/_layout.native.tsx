@@ -19,6 +19,7 @@ function FallbackTabs() {
   const TAB_CONFIG = {
     index: { icon: "home-outline", activeIcon: "home", label: "Home" },
     trends: { icon: "stats-chart-outline", activeIcon: "stats-chart", label: "Trends" },
+    journal: { icon: "add-circle-outline", activeIcon: "add-circle", label: "Log" },
     settings: { icon: "settings-outline", activeIcon: "settings", label: "Settings" },
   } as const
 
@@ -94,6 +95,14 @@ export default function NativeTabsLayout() {
           <NativeTabs.Trigger.Icon
             sf={{ default: "chart.line.uptrend.xyaxis", selected: "chart.line.uptrend.xyaxis" }}
             md="monitoring"
+          />
+        </NativeTabs.Trigger>
+
+        <NativeTabs.Trigger name="journal" contentStyle={{ backgroundColor: contentBackground }}>
+          <NativeTabs.Trigger.Label>Log</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            sf={{ default: "plus.circle", selected: "plus.circle.fill" }}
+            md="add_circle"
           />
         </NativeTabs.Trigger>
 
