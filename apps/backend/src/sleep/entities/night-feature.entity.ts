@@ -21,6 +21,9 @@ export class NightFeature {
   @Column('double precision', { default: 0 })
   sdnn: number;
 
+  @Column('double precision', { default: 0, nullable: true })
+  pnn50: number | null;
+
   @Column('double precision', { default: 0 })
   respiratoryRate: number;
 

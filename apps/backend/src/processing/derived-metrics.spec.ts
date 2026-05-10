@@ -43,6 +43,7 @@ describe('computeDerivedMetrics', () => {
       restingHeartRate: 55,
       rmssd: 50,
       sdnn: 35,
+      pnn50: 12,
       respiratoryRate: 14,
       continuity: 1,
       regularity: 0.9,

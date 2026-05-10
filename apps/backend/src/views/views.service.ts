@@ -113,6 +113,7 @@ export class ViewsService {
                   restingHeartRate: selectedFeature.restingHeartRate,
                   rmssd: selectedFeature.rmssd,
                   sdnn: selectedFeature.sdnn,
+                  pnn50: (selectedFeature as any).pnn50 ?? 0,
                   respiratoryRate: selectedFeature.respiratoryRate,
                   continuity: selectedFeature.continuity,
                   regularity: selectedFeature.regularity,
@@ -392,6 +393,7 @@ export class ViewsService {
                 restingHeartRate: matchingFeature.restingHeartRate,
                 rmssd: matchingFeature.rmssd,
                 sdnn: matchingFeature.sdnn,
+                pnn50: (matchingFeature as any).pnn50 ?? 0,
                 respiratoryRate: matchingFeature.respiratoryRate,
                 continuity: matchingFeature.continuity,
                 regularity: matchingFeature.regularity,
@@ -542,6 +544,7 @@ export class ViewsService {
         data.baselineProfile,
         data.sleepPlan,
         selectedStageSummary,
+        data.nightFeatures,
       ),
       factorInsights: factorInsights.map((correlation) => ({
         factorTag: correlation.factorTag,
@@ -1074,6 +1077,7 @@ export class ViewsService {
     baselineProfile: BaselineProfile | null,
     sleepPlan: SleepPlan | null,
     selectedStage: SleepStageSummary | null,
+    allNightFeatures: NightFeature[] = [],
   ) {
     const timeInBedMinutes =
       selectedDetection == null
@@ -1102,6 +1106,7 @@ export class ViewsService {
                   restingHeartRate: selectedFeature.restingHeartRate,
                   rmssd: selectedFeature.rmssd,
                   sdnn: selectedFeature.sdnn,
+                  pnn50: (selectedFeature as any).pnn50 ?? 0,
                   respiratoryRate: selectedFeature.respiratoryRate,
                   continuity: selectedFeature.continuity,
                   regularity: selectedFeature.regularity,
@@ -1165,6 +1170,39 @@ export class ViewsService {
           selectedFeature == null || baselineProfile == null || baselineProfile.nightsUsed < 5
             ? null
             : `${selectedFeature.rmssd - baselineProfile.rmssd >= 0 ? '+' : ''}${Math.round(selectedFeature.rmssd - baselineProfile.rmssd)}`,
+      },
+      {
+        label: 'HRV-CV (7d)',
+        value: this.formatHrvCv(selectedFeature, allNightFeatures),
+        detail: null,
+      },
+      {
+        label: 'pNN50',
+        value:
+          selectedFeature == null
+            ? '--'
+            : `${((selectedFeature as any).pnn50 ?? 0).toFixed(1)}%`,
+        detail: null,
+      },
+      {
+        label: 'Poincaré SD1',
+        value:
+          selectedFeature == null
+            ? '--'
+            : `${(selectedFeature.rmssd / Math.SQRT2).toFixed(1)} ms`,
+        detail: null,
+      },
+      {
+        label: 'Poincaré SD2',
+        value:
+          selectedFeature == null
+            ? '--'
+            : (() => {
+                const inside =
+                  2 * selectedFeature.sdnn ** 2 - 0.5 * selectedFeature.rmssd ** 2;
+                return inside > 0 ? `${Math.sqrt(inside).toFixed(1)} ms` : '--';
+              })(),
+        detail: null,
       },
       {
         label: 'Respiratory Rate',
@@ -1276,5 +1314,36 @@ export class ViewsService {
 
   private formatDecimal(value: number, precision: number) {
     return value.toFixed(precision);
+  }
+
+  /**
+   * HRV Coefficient of Variation: stdev / mean of RMSSD over a 7-day
+   * trailing window. Published 2025 in Am J Physiol-Heart Circ Physiol
+   * (Plews/Laursen/Altini/Galpin) as a stress-stability proxy.
+   * Returns formatted percentage or '--' when the window has fewer
+   * than 4 valid nights.
+   */
+  private formatHrvCv(
+    selectedFeature: NightFeature | null,
+    allNightFeatures: NightFeature[],
+  ): string {
+    if (!selectedFeature) return '--';
+    const reference = selectedFeature.nightDate.getTime();
+    const sevenDaysAgo = reference - 7 * 86_400_000;
+    const window = allNightFeatures.filter(
+      (f) =>
+        f.nightDate.getTime() <= reference &&
+        f.nightDate.getTime() > sevenDaysAgo &&
+        f.rmssd > 0 &&
+        f.validCoverage >= 0.35,
+    );
+    if (window.length < 4) return '--';
+    const values = window.map((f) => f.rmssd);
+    const mean = values.reduce((a, b) => a + b, 0) / values.length;
+    if (mean <= 0) return '--';
+    const variance =
+      values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+    const cv = (Math.sqrt(variance) / mean) * 100;
+    return `${cv.toFixed(1)}%`;
   }
 }

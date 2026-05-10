@@ -33,6 +33,8 @@ export interface NightFeatureSet {
   restingHeartRate: number;
   rmssd: number;
   sdnn: number;
+  /** Percentage of consecutive RR intervals differing by more than 50 ms. */
+  pnn50: number;
   respiratoryRate: number;
   continuity: number;
   regularity: number;

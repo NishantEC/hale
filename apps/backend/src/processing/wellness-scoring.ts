@@ -61,6 +61,9 @@ export function buildNightFeatureSet(
   // SDNN: standard deviation of IBIs
   const sdnn = ibis.length >= 2 ? standardDeviation(ibis) : 0;
 
+  // pNN50: % of consecutive IBIs differing by > 50 ms
+  const pnn50 = computePNN50(ibis);
+
   // Respiratory rate: prefer real `respRateRaw` mean from strap when the
   // caller supplies it; otherwise fall back to a HR-stddev heuristic.
   const hrStdDev =
@@ -117,6 +120,7 @@ export function buildNightFeatureSet(
     restingHeartRate,
     rmssd,
     sdnn,
+    pnn50,
     respiratoryRate,
     continuity,
     regularity,
@@ -391,6 +395,20 @@ function computeRMSSD(ibis: number[]): number {
     sumSquaredDiffs += diff * diff;
   }
   return Math.sqrt(sumSquaredDiffs / (ibis.length - 1));
+}
+
+/**
+ * pNN50: percentage of pairs of successive IBIs that differ by more
+ * than 50 ms. Sensitive to vagal/parasympathetic activity.
+ * Reference: Mietus et al. 2002 (Heart Rate Variability standards).
+ */
+function computePNN50(ibis: number[]): number {
+  if (ibis.length < 2) return 0;
+  let count = 0;
+  for (let i = 1; i < ibis.length; i++) {
+    if (Math.abs(ibis[i] - ibis[i - 1]) > 50) count++;
+  }
+  return (count / (ibis.length - 1)) * 100;
 }
 
 function estimateContinuity(samples: SignalSample[]): number {
