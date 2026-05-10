@@ -16,6 +16,7 @@ import {
 import { journalSleepCorrelations } from '../processing/journal-correlations.js';
 import { computeSleepNeed } from '../processing/sleep-need.js';
 import { computeSleepScoreForNight } from '../processing/sleep-score.js';
+import { computeVo2MaxUth } from '../processing/vo2max.js';
 import { computeTypicalRanges } from '../processing/typical-ranges.js';
 import { NightFeature } from '../sleep/entities/night-feature.entity.js';
 import { SleepDetection } from '../sleep/entities/sleep-detection.entity.js';
@@ -1165,6 +1166,17 @@ export class ViewsService {
           selectedFeature == null || baselineProfile == null || baselineProfile.nightsUsed < 5
             ? null
             : `${selectedFeature.restingHeartRate - baselineProfile.restingHeartRate >= 0 ? '+' : ''}${Math.round(selectedFeature.restingHeartRate - baselineProfile.restingHeartRate)}`,
+      },
+      {
+        label: 'VO₂max (est.)',
+        value: (() => {
+          const v = computeVo2MaxUth(
+            selectedFeature?.restingHeartRate ?? null,
+            baselineProfile?.maxHeartRate ?? null,
+          );
+          return v == null ? '--' : `${v} mL/kg/min`;
+        })(),
+        detail: 'Uth formula (passive)',
       },
       {
         label: 'HRV (RMSSD)',
