@@ -22,21 +22,33 @@ export class SleepEventEngine {
     const sorted = [...records].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
     );
-    if (sorted.length < 12) return [];
+    // Only records with valid gravity readings can drive sleep classification.
+    // Generic-format packets (HR-only) carry null gravity; including them
+    // would make every delta look like a 1g jump (gravity=null treated as 0
+    // vs a real ~0.98g neighbor) and prevent any window from registering as
+    // still. Reference openWhoop-2 follows the same rule (sensor=None drops
+    // out of stillness analysis).
+    const gravityRecords = sorted.filter(
+      (r) =>
+        r.gravityX != null &&
+        r.gravityY != null &&
+        r.gravityZ != null,
+    );
+    if (gravityRecords.length < 12) return [];
 
-    const intervalSeconds = medianIntervalSeconds(sorted);
+    const intervalSeconds = medianIntervalSeconds(gravityRecords);
     const windowSize = Math.max(
       3,
       Math.floor((15 * 60) / Math.max(intervalSeconds, 1)),
     );
-    const deltas = gravityDeltas(sorted);
+    const deltas = gravityDeltas(gravityRecords);
     let isSleepFlags = classifySleep(deltas, windowSize);
 
     // HR-assisted refinement: adjust boundary epochs based on heart rate trends
-    isSleepFlags = hrAssistedRefinement(sorted, isSleepFlags);
+    isSleepFlags = hrAssistedRefinement(gravityRecords, isSleepFlags);
 
     const periods = mergePeriods(
-      buildPeriods(sorted, isSleepFlags),
+      buildPeriods(gravityRecords, isSleepFlags),
       20 * 60,
       15 * 60,
     );
@@ -47,7 +59,7 @@ export class SleepEventEngine {
     );
     if (longSleeps.length === 0) return [];
 
-    const groups = groupSleepsByNight(longSleeps, sorted, intervalSeconds);
+    const groups = groupSleepsByNight(longSleeps, gravityRecords, intervalSeconds);
     if (groups.length === 0) return [];
 
     const sortedGroups = [...groups].sort(
@@ -97,15 +109,13 @@ function gravityMagnitude(
 
 function gravityDeltas(records: HistoricalSensorRecord[]): number[] {
   if (records.length === 0) return [];
+  // Caller has already filtered to records with non-null gravityX/Y/Z, so
+  // gravityMagnitude() never returns null here.
   const deltas: number[] = [0];
   for (let idx = 1; idx < records.length; idx++) {
-    const current = gravityMagnitude(records[idx]);
-    const previous = gravityMagnitude(records[idx - 1]);
-    if (current != null && previous != null) {
-      deltas.push(Math.abs(current - previous));
-    } else {
-      deltas.push(Number.MAX_VALUE);
-    }
+    const current = gravityMagnitude(records[idx]) ?? 0;
+    const previous = gravityMagnitude(records[idx - 1]) ?? 0;
+    deltas.push(Math.abs(current - previous));
   }
   return deltas;
 }

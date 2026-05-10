@@ -558,28 +558,33 @@ export async function ingestHistoricalRecords(records: HistoricalRecord[]): Prom
         motionScore: null,
         qualityScore: r.skinContact ? 1 : 0,
       })),
-      historicalSensorRecords: batch.map(r => ({
-        timestamp: r.timestamp.toISOString(),
-        heartRate: r.heartRate,
-        rrAverageMs: r.rrIntervals.length > 0
-          ? r.rrIntervals.reduce((a, b) => a + b, 0) / r.rrIntervals.length
-          : null,
-        spo2Red: r.spo2Red ?? null,
-        spo2IR: r.spo2IR ?? null,
-        skinTempRaw: r.skinTempRaw ?? null,
-        gravityMagnitude: Math.sqrt(r.gravityX ** 2 + r.gravityY ** 2 + r.gravityZ ** 2),
-        gravityX: r.gravityX ?? null,
-        gravityY: r.gravityY ?? null,
-        gravityZ: r.gravityZ ?? null,
-        respRateRaw: r.respRateRaw ?? null,
-        skinContact: r.skinContact,
-        ppgGreen: r.ppgGreen ?? null,
-        ppgRedIr: r.ppgRedIr ?? null,
-        ambientLight: r.ambientLight ?? null,
-        ledDrive1: r.ledDrive1 ?? null,
-        ledDrive2: r.ledDrive2 ?? null,
-        signalQuality: r.signalQuality ?? null,
-      })),
+      historicalSensorRecords: batch.map(r => {
+        const hasGravity = r.gravityX != null && r.gravityY != null && r.gravityZ != null;
+        return {
+          timestamp: r.timestamp.toISOString(),
+          heartRate: r.heartRate,
+          rrAverageMs: r.rrIntervals.length > 0
+            ? r.rrIntervals.reduce((a, b) => a + b, 0) / r.rrIntervals.length
+            : null,
+          spo2Red: r.spo2Red,
+          spo2IR: r.spo2IR,
+          skinTempRaw: r.skinTempRaw,
+          gravityMagnitude: hasGravity
+            ? Math.sqrt(r.gravityX! ** 2 + r.gravityY! ** 2 + r.gravityZ! ** 2)
+            : null,
+          gravityX: r.gravityX,
+          gravityY: r.gravityY,
+          gravityZ: r.gravityZ,
+          respRateRaw: r.respRateRaw,
+          skinContact: r.skinContact,
+          ppgGreen: r.ppgGreen,
+          ppgRedIr: r.ppgRedIr,
+          ambientLight: r.ambientLight,
+          ledDrive1: r.ledDrive1,
+          ledDrive2: r.ledDrive2,
+          signalQuality: r.signalQuality,
+        };
+      }),
     };
     const result = await apiPost('/pipeline/ingest', payload);
     totalSignal += result?.signalSamples ?? 0;

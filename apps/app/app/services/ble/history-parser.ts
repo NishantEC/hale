@@ -138,26 +138,29 @@ function parseGenericRecord(data: Uint8Array, offset: number): HistoricalRecord 
     const rr = view.getUint16(16 + i * 2, true);
     if (rr > 0 && rr < 3000) rrIntervals.push(rr);
   }
+  // Generic packets carry only HR + RR. Sensor fields are explicitly null
+  // so downstream upserts can fill them in from a paired V12/V24 packet
+  // for the same timestamp without overwriting real readings with zeros.
   return {
     sequenceNumber: view.getUint32(0, true),
     timestamp: new Date(unixSeconds * 1000 + Math.floor((subseconds / 65536) * 1000)),
     subseconds,
     heartRate: view.getUint8(14),
     rrIntervals,
-    gravityX: 0,
-    gravityY: 0,
-    gravityZ: 0,
-    skinContact: false,
-    spo2Red: 0,
-    spo2IR: 0,
-    skinTempRaw: 0,
-    respRateRaw: 0,
-    ppgGreen: 0,
-    ppgRedIr: 0,
-    ambientLight: 0,
-    ledDrive1: 0,
-    ledDrive2: 0,
-    signalQuality: 0,
+    gravityX: null,
+    gravityY: null,
+    gravityZ: null,
+    skinContact: null,
+    spo2Red: null,
+    spo2IR: null,
+    skinTempRaw: null,
+    respRateRaw: null,
+    ppgGreen: null,
+    ppgRedIr: null,
+    ambientLight: null,
+    ledDrive1: null,
+    ledDrive2: null,
+    signalQuality: null,
   };
 }
 

@@ -130,27 +130,31 @@ export interface WhoopPacket {
   data: Uint8Array;
 }
 
-// Parsed historical sensor record (V12V24 format, 77+ bytes)
+// Parsed historical sensor record. The strap sends two formats per timestamp:
+//   - V12/V24 (seq=12 or 24, payload >= 77B): full sensor reading
+//   - Generic (any other seq, payload >= 24B): HR + RR only
+// Sensor fields are nullable so HR-only generic packets can be merged into
+// V12/V24 rows downstream without polluting them with zeros.
 export interface HistoricalRecord {
   sequenceNumber: number;
   timestamp: Date;
   subseconds: number;
   heartRate: number;
   rrIntervals: number[];
-  gravityX: number;
-  gravityY: number;
-  gravityZ: number;
-  skinContact: boolean;
-  spo2Red: number;
-  spo2IR: number;
-  skinTempRaw: number;
-  respRateRaw: number;
-  ppgGreen: number;
-  ppgRedIr: number;
-  ambientLight: number;
-  ledDrive1: number;
-  ledDrive2: number;
-  signalQuality: number;
+  gravityX: number | null;
+  gravityY: number | null;
+  gravityZ: number | null;
+  skinContact: boolean | null;
+  spo2Red: number | null;
+  spo2IR: number | null;
+  skinTempRaw: number | null;
+  respRateRaw: number | null;
+  ppgGreen: number | null;
+  ppgRedIr: number | null;
+  ambientLight: number | null;
+  ledDrive1: number | null;
+  ledDrive2: number | null;
+  signalQuality: number | null;
 }
 
 // Scanned device info

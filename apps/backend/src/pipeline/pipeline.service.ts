@@ -119,45 +119,39 @@ export class PipelineService {
       signalCount = entities.length;
     }
 
-    // Historical sensor records — same approach
+    // Historical sensor records — COALESCE upsert keyed on (userId, timestamp).
+    // The strap emits multiple packet formats per timestamp (V12/V24 full,
+    // generic HR-only) and re-sends on every reconnect. Merge-upsert lets each
+    // packet contribute its non-null fields without overwriting valid sensor
+    // data with zeros.
     if (dto.historicalSensorRecords && dto.historicalSensorRecords.length > 0) {
-      const timestamps = dto.historicalSensorRecords.map((r) => new Date(r.timestamp));
-      const minTs = new Date(Math.min(...timestamps.map((t) => t.getTime())));
-      const maxTs = new Date(Math.max(...timestamps.map((t) => t.getTime())));
-
-      await this.rawSensorRepo
-        .createQueryBuilder()
-        .delete()
-        .where('"userId" = :userId', { userId })
-        .andWhere('timestamp >= :minTs', { minTs })
-        .andWhere('timestamp <= :maxTs', { maxTs })
-        .execute();
-
-      const entities = dto.historicalSensorRecords.map((r) => {
-        const entity = new RawSensorRecord();
-        entity.userId = userId;
-        entity.timestamp = new Date(r.timestamp);
-        entity.heartRate = r.heartRate;
-        entity.rrAverageMs = r.rrAverageMs as any;
-        entity.spo2Red = r.spo2Red as any;
-        entity.spo2IR = r.spo2IR as any;
-        entity.skinTempRaw = r.skinTempRaw as any;
-        entity.gravityMagnitude = r.gravityMagnitude as any;
-        entity.gravityX = r.gravityX as any;
-        entity.gravityY = r.gravityY as any;
-        entity.gravityZ = r.gravityZ as any;
-        entity.respRateRaw = r.respRateRaw as any;
-        entity.skinContact = r.skinContact as any;
-        entity.ppgGreen = r.ppgGreen as any;
-        entity.ppgRedIr = r.ppgRedIr as any;
-        entity.ambientLight = r.ambientLight as any;
-        entity.ledDrive1 = r.ledDrive1 as any;
-        entity.ledDrive2 = r.ledDrive2 as any;
-        entity.signalQuality = r.signalQuality as any;
-        return entity;
-      });
-      await this.rawSensorRepo.save(entities, { chunk: 500 });
-      sensorCount = entities.length;
+      const merged = dedupeRawSensorRows(
+        dto.historicalSensorRecords.map((r) => ({
+          timestamp: new Date(r.timestamp),
+          heartRate: validHeartRate(r.heartRate),
+          rrAverageMs: r.rrAverageMs ?? null,
+          spo2Red: r.spo2Red ?? null,
+          spo2IR: r.spo2IR ?? null,
+          skinTempRaw: r.skinTempRaw ?? null,
+          gravityMagnitude: r.gravityMagnitude ?? null,
+          gravityX: r.gravityX ?? null,
+          gravityY: r.gravityY ?? null,
+          gravityZ: r.gravityZ ?? null,
+          respRateRaw: r.respRateRaw ?? null,
+          skinContact: r.skinContact ?? null,
+          ppgGreen: r.ppgGreen ?? null,
+          ppgRedIr: r.ppgRedIr ?? null,
+          ambientLight: r.ambientLight ?? null,
+          ledDrive1: r.ledDrive1 ?? null,
+          ledDrive2: r.ledDrive2 ?? null,
+          signalQuality: r.signalQuality ?? null,
+        })),
+      );
+      sensorCount = await upsertRawSensorRows(
+        this.rawSensorRepo,
+        userId,
+        merged,
+      );
     }
 
     return { signalSamples: signalCount, sensorRecords: sensorCount };
@@ -177,54 +171,41 @@ export class PipelineService {
     }
 
     if (tableName === 'raw_sensor_records') {
-      // Mirror the delete-then-insert pattern used by /ingest's
-      // historicalSensorRecords path: scope the overwrite to the batch's
-      // timestamp window so resyncs are idempotent at the DB level even
-      // though the entity primary key is a backend-generated UUID.
-      const timestamps = rows
-        .map((r) => Number(r.timestamp))
-        .filter((t) => Number.isFinite(t));
-      if (timestamps.length === 0) {
-        return { table: tableName, stored: 0 };
-      }
-      const minTs = new Date(Math.min(...timestamps));
-      const maxTs = new Date(Math.max(...timestamps));
-
-      await this.rawSensorRepo
-        .createQueryBuilder()
-        .delete()
-        .where('"userId" = :userId', { userId })
-        .andWhere('timestamp >= :minTs', { minTs })
-        .andWhere('timestamp <= :maxTs', { maxTs })
-        .execute();
-
-      const entities = rows.map((r) => {
-        const e = new RawSensorRecord();
-        e.userId = userId;
-        e.timestamp = new Date(Number(r.timestamp));
-        e.heartRate = Number(r.heartRate ?? 0);
-        e.rrAverageMs = (r.rrAverageMs ?? null) as any;
-        e.spo2Red = (r.spo2Red ?? null) as any;
-        e.spo2IR = (r.spo2IR ?? null) as any;
-        e.skinTempRaw = (r.skinTempRaw ?? null) as any;
-        e.gravityMagnitude = (r.gravityMagnitude ?? null) as any;
-        e.gravityX = (r.gravityX ?? null) as any;
-        e.gravityY = (r.gravityY ?? null) as any;
-        e.gravityZ = (r.gravityZ ?? null) as any;
-        e.respRateRaw = (r.respRateRaw ?? null) as any;
-        // Mobile stores skinContact as 0/1 integer; backend column is boolean.
-        e.skinContact =
-          r.skinContact == null ? null : (Boolean(Number(r.skinContact)) as any);
-        e.ppgGreen = (r.ppgGreen ?? null) as any;
-        e.ppgRedIr = (r.ppgRedIr ?? null) as any;
-        e.ambientLight = (r.ambientLight ?? null) as any;
-        e.ledDrive1 = (r.ledDrive1 ?? null) as any;
-        e.ledDrive2 = (r.ledDrive2 ?? null) as any;
-        e.signalQuality = (r.signalQuality ?? null) as any;
-        return e;
-      });
-      await this.rawSensorRepo.save(entities, { chunk: 500 });
-      return { table: tableName, stored: entities.length };
+      // COALESCE upsert keyed on (userId, timestamp). See ingest() above for
+      // the why — same dedup-merge pattern across both ingest paths.
+      const num = (v: unknown): number | null => {
+        if (v == null) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+      const merged = dedupeRawSensorRows(
+        rows
+          .filter((r) => Number.isFinite(Number(r.timestamp)))
+          .map((r) => ({
+            timestamp: new Date(Number(r.timestamp)),
+            heartRate: validHeartRate(num(r.heartRate)),
+            rrAverageMs: num(r.rrAverageMs),
+            spo2Red: num(r.spo2Red),
+            spo2IR: num(r.spo2IR),
+            skinTempRaw: num(r.skinTempRaw),
+            gravityMagnitude: num(r.gravityMagnitude),
+            gravityX: num(r.gravityX),
+            gravityY: num(r.gravityY),
+            gravityZ: num(r.gravityZ),
+            respRateRaw: num(r.respRateRaw),
+            // Mobile stores skinContact as 0/1 integer; backend column is boolean.
+            skinContact:
+              r.skinContact == null ? null : Boolean(Number(r.skinContact)),
+            ppgGreen: num(r.ppgGreen),
+            ppgRedIr: num(r.ppgRedIr),
+            ambientLight: num(r.ambientLight),
+            ledDrive1: num(r.ledDrive1),
+            ledDrive2: num(r.ledDrive2),
+            signalQuality: num(r.signalQuality),
+          })),
+      );
+      const stored = await upsertRawSensorRows(this.rawSensorRepo, userId, merged);
+      return { table: tableName, stored };
     }
 
     // Tables with their own direct endpoints (telemetry, journal). Acked so
@@ -967,4 +948,143 @@ function groupBoutsByDay(bouts: ActivityBout[]): Map<string, ActivityBout[]> {
     map.set(key, arr);
   }
   return map;
+}
+
+// Plausibility filter for HR — strap occasionally emits non-HR bytes (HR=6,
+// HR=10) when an unusual packet format slips through the parser. Keeping
+// junk values would let them overwrite real readings via the upsert merge.
+function validHeartRate(hr: number | null | undefined): number {
+  if (hr == null) return 0;
+  const n = Number(hr);
+  if (!Number.isFinite(n)) return 0;
+  if (n < 30 || n > 250) return 0;
+  return Math.round(n);
+}
+
+interface RawSensorRow {
+  timestamp: Date;
+  heartRate: number;
+  rrAverageMs: number | null;
+  spo2Red: number | null;
+  spo2IR: number | null;
+  skinTempRaw: number | null;
+  gravityMagnitude: number | null;
+  gravityX: number | null;
+  gravityY: number | null;
+  gravityZ: number | null;
+  respRateRaw: number | null;
+  skinContact: boolean | null;
+  ppgGreen: number | null;
+  ppgRedIr: number | null;
+  ambientLight: number | null;
+  ledDrive1: number | null;
+  ledDrive2: number | null;
+  signalQuality: number | null;
+}
+
+// Within a single batch the strap can include the same timestamp multiple
+// times (V12/V24 + generic). Pre-merge them in JS so the bulk INSERT only
+// has one row per timestamp — required because Postgres ON CONFLICT can't
+// resolve in-statement duplicates.
+function dedupeRawSensorRows(rows: RawSensorRow[]): RawSensorRow[] {
+  const byTs = new Map<number, RawSensorRow>();
+  for (const r of rows) {
+    const key = r.timestamp.getTime();
+    const existing = byTs.get(key);
+    if (!existing) {
+      byTs.set(key, { ...r });
+      continue;
+    }
+    // Merge: prefer non-null/non-zero fields from either side.
+    byTs.set(key, mergeRows(existing, r));
+  }
+  return [...byTs.values()];
+}
+
+function mergeRows(a: RawSensorRow, b: RawSensorRow): RawSensorRow {
+  const pick = <T>(av: T | null, bv: T | null): T | null =>
+    bv != null ? bv : av != null ? av : null;
+  return {
+    timestamp: a.timestamp,
+    heartRate: b.heartRate > 0 ? b.heartRate : a.heartRate,
+    rrAverageMs: pick(a.rrAverageMs, b.rrAverageMs),
+    spo2Red: pick(a.spo2Red, b.spo2Red),
+    spo2IR: pick(a.spo2IR, b.spo2IR),
+    skinTempRaw: pick(a.skinTempRaw, b.skinTempRaw),
+    gravityMagnitude: pick(a.gravityMagnitude, b.gravityMagnitude),
+    gravityX: pick(a.gravityX, b.gravityX),
+    gravityY: pick(a.gravityY, b.gravityY),
+    gravityZ: pick(a.gravityZ, b.gravityZ),
+    respRateRaw: pick(a.respRateRaw, b.respRateRaw),
+    skinContact: pick(a.skinContact, b.skinContact),
+    ppgGreen: pick(a.ppgGreen, b.ppgGreen),
+    ppgRedIr: pick(a.ppgRedIr, b.ppgRedIr),
+    ambientLight: pick(a.ambientLight, b.ambientLight),
+    ledDrive1: pick(a.ledDrive1, b.ledDrive1),
+    ledDrive2: pick(a.ledDrive2, b.ledDrive2),
+    signalQuality: pick(a.signalQuality, b.signalQuality),
+  };
+}
+
+// Postgres COALESCE upsert keyed on the (userId, timestamp) unique index.
+// HR uses CASE so HR=0 (our junk sentinel from validHeartRate) doesn't
+// overwrite a previously-stored real reading.
+async function upsertRawSensorRows(
+  repo: Repository<RawSensorRecord>,
+  userId: string,
+  rows: RawSensorRow[],
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const CHUNK = 500;
+  let total = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
+    const values = slice.map((r) => ({
+      userId,
+      timestamp: r.timestamp,
+      heartRate: r.heartRate,
+      rrAverageMs: r.rrAverageMs,
+      spo2Red: r.spo2Red,
+      spo2IR: r.spo2IR,
+      skinTempRaw: r.skinTempRaw,
+      gravityMagnitude: r.gravityMagnitude,
+      gravityX: r.gravityX,
+      gravityY: r.gravityY,
+      gravityZ: r.gravityZ,
+      respRateRaw: r.respRateRaw,
+      skinContact: r.skinContact,
+      ppgGreen: r.ppgGreen,
+      ppgRedIr: r.ppgRedIr,
+      ambientLight: r.ambientLight,
+      ledDrive1: r.ledDrive1,
+      ledDrive2: r.ledDrive2,
+      signalQuality: r.signalQuality,
+    }));
+    await repo
+      .createQueryBuilder()
+      .insert()
+      .values(values as any)
+      .onConflict(`("userId", timestamp) DO UPDATE SET
+        "heartRate"        = CASE WHEN EXCLUDED."heartRate" > 0 THEN EXCLUDED."heartRate" ELSE raw_sensor_records."heartRate" END,
+        "rrAverageMs"      = COALESCE(EXCLUDED."rrAverageMs",      raw_sensor_records."rrAverageMs"),
+        "spo2Red"          = COALESCE(EXCLUDED."spo2Red",          raw_sensor_records."spo2Red"),
+        "spo2IR"           = COALESCE(EXCLUDED."spo2IR",           raw_sensor_records."spo2IR"),
+        "skinTempRaw"      = COALESCE(EXCLUDED."skinTempRaw",      raw_sensor_records."skinTempRaw"),
+        "gravityMagnitude" = COALESCE(EXCLUDED."gravityMagnitude", raw_sensor_records."gravityMagnitude"),
+        "gravityX"         = COALESCE(EXCLUDED."gravityX",         raw_sensor_records."gravityX"),
+        "gravityY"         = COALESCE(EXCLUDED."gravityY",         raw_sensor_records."gravityY"),
+        "gravityZ"         = COALESCE(EXCLUDED."gravityZ",         raw_sensor_records."gravityZ"),
+        "respRateRaw"      = COALESCE(EXCLUDED."respRateRaw",      raw_sensor_records."respRateRaw"),
+        "skinContact"      = COALESCE(EXCLUDED."skinContact",      raw_sensor_records."skinContact"),
+        "ppgGreen"         = COALESCE(EXCLUDED."ppgGreen",         raw_sensor_records."ppgGreen"),
+        "ppgRedIr"         = COALESCE(EXCLUDED."ppgRedIr",         raw_sensor_records."ppgRedIr"),
+        "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     raw_sensor_records."ambientLight"),
+        "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        raw_sensor_records."ledDrive1"),
+        "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        raw_sensor_records."ledDrive2"),
+        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    raw_sensor_records."signalQuality")
+      `)
+      .execute();
+    total += slice.length;
+  }
+  return total;
 }

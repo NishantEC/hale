@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lte } from "drizzle-orm"
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
 import { rawSensorRecords } from "../schema"
 import { getActiveUserId } from "../session"
@@ -31,10 +31,15 @@ export async function insertRawSensorRecord(
   input: RawSensorRecordInput,
 ): Promise<void> {
   const userId = getActiveUserId()
-  // onConflictDoNothing: id is deterministic (`${seq}-${ts}` from BLE) and
-  // the strap re-sends the same history buffer on every reconnect. Without
-  // this, the first duplicate raises a UNIQUE constraint violation that
-  // aborts the entire ingest batch and silently kills sync.
+  // ID is timestamp-only (`ts-${timestamp}`). The strap emits multiple packet
+  // formats per sample (V12/V24 full sensor, generic HR-only, retransmits).
+  // We merge them via COALESCE: the first-seen value for each field wins,
+  // unless it's null — in which case the new value fills the gap. This way:
+  //   - A generic HR-only packet that arrives first leaves gravity null.
+  //     The follow-up V12/V24 packet fills gravity in.
+  //   - A V12/V24 packet that arrives first sets every field. A later
+  //     generic packet's HR/RR is preserved from the V12/V24, sensor data
+  //     stays valid (excluded.gravityX is null → COALESCE picks existing).
   await db
     .insert(rawSensorRecords)
     .values({
@@ -44,7 +49,32 @@ export async function insertRawSensorRecord(
       _origin: "local",
       userId,
     })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: rawSensorRecords.id,
+      set: {
+        // HR: prefer non-zero readings (zero is our "junk" sentinel from
+        // the bleIngest validity filter)
+        heartRate: sql`CASE WHEN excluded.heart_rate > 0 THEN excluded.heart_rate ELSE ${rawSensorRecords.heartRate} END`,
+        rrAverageMs: sql`COALESCE(excluded.rr_average_ms, ${rawSensorRecords.rrAverageMs})`,
+        spo2Red: sql`COALESCE(excluded.spo2_red, ${rawSensorRecords.spo2Red})`,
+        spo2IR: sql`COALESCE(excluded.spo2_ir, ${rawSensorRecords.spo2IR})`,
+        skinTempRaw: sql`COALESCE(excluded.skin_temp_raw, ${rawSensorRecords.skinTempRaw})`,
+        gravityMagnitude: sql`COALESCE(excluded.gravity_magnitude, ${rawSensorRecords.gravityMagnitude})`,
+        gravityX: sql`COALESCE(excluded.gravity_x, ${rawSensorRecords.gravityX})`,
+        gravityY: sql`COALESCE(excluded.gravity_y, ${rawSensorRecords.gravityY})`,
+        gravityZ: sql`COALESCE(excluded.gravity_z, ${rawSensorRecords.gravityZ})`,
+        respRateRaw: sql`COALESCE(excluded.resp_rate_raw, ${rawSensorRecords.respRateRaw})`,
+        skinContact: sql`COALESCE(excluded.skin_contact, ${rawSensorRecords.skinContact})`,
+        ppgGreen: sql`COALESCE(excluded.ppg_green, ${rawSensorRecords.ppgGreen})`,
+        ppgRedIr: sql`COALESCE(excluded.ppg_red_ir, ${rawSensorRecords.ppgRedIr})`,
+        ambientLight: sql`COALESCE(excluded.ambient_light, ${rawSensorRecords.ambientLight})`,
+        ledDrive1: sql`COALESCE(excluded.led_drive_1, ${rawSensorRecords.ledDrive1})`,
+        ledDrive2: sql`COALESCE(excluded.led_drive_2, ${rawSensorRecords.ledDrive2})`,
+        signalQuality: sql`COALESCE(excluded.signal_quality, ${rawSensorRecords.signalQuality})`,
+        // Reset sync state on merge — new fields landed, downstream needs to re-uplink.
+        _syncedAt: sql`NULL`,
+      },
+    })
   notifyTable("raw_sensor_records")
 }
 
