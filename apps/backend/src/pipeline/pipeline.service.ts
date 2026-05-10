@@ -14,6 +14,7 @@ import { SleepPlan } from '../plans/sleep-plan.entity.js';
 import { RawSensorRecord } from './entities/raw-sensor-record.entity.js';
 
 import { IngestDto } from './dto/ingest.dto.js';
+import { IngestTableDto } from './dto/ingest-table.dto.js';
 
 import { sanitize } from '../processing/ppg-quality-gate.js';
 import {
@@ -151,6 +152,79 @@ export class PipelineService {
     }
 
     return { signalSamples: signalCount, sensorRecords: sensorCount };
+  }
+
+  // ------------------------------------------------------------ ingestTable
+  // Generic per-table sink for the mobile outbound_queue drainer. The drainer
+  // POSTs `{ tableName, rows }` for any locally-mutated table. Routes by
+  // tableName. For tables that already have a dedicated direct endpoint
+  // (telemetry events, journal entries) we accept the rows so the drainer
+  // clears them from its queue, but rely on the direct endpoint as the
+  // canonical write path. Adding real per-row writes here is a follow-up.
+  async ingestTable(userId: string, dto: IngestTableDto) {
+    const { tableName, rows } = dto;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { table: tableName, stored: 0 };
+    }
+
+    if (tableName === 'raw_sensor_records') {
+      // Mirror the delete-then-insert pattern used by /ingest's
+      // historicalSensorRecords path: scope the overwrite to the batch's
+      // timestamp window so resyncs are idempotent at the DB level even
+      // though the entity primary key is a backend-generated UUID.
+      const timestamps = rows
+        .map((r) => Number(r.timestamp))
+        .filter((t) => Number.isFinite(t));
+      if (timestamps.length === 0) {
+        return { table: tableName, stored: 0 };
+      }
+      const minTs = new Date(Math.min(...timestamps));
+      const maxTs = new Date(Math.max(...timestamps));
+
+      await this.rawSensorRepo
+        .createQueryBuilder()
+        .delete()
+        .where('"userId" = :userId', { userId })
+        .andWhere('timestamp >= :minTs', { minTs })
+        .andWhere('timestamp <= :maxTs', { maxTs })
+        .execute();
+
+      const entities = rows.map((r) => {
+        const e = new RawSensorRecord();
+        e.userId = userId;
+        e.timestamp = new Date(Number(r.timestamp));
+        e.heartRate = Number(r.heartRate ?? 0);
+        e.rrAverageMs = (r.rrAverageMs ?? null) as any;
+        e.spo2Red = (r.spo2Red ?? null) as any;
+        e.spo2IR = (r.spo2IR ?? null) as any;
+        e.skinTempRaw = (r.skinTempRaw ?? null) as any;
+        e.gravityMagnitude = (r.gravityMagnitude ?? null) as any;
+        e.gravityX = (r.gravityX ?? null) as any;
+        e.gravityY = (r.gravityY ?? null) as any;
+        e.gravityZ = (r.gravityZ ?? null) as any;
+        e.respRateRaw = (r.respRateRaw ?? null) as any;
+        // Mobile stores skinContact as 0/1 integer; backend column is boolean.
+        e.skinContact =
+          r.skinContact == null ? null : (Boolean(Number(r.skinContact)) as any);
+        e.ppgGreen = (r.ppgGreen ?? null) as any;
+        e.ppgRedIr = (r.ppgRedIr ?? null) as any;
+        e.ambientLight = (r.ambientLight ?? null) as any;
+        e.ledDrive1 = (r.ledDrive1 ?? null) as any;
+        e.ledDrive2 = (r.ledDrive2 ?? null) as any;
+        e.signalQuality = (r.signalQuality ?? null) as any;
+        return e;
+      });
+      await this.rawSensorRepo.save(entities, { chunk: 500 });
+      return { table: tableName, stored: entities.length };
+    }
+
+    // Tables with their own direct endpoints (telemetry, journal). Acked so
+    // the queue drains; canonical writes happen on the direct path. Add real
+    // per-table handlers here when the direct path becomes optional.
+    this.logger.warn(
+      `ingestTable: tableName=${tableName} not yet routed; ${rows.length} rows acked without storing`,
+    );
+    return { table: tableName, stored: 0, ignored: rows.length };
   }
 
   // -------------------------------------------------------------- runPipeline
