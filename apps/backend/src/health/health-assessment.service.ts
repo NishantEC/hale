@@ -1,12 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, DataSource, Repository } from 'typeorm';
 
 import {
   HealthAssessment,
   HealthspanContributor,
 } from './entities/health-assessment.entity.js';
-import { UserProfile } from './entities/user-profile.entity.js';
 import { NightFeature } from '../sleep/entities/night-feature.entity.js';
 import { SleepDetection } from '../sleep/entities/sleep-detection.entity.js';
 import { DailyMetric } from '../wellness/entities/daily-metric.entity.js';
@@ -23,6 +22,14 @@ import {
 } from '../processing/healthspan.js';
 import { computeVo2MaxUth } from '../processing/vo2max.js';
 
+/** Better Auth's `user` table demographics — read/written via raw SQL. */
+export interface UserDemographics {
+  dateOfBirth: string | null;
+  biologicalSex: string | null;
+  heightCm: number | null;
+  weightKg: number | null;
+}
+
 @Injectable()
 export class HealthAssessmentService {
   private readonly logger = new Logger(HealthAssessmentService.name);
@@ -30,8 +37,6 @@ export class HealthAssessmentService {
   constructor(
     @InjectRepository(HealthAssessment)
     private readonly assessmentRepo: Repository<HealthAssessment>,
-    @InjectRepository(UserProfile)
-    private readonly profileRepo: Repository<UserProfile>,
     @InjectRepository(NightFeature)
     private readonly nightFeatureRepo: Repository<NightFeature>,
     @InjectRepository(SleepDetection)
@@ -42,6 +47,7 @@ export class HealthAssessmentService {
     private readonly healthkitSummaryRepo: Repository<HealthkitDailySummary>,
     @InjectRepository(BaselineProfile)
     private readonly baselineRepo: Repository<BaselineProfile>,
+    private readonly dataSource: DataSource,
   ) {}
 
   /**
@@ -50,8 +56,8 @@ export class HealthAssessmentService {
    * shows an empty state in that case).
    */
   async computeWeekly(userId: string, referenceDate: Date): Promise<HealthAssessment | null> {
-    const profile = await this.profileRepo.findOne({ where: { userId } });
-    const age = chronologicalAge(profile?.dateOfBirth ?? null, referenceDate);
+    const demographics = await this.getDemographics(userId);
+    const age = chronologicalAge(demographics?.dateOfBirth ?? null, referenceDate);
     if (age == null) return null;
 
     const weekStart = startOfWeek(referenceDate);
@@ -147,21 +153,54 @@ export class HealthAssessmentService {
     });
   }
 
-  async setProfile(
-    userId: string,
-    patch: Partial<Pick<UserProfile, 'dateOfBirth' | 'biologicalSex' | 'heightCm' | 'weightKg'>>,
-  ): Promise<UserProfile> {
-    const existing = await this.profileRepo.findOne({ where: { userId } });
-    const entity = existing ?? this.profileRepo.create({ userId });
-    if (patch.dateOfBirth !== undefined) entity.dateOfBirth = patch.dateOfBirth;
-    if (patch.biologicalSex !== undefined) entity.biologicalSex = patch.biologicalSex;
-    if (patch.heightCm !== undefined) entity.heightCm = patch.heightCm;
-    if (patch.weightKg !== undefined) entity.weightKg = patch.weightKg;
-    return this.profileRepo.save(entity);
+  // --- demographics on Better Auth user table -------------------
+
+  /**
+   * Read demographic fields from the Better Auth `user` table. We use
+   * raw SQL because Better Auth manages this table — TypeORM never
+   * sees it.
+   */
+  async getDemographics(userId: string): Promise<UserDemographics | null> {
+    const rows: any[] = await this.dataSource.query(
+      `SELECT "dateOfBirth", "biologicalSex", "heightCm", "weightKg"
+       FROM "user"
+       WHERE id = $1
+       LIMIT 1`,
+      [userId],
+    );
+    if (!rows[0]) return null;
+    const r = rows[0];
+    return {
+      dateOfBirth:
+        r.dateOfBirth instanceof Date
+          ? r.dateOfBirth.toISOString().slice(0, 10)
+          : (r.dateOfBirth ?? null),
+      biologicalSex: r.biologicalSex ?? null,
+      heightCm: r.heightCm != null ? Number(r.heightCm) : null,
+      weightKg: r.weightKg != null ? Number(r.weightKg) : null,
+    };
   }
 
-  async getProfile(userId: string): Promise<UserProfile | null> {
-    return this.profileRepo.findOne({ where: { userId } });
+  async setDemographics(
+    userId: string,
+    patch: Partial<UserDemographics>,
+  ): Promise<UserDemographics> {
+    const fields: string[] = [];
+    const params: any[] = [userId];
+    let idx = 2;
+    for (const key of ['dateOfBirth', 'biologicalSex', 'heightCm', 'weightKg'] as const) {
+      if (patch[key] !== undefined) {
+        fields.push(`"${key}" = $${idx++}`);
+        params.push(patch[key]);
+      }
+    }
+    if (fields.length > 0) {
+      await this.dataSource.query(
+        `UPDATE "user" SET ${fields.join(', ')} WHERE id = $1`,
+        params,
+      );
+    }
+    return (await this.getDemographics(userId))!;
   }
 
   // --- internals --------------------------------------------------
@@ -223,9 +262,6 @@ export class HealthAssessmentService {
         ? computeVo2MaxUth(rhr6mo, baseline?.maxHeartRate ?? null)
         : null;
 
-    // HR-zone time-in-zone is not yet computed; surface as null until #11
-    // (improved auto-detect) lands. Placeholder entries keep the bars
-    // visible but with no impact.
     return {
       sleepConsistency: {
         thirtyDayValue: consistency30,
@@ -243,10 +279,9 @@ export class HealthAssessmentService {
 }
 
 function startOfWeek(d: Date): Date {
-  const day = d.getUTCDay(); // 0=Sun
-  const diff = (day + 6) % 7; // Monday-start
-  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - diff));
-  return monday;
+  const day = d.getUTCDay();
+  const diff = (day + 6) % 7;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - diff));
 }
 
 function toDateOnly(d: Date): string {

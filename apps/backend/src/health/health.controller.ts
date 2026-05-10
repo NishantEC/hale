@@ -29,22 +29,14 @@ export class HealthController {
     try {
       const userId = req.user.userId;
       const referenceDate = week ? new Date(`${week}T00:00:00.000Z`) : new Date();
-      // Always recompute the current week so freshly-ingested data shows up.
       const current = await this.healthService.computeWeekly(userId, referenceDate);
       const history = await this.healthService.getHistory(userId, 12);
-      const profile = await this.healthService.getProfile(userId);
+      const profile = await this.healthService.getDemographics(userId);
 
       return {
         current,
         history,
-        profile: profile
-          ? {
-              dateOfBirth: profile.dateOfBirth,
-              biologicalSex: profile.biologicalSex,
-              heightCm: profile.heightCm,
-              weightKg: profile.weightKg,
-            }
-          : null,
+        profile,
         needsDateOfBirth: !profile?.dateOfBirth,
       };
     } catch (e) {
@@ -56,12 +48,12 @@ export class HealthController {
   @Get('profile')
   async getProfile(@Req() req: any) {
     try {
-      const profile = await this.healthService.getProfile(req.user.userId);
-      return {
-        dateOfBirth: profile?.dateOfBirth ?? null,
-        biologicalSex: profile?.biologicalSex ?? null,
-        heightCm: profile?.heightCm ?? null,
-        weightKg: profile?.weightKg ?? null,
+      const profile = await this.healthService.getDemographics(req.user.userId);
+      return profile ?? {
+        dateOfBirth: null,
+        biologicalSex: null,
+        heightCm: null,
+        weightKg: null,
       };
     } catch (e) {
       this.logger.error(`profile read failed: ${e.message}`, e.stack);
@@ -73,13 +65,7 @@ export class HealthController {
   @UsePipes(new ValidationPipe({ whitelist: true }))
   async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
     try {
-      const profile = await this.healthService.setProfile(req.user.userId, dto);
-      return {
-        dateOfBirth: profile.dateOfBirth,
-        biologicalSex: profile.biologicalSex,
-        heightCm: profile.heightCm,
-        weightKg: profile.weightKg,
-      };
+      return await this.healthService.setDemographics(req.user.userId, dto);
     } catch (e) {
       this.logger.error(`profile update failed: ${e.message}`, e.stack);
       throw new HttpException(`Profile update failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);

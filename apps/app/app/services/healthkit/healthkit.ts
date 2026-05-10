@@ -1,6 +1,8 @@
 import { Platform } from "react-native"
 import {
   CategoryValueSleepAnalysis,
+  getBiologicalSexAsync,
+  getDateOfBirthAsync,
   isHealthDataAvailable,
   queryCategorySamples,
   queryStatisticsForQuantity,
@@ -37,6 +39,38 @@ export async function requestPermissions(): Promise<boolean> {
     // the native module wasn't compiled in (needs `expo prebuild` + rebuild).
     console.warn("[healthkit] requestAuthorization failed", err)
     return false
+  }
+}
+
+/**
+ * Read demographic characteristics (DOB + biological sex) the user
+ * already entered into the iOS Health app. Returns nulls when not
+ * available or permissions denied — callers should fall back to a
+ * manual prompt in Settings.
+ */
+export async function getCharacteristics(): Promise<{
+  dateOfBirth: string | null
+  biologicalSex: "male" | "female" | "other" | null
+}> {
+  if (!isIOS) return { dateOfBirth: null, biologicalSex: null }
+  try {
+    const [dob, sex] = await Promise.all([
+      getDateOfBirthAsync().catch(() => null),
+      getBiologicalSexAsync().catch(() => null),
+    ])
+    // HK returns Date(0) when unset — treat as null.
+    const dobIso =
+      dob && dob instanceof Date && dob.getTime() > 0 ? dob.toISOString().slice(0, 10) : null
+    // BiologicalSex enum: notSet=0, female=1, male=2, other=3
+    const sexNum = sex as unknown as number | null
+    let bioSex: "male" | "female" | "other" | null = null
+    if (sexNum === 1) bioSex = "female"
+    else if (sexNum === 2) bioSex = "male"
+    else if (sexNum === 3) bioSex = "other"
+    return { dateOfBirth: dobIso, biologicalSex: bioSex }
+  } catch (err) {
+    console.warn("[healthkit] getCharacteristics failed", err)
+    return { dateOfBirth: null, biologicalSex: null }
   }
 }
 

@@ -19,8 +19,34 @@ import {
   type DailySummary,
   type HealthKitWorkout,
 } from "@/services/healthkit"
+import { getCharacteristics } from "@/services/healthkit/healthkit"
 import { startAltimeter, stopAltimeter } from "@/services/altimeter/altimeter"
-import { pushHealthkitSync } from "@/services/api/noopClient"
+import { fetchProfile, pushHealthkitSync, updateProfile } from "@/services/api/noopClient"
+
+/**
+ * Read DOB + biological sex from the iOS Health app and write them to
+ * the noop user profile — but only if the user hasn't already set
+ * them manually. Idempotent; safe to call on every permission grant.
+ */
+async function syncDemographicsFromHealthKit(): Promise<void> {
+  const characteristics = await getCharacteristics()
+  if (!characteristics.dateOfBirth && !characteristics.biologicalSex) return
+  try {
+    const existing = await fetchProfile()
+    const patch: Partial<{ dateOfBirth: string; biologicalSex: "male" | "female" | "other" }> = {}
+    if (characteristics.dateOfBirth && !existing.dateOfBirth) {
+      patch.dateOfBirth = characteristics.dateOfBirth
+    }
+    if (characteristics.biologicalSex && !existing.biologicalSex) {
+      patch.biologicalSex = characteristics.biologicalSex
+    }
+    if (Object.keys(patch).length > 0) {
+      await updateProfile(patch)
+    }
+  } catch (err) {
+    console.warn("[healthkit] profile sync failed", err)
+  }
+}
 
 const HAS_REQUESTED_PERMISSION_KEY = "noop.healthkit.hasRequestedPermission"
 
@@ -117,6 +143,11 @@ export function HealthKitProvider({ children }: PropsWithChildren) {
       // backend's hill / mountain / stair detectors via /healthkit/barometer.
       void startAltimeter().catch((err) =>
         console.warn("[healthkit] altimeter start failed", err),
+      )
+      // Pull demographics from Health app and populate the noop profile
+      // — saves the user from re-entering dateOfBirth in Settings.
+      void syncDemographicsFromHealthKit().catch((err) =>
+        console.warn("[healthkit] demographics sync failed", err),
       )
       await refresh()
     } catch (err) {

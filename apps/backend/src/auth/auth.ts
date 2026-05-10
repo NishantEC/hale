@@ -32,6 +32,18 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  // noop-specific demographic columns stored directly on the Better
+  // Auth `user` table. Used by Healthspan (dateOfBirth required), and
+  // by future features (biologicalSex / heightCm / weightKg are optional
+  // hazard-model inputs). All optional, never required at sign-up.
+  user: {
+    additionalFields: {
+      dateOfBirth: { type: 'date', required: false, input: true },
+      biologicalSex: { type: 'string', required: false, input: true },
+      heightCm: { type: 'number', required: false, input: true },
+      weightKg: { type: 'number', required: false, input: true },
+    },
+  },
   trustedOrigins: [
     'http://localhost:3009',
     'http://localhost:5173',
