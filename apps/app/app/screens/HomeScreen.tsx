@@ -1,5 +1,7 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  Platform,
+  Pressable,
   RefreshControl,
   StyleSheet,
   TextStyle,
@@ -396,6 +398,20 @@ export const HomeScreen: FC = () => {
           </View>
         </Animated.ScrollView>
 
+        <Pressable
+          onPress={() => navigateTo("JournalEntry", "journal-entry")}
+          hitSlop={8}
+          accessibilityLabel="Log a journal entry"
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            $tabBarFab,
+            { backgroundColor: colors.tint },
+            pressed && { opacity: 0.9, transform: [{ scale: 0.96 }] },
+          ]}
+        >
+          <Ionicons name="add" size={24} color={colors.onPrimary} />
+        </Pressable>
+
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
       </SafeAreaView>
     </PanGestureHandler>
@@ -495,6 +511,27 @@ const $topStrip: ThemedStyle<ViewStyle> = () => ({
   justifyContent: "space-between",
   marginBottom: 6,
 })
+
+const $tabBarFab: ViewStyle = {
+  alignItems: "center",
+  borderRadius: 9999,
+  bottom: 36,
+  height: 52,
+  justifyContent: "center",
+  position: "absolute",
+  right: 16,
+  width: 52,
+  zIndex: 20,
+  ...Platform.select({
+    ios: {
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.45,
+      shadowRadius: 18,
+    },
+    android: { elevation: 10 },
+  }),
+}
 
 const $devicePill: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
