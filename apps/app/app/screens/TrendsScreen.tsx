@@ -1,24 +1,18 @@
 import { FC, useCallback, useEffect, useState } from "react"
 import { RefreshControl, TextStyle, View, ViewStyle, useWindowDimensions } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
-
 import { Chart, Host } from "@expo/ui/swift-ui"
-
-import { GlassCard } from "@/components/GlassCard"
-import { ScrollView } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
+import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
+
+import { BlurHeader } from "@/components/BlurHeader"
+import { GlassCard } from "@/components/GlassCard"
 import { Text } from "@/components/Text"
-const PALETTE = {
-  text: "#FFFFFF",
-  textDim: "rgba(255,255,255,0.72)",
-  tint: "#C76542",
-  statusGreen: "#16A34A",
-  statusRed: "#DC2626",
-}
 import { fetchTrendsView, TrendsViewModel, SeriesPoint } from "@/services/api/noopClient"
+import { isAuthenticated } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import { getViewCache, setViewCache } from "@/services/db/repositories/viewCache"
-import { isAuthenticated } from "@/services/api/noopClient"
+import { LOCAL_THEME } from "@/utils/localTheme"
 
 // Each trend card: distinct data that can't be seen from a single day
 const TREND_CARDS: Array<{
@@ -86,14 +80,39 @@ const TREND_CARDS: Array<{
     unit: "",
     icon: "calendar-outline",
   },
+  {
+    id: "respiratory",
+    title: "Respiratory Rate",
+    subtitle: "Nightly avg — illness & recovery signal",
+    dataKey: "respiratoryRateTrend",
+    color: "#6BCB77",
+    unit: "br/min",
+    icon: "leaf-outline",
+  },
+  {
+    id: "spo2",
+    title: "Blood Oxygen (SpO₂)",
+    subtitle: "Nightly avg — breathing quality",
+    dataKey: "spo2Trend",
+    color: "#FF6BB5",
+    unit: "%",
+    icon: "water-outline",
+  },
 ]
 
 export const TrendsScreen: FC = () => {
-  const colors = PALETTE
+  const colors = LOCAL_THEME.colors
   const themed = <T,>(s: T): T => s
   const { width } = useWindowDimensions()
   const [trends, setTrends] = useState<TrendsViewModel | null>(null)
   const [loading, setLoading] = useState(false)
+
+  const scrollY = useSharedValue(0)
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y
+    },
+  })
 
   const load = useCallback(async () => {
     if (!isAuthenticated()) return
@@ -124,21 +143,29 @@ export const TrendsScreen: FC = () => {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+  }, [load])
 
   const chartWidth = width - 72
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-      <ScrollView
+      <Animated.ScrollView
         contentContainerStyle={themed($container)}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.tint} />}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={load} tintColor={colors.tint} />
+        }
       >
-      <Text text="Trends" preset="heading" style={themed($heading)} />
+      <Text text="Trends" preset="heading" style={$heading(colors)} />
       <Text
-        text={trends ? `${trends.days}-day window · ${trends.dataPoints} nights` : "Pull to refresh"}
+        text={
+          trends ? `${trends.days}-day window · ${trends.dataPoints} nights` : "Pull to refresh"
+        }
         size="xs"
-        style={themed($subtitle)}
+        style={$subtitle(colors)}
       />
 
       {/* Summary cards */}
@@ -146,14 +173,22 @@ export const TrendsScreen: FC = () => {
         <View style={themed($summaryRow)}>
           <SummaryPill
             label="HRV"
-            value={trends.summaries.hrv.current != null ? `${Math.round(trends.summaries.hrv.current)}` : "--"}
+            value={
+              trends.summaries.hrv.current != null
+                ? `${Math.round(trends.summaries.hrv.current)}`
+                : "--"
+            }
             unit="ms"
             trend={trends.summaries.hrv.trend}
             colors={colors}
           />
           <SummaryPill
             label="RHR"
-            value={trends.summaries.restingHr.current != null ? `${Math.round(trends.summaries.restingHr.current)}` : "--"}
+            value={
+              trends.summaries.restingHr.current != null
+                ? `${Math.round(trends.summaries.restingHr.current)}`
+                : "--"
+            }
             unit="bpm"
             trend={trends.summaries.restingHr.trend}
             invertTrend
@@ -161,7 +196,11 @@ export const TrendsScreen: FC = () => {
           />
           <SummaryPill
             label="Sleep"
-            value={trends.summaries.sleepDuration.avgHours != null ? `${trends.summaries.sleepDuration.avgHours}` : "--"}
+            value={
+              trends.summaries.sleepDuration.avgHours != null
+                ? `${trends.summaries.sleepDuration.avgHours}`
+                : "--"
+            }
             unit="h avg"
             trend={null}
             colors={colors}
@@ -177,8 +216,8 @@ export const TrendsScreen: FC = () => {
             <View style={themed($cardHeader)}>
               <Ionicons name={card.icon} size={18} color={card.color} />
               <View style={{ flex: 1 }}>
-                <Text text={card.title} size="xs" weight="semiBold" style={themed($cardTitle)} />
-                <Text text={card.subtitle} size="xxs" style={themed($cardSubtitle)} />
+                <Text text={card.title} size="xs" weight="semiBold" style={$cardTitle(colors)} />
+                <Text text={card.subtitle} size="xxs" style={$cardSubtitle(colors)} />
               </View>
               {data && data.length > 1 && (
                 <Text
@@ -206,13 +245,19 @@ export const TrendsScreen: FC = () => {
               </Host>
             ) : (
               <View style={themed($emptyChart)}>
-                <Text text={`No ${card.title.toLowerCase()} data yet`} size="xxs" style={themed($emptyText)} />
+                <Text
+                  text={`No ${card.title.toLowerCase()} data yet`}
+                  size="xxs"
+                  style={$emptyText(colors)}
+                />
               </View>
             )}
           </GlassCard>
         )
       })}
-      </ScrollView>
+      </Animated.ScrollView>
+
+      <BlurHeader title="Trends" scrollY={scrollY} fadeOver={56} />
     </SafeAreaView>
   )
 }
@@ -220,7 +265,12 @@ export const TrendsScreen: FC = () => {
 // ── Summary pill ─────────────────────────────────────────
 
 function SummaryPill({
-  label, value, unit, trend, invertTrend, colors,
+  label,
+  value,
+  unit,
+  trend,
+  invertTrend,
+  colors,
 }: {
   label: string
   value: string
@@ -229,11 +279,16 @@ function SummaryPill({
   invertTrend?: boolean
   colors: any
 }) {
-  const trendIcon = trend === "improving" ? "trending-up" : trend === "declining" ? "trending-down" : null
+  const trendIcon =
+    trend === "improving" ? "trending-up" : trend === "declining" ? "trending-down" : null
   const trendColor =
-    trend === "improving" ? colors.statusGreen :
-    trend === "declining" ? (invertTrend ? colors.statusGreen : colors.statusRed) :
-    colors.textDim
+    trend === "improving"
+      ? colors.statusGreen
+      : trend === "declining"
+        ? invertTrend
+          ? colors.statusGreen
+          : colors.statusRed
+        : colors.textDim
 
   return (
     <View style={{ flex: 1, alignItems: "center", gap: 2 }}>
@@ -242,9 +297,7 @@ function SummaryPill({
         <Text text={value} size="lg" weight="bold" style={{ color: colors.text }} />
         <Text text={unit} size="xxs" style={{ color: colors.textDim }} />
       </View>
-      {trendIcon && (
-        <Ionicons name={trendIcon as any} size={14} color={trendColor} />
-      )}
+      {trendIcon && <Ionicons name={trendIcon as any} size={14} color={trendColor} />}
     </View>
   )
 }
@@ -258,9 +311,12 @@ const $container: ViewStyle = {
   paddingBottom: 100,
 }
 
-const $heading: TextStyle = { color: PALETTE.text }
+const $heading = (colors: typeof LOCAL_THEME.colors): TextStyle => ({ color: colors.text })
 
-const $subtitle: TextStyle = { color: PALETTE.textDim, marginBottom: 8 }
+const $subtitle = (colors: typeof LOCAL_THEME.colors): TextStyle => ({
+  color: colors.textDim,
+  marginBottom: 8,
+})
 
 const $summaryRow: ViewStyle = {
   flexDirection: "row",
@@ -276,7 +332,7 @@ const $cardHeader: ViewStyle = {
   gap: 10,
 }
 
-const $cardTitle: TextStyle = { color: PALETTE.text }
+const $cardTitle = (colors: typeof LOCAL_THEME.colors): TextStyle => ({ color: colors.text })
 
 const $emptyChart: ViewStyle = {
   height: 120,
@@ -284,6 +340,6 @@ const $emptyChart: ViewStyle = {
   justifyContent: "center",
 }
 
-const $emptyText: TextStyle = { color: PALETTE.textDim }
+const $emptyText = (colors: typeof LOCAL_THEME.colors): TextStyle => ({ color: colors.textDim })
 
-const $cardSubtitle: TextStyle = { color: PALETTE.textDim }
+const $cardSubtitle = (colors: typeof LOCAL_THEME.colors): TextStyle => ({ color: colors.textDim })

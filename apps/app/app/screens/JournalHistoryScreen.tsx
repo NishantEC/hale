@@ -1,43 +1,39 @@
-import { useEffect, useState } from "react"
+import { FC, useEffect, useRef, useState } from "react"
 import {
   Alert,
-  FlatList,
   RefreshControl,
-  SafeAreaView,
   TouchableOpacity,
   View,
   ViewStyle,
-  TextStyle,
+  useWindowDimensions,
 } from "react-native"
 import { Ionicons } from "@expo/vector-icons"
-import { useNavigation } from "@react-navigation/native"
+import { router } from "expo-router"
+import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
+import { InlineLineChart } from "@/components/InlineLineChart"
+import { LabsAccordion } from "@/components/LabsAccordion"
+import { MetricHero } from "@/components/MetricHero"
+import { ScreenHeader, SCREEN_HEADER_HEIGHT } from "@/components/ScreenHeader"
 import { Text } from "@/components/Text"
+import { Toast } from "@/components/reactx/toast"
+import { TrendSparkline } from "@/components/TrendSparkline"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
+import { useDashboard } from "@/context/DashboardContext"
 import {
-  fetchJournalEntries,
   deleteJournalEntry as deleteJournalEntryRemote,
-  JournalEntryResponse,
+  fetchJournalEntries,
+  type JournalEntryResponse,
 } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import {
   deleteJournalEntry,
   listJournalEntriesByDate,
 } from "@/services/db/repositories/journalEntry"
+import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
-const PALETTE = {
-  screenBackground: "#F0EDE8",
-  onSurface: "#000000",
-  surfaceElevated: "rgba(0,0,0,0.05)",
-  textMuted: "#978F8A",
-  text: "#191015",
-  iconDim: "rgba(0,0,0,0.38)",
-}
-
-function todayKey() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
-}
+const JOURNAL_TINT = "#C76542"
 
 function formatTime(ts: string) {
   const d = new Date(ts)
@@ -48,23 +44,54 @@ function formatTime(ts: string) {
   return `${h12}:${m} ${ampm}`
 }
 
-export function JournalHistoryScreen() {
-  const navigation = useNavigation()
-  const colors = PALETTE
-  const themed = <T,>(s: T): T => s
+function entryDetail(item: JournalEntryResponse): string | null {
+  const factor = JOURNAL_FACTORS.find((f) => f.tag === item.factorTag)
+  if (!factor) return null
+  if (factor.input.kind === "quantity") {
+    const unit = item.intensity === 1 ? factor.input.unit.replace(/s$/, "") : factor.input.unit
+    return `${item.intensity} ${unit}`
+  }
+  if (factor.input.kind === "scale") {
+    return factor.input.labels[item.intensity - 1] ?? null
+  }
+  return null
+}
+
+export const JournalHistoryScreen: FC = () => {
+  const colors = LOCAL_THEME.colors
+  const insets = useSafeAreaInsets()
+  const { width } = useWindowDimensions()
+  const { error, clearError, selectedDate, setSelectedDate } = useDashboard()
   const [entries, setEntries] = useState<JournalEntryResponse[]>([])
-  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [weekCounts, setWeekCounts] = useState<{ date: string; value: number }[]>([])
+
+  const lastShownError = useRef<string | null>(null)
+  const scrollY = useSharedValue(0)
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y
+  })
+  const scrollTopPadding = insets.top + SCREEN_HEADER_HEIGHT + 8
 
   useEffect(() => {
-    loadEntries()
-  }, [])
+    if (error && error !== lastShownError.current) {
+      lastShownError.current = error
+      Toast.show(error, { type: "error", position: "top", duration: 4000 })
+      clearError()
+    } else if (!error) {
+      lastShownError.current = null
+    }
+  }, [error, clearError])
 
-  async function loadEntries() {
-    // Read local-first for instant display and offline resilience.
+  useEffect(() => {
+    loadEntries(selectedDate)
+    loadWeekCounts(selectedDate)
+  }, [selectedDate])
+
+  async function loadEntries(date: string) {
     try {
       const db = openDatabase()
-      const locals = await listJournalEntriesByDate(db, todayKey())
+      const locals = await listJournalEntriesByDate(db, date)
       if (locals.length > 0) {
         setEntries(
           locals.map((r) => ({
@@ -82,18 +109,45 @@ export function JournalHistoryScreen() {
     }
 
     try {
-      const res = await fetchJournalEntries(todayKey())
+      const res = await fetchJournalEntries(date)
       setEntries(res.entries)
     } catch {}
     finally {
-      setLoading(false)
       setRefreshing(false)
     }
   }
 
-  async function handleRefresh() {
+  async function loadWeekCounts(centerDate: string) {
+    const [y, m, d] = centerDate.split("-").map(Number)
+    const anchor = new Date(y, m - 1, d, 12)
+    const dates: string[] = []
+    for (let offset = 6; offset >= 0; offset--) {
+      const date = new Date(anchor)
+      date.setDate(anchor.getDate() - offset)
+      dates.push(
+        `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`,
+      )
+    }
+    try {
+      const results = await Promise.all(
+        dates.map(async (date) => {
+          try {
+            const res = await fetchJournalEntries(date)
+            return { date, value: res.entries.length }
+          } catch {
+            return { date, value: 0 }
+          }
+        }),
+      )
+      setWeekCounts(results)
+    } catch {
+      setWeekCounts(dates.map((date) => ({ date, value: 0 })))
+    }
+  }
+
+  async function onRefresh() {
     setRefreshing(true)
-    await loadEntries()
+    await Promise.all([loadEntries(selectedDate), loadWeekCounts(selectedDate)])
   }
 
   async function handleDelete(id: string) {
@@ -118,148 +172,258 @@ export function JournalHistoryScreen() {
     ])
   }
 
-  function renderItem({ item }: { item: JournalEntryResponse }) {
-    const factor = JOURNAL_FACTORS.find((f) => f.tag === item.factorTag)
-    const iconName: keyof typeof Ionicons.glyphMap = factor?.icon ?? "ellipse-outline"
-    const color = factor?.color ?? "#888888"
-    const label = factor?.label ?? item.factorTag
+  const chartWidth = width - 48
 
-    // Build contextual detail string
-    let detail: string | null = null
-    if (factor) {
-      const { input } = factor
-      if (input.kind === "quantity") {
-        detail = `${item.intensity} ${input.unit}`
-      } else if (input.kind === "scale") {
-        detail = input.labels[item.intensity - 1] ?? null
-      }
-      // toggle: no detail needed
-    }
+  const formattedDate = (() => {
+    const [year, month, day] = selectedDate.split("-").map(Number)
+    return new Intl.DateTimeFormat("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(year, month - 1, day, 12))
+  })()
 
-    return (
-      <View style={themed($entryRow)}>
-        {/* Icon circle */}
-        <View style={[themed($iconCircle), { backgroundColor: color + "20" }]}>
-          <Ionicons name={iconName} size={18} color={color} />
-        </View>
+  const topFactor = (() => {
+    if (entries.length === 0) return null
+    const counts: Record<string, number> = {}
+    for (const e of entries) counts[e.factorTag] = (counts[e.factorTag] ?? 0) + 1
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
+    return JOURNAL_FACTORS.find((f) => f.tag === top[0])
+  })()
 
-        {/* Middle */}
-        <View style={themed($entryMiddle)}>
-          <Text size="sm" weight="semiBold" style={themed($factorLabel)}>
-            {label}
-          </Text>
-          <View style={themed($dotNoteRow)}>
-            {detail && (
-              <Text size="xxs" weight="medium" style={{ color }}>
-                {detail}
-              </Text>
-            )}
-            {!!item.note && (
-              <Text
-                size="xxs"
-                style={themed($notePreview)}
-                numberOfLines={1}
-              >
-                {item.note}
-              </Text>
-            )}
-          </View>
-        </View>
+  const weekAverage = (() => {
+    if (weekCounts.length === 0) return null
+    const total = weekCounts.reduce((sum, p) => sum + p.value, 0)
+    return Math.round((total / weekCounts.length) * 10) / 10
+  })()
 
-        {/* Right: time + delete */}
-        <View style={themed($entryRight)}>
-          <Text size="xxs" style={themed($timeText)}>
-            {formatTime(item.timestamp)}
-          </Text>
-          <TouchableOpacity
-            onPress={() => handleDelete(item.id)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
-          </TouchableOpacity>
-        </View>
-      </View>
-    )
-  }
+  const deltaVsWeek = (() => {
+    if (weekAverage == null) return null
+    return Math.round((entries.length - weekAverage) * 10) / 10
+  })()
 
-  function renderEmpty() {
-    return (
-      <View style={themed($emptyContainer)}>
-        <Ionicons name="journal-outline" size={48} color={colors.iconDim} />
-        <Text size="md" weight="medium" style={themed($emptyTitle)}>
-          No entries today
-        </Text>
-        <Text size="xs" style={themed($emptySubtitle)}>
-          Tap + on the home screen to log a factor
-        </Text>
-      </View>
-    )
-  }
+  const sevenDayPoints = weekCounts.map((p) => ({ date: p.date, value: p.value }))
+  const lineChartPoints = weekCounts.map((p) => ({
+    timestamp: `${p.date}T12:00:00Z`,
+    value: p.value,
+  }))
+
+  const labsRows = [
+    {
+      label: "Top factor",
+      value: topFactor ? topFactor.label : "—",
+    },
+    {
+      label: "Entries this week",
+      value: String(weekCounts.reduce((sum, p) => sum + p.value, 0)),
+    },
+    {
+      label: "Daily average",
+      value: weekAverage != null ? `${weekAverage}` : "—",
+    },
+    {
+      label: "Active days",
+      value: `${weekCounts.filter((p) => p.value > 0).length} / 7`,
+    },
+  ]
+
+  const addRightAction = (
+    <TouchableOpacity
+      onPress={() => router.push("/journal-entry" as any)}
+      hitSlop={12}
+      style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+    >
+      <Ionicons name="add" size={20} color={colors.text} />
+      <Text text="Log" size="xs" style={{ color: colors.text }} />
+    </TouchableOpacity>
+  )
 
   return (
-    <SafeAreaView style={themed($container)}>
-      {/* Header */}
-      <View style={themed($header)}>
-        <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={24} color={colors.text} />
-        </TouchableOpacity>
-        <Text size="xl" weight="bold" style={themed($headerTitle)}>
-          Journal
-        </Text>
-      </View>
-
-      {/* List */}
-      <FlatList
-        data={entries}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={themed($listContent)}
-        ListEmptyComponent={loading ? null : renderEmpty}
+    <View style={themed($screenWrap)}>
+      <ScreenHeader
+        title="Journal"
+        subtitle={formattedDate}
+        rightAction={addRightAction}
+        scrollY={scrollY}
+      />
+      <Animated.ScrollView
+        contentContainerStyle={[themed($container), { paddingTop: scrollTopPadding }]}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.textMuted}
+            onRefresh={onRefresh}
+            tintColor={colors.tint}
           />
         }
-      />
-    </SafeAreaView>
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+      >
+        <MetricHero
+          value={String(entries.length)}
+          valueDetail={entries.length === 1 ? "entry today" : "entries today"}
+          badge={
+            topFactor
+              ? { label: topFactor.label, tint: topFactor.color }
+              : { label: "No entries", tint: colors.textMuted }
+          }
+          delta={deltaVsWeek}
+          deltaUnit=""
+          detail="Factors you log help correlate sleep, strain, and recovery with daily inputs."
+        />
+
+        {lineChartPoints.some((p) => p.value > 0) ? (
+          <View style={{ padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
+            <Text
+              text="Entries · 7-day"
+              size="xxs"
+              style={{ color: colors.textDim, letterSpacing: 0.6, marginBottom: 8 }}
+            />
+            <InlineLineChart
+              points={lineChartPoints}
+              width={chartWidth - 28}
+              height={100}
+              stroke={JOURNAL_TINT}
+            />
+          </View>
+        ) : null}
+
+        <View>
+          <Text
+            text="Today's entries"
+            size="xs"
+            style={{ color: colors.textDim, letterSpacing: 0.4, marginBottom: 8, marginLeft: 4 }}
+          />
+          {entries.length === 0 ? (
+            <View
+              style={{
+                alignItems: "center",
+                padding: 28,
+                backgroundColor: colors.surfaceCard,
+                borderRadius: 12,
+              }}
+            >
+              <Ionicons name="journal-outline" size={32} color={colors.iconDim} />
+              <Text
+                text="Nothing logged yet today."
+                size="sm"
+                style={{ color: colors.textDim, marginTop: 10 }}
+              />
+              <Text
+                text="Tap Log in the header to add one."
+                size="xxs"
+                style={{ color: colors.textMuted, marginTop: 2 }}
+              />
+            </View>
+          ) : (
+            <View
+              style={{
+                backgroundColor: colors.surfaceCard,
+                borderRadius: 12,
+                overflow: "hidden",
+              }}
+            >
+              {entries.map((entry, i) => (
+                <EntryRow
+                  key={entry.id}
+                  entry={entry}
+                  isLast={i === entries.length - 1}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={{ padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
+          <TrendSparkline
+            label="Entries · 7-day"
+            points={sevenDayPoints}
+            currentDate={selectedDate}
+            color={JOURNAL_TINT}
+            onPressPoint={(d) => setSelectedDate(d)}
+          />
+        </View>
+
+        <LabsAccordion rows={labsRows} />
+      </Animated.ScrollView>
+    </View>
   )
 }
 
-const $container: ViewStyle = { flex: 1, backgroundColor: PALETTE.screenBackground }
-const $header: ViewStyle = {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 12,
-  paddingHorizontal: 20,
-  paddingTop: 16,
-  paddingBottom: 12,
+function EntryRow({
+  entry,
+  isLast,
+  onDelete,
+}: {
+  entry: JournalEntryResponse
+  isLast: boolean
+  onDelete: (id: string) => void
+}) {
+  const colors = LOCAL_THEME.colors
+  const factor = JOURNAL_FACTORS.find((f) => f.tag === entry.factorTag)
+  const iconName: keyof typeof Ionicons.glyphMap = factor?.icon ?? "ellipse-outline"
+  const color = factor?.color ?? colors.tint
+  const label = factor?.label ?? entry.factorTag
+  const detail = entryDetail(entry)
+
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderBottomWidth: isLast ? 0 : 1,
+        borderBottomColor: colors.surfaceCardBorder,
+      }}
+    >
+      <View
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: `${color}1F`,
+        }}
+      >
+        <Ionicons name={iconName} size={18} color={color} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text text={label} size="sm" weight="semiBold" style={{ color: colors.text }} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {detail ? (
+            <Text text={detail} size="xxs" style={{ color }} />
+          ) : null}
+          {entry.note ? (
+            <Text
+              text={entry.note}
+              size="xxs"
+              numberOfLines={1}
+              style={{ color: colors.textDim, flex: 1 }}
+            />
+          ) : null}
+        </View>
+      </View>
+      <View style={{ alignItems: "flex-end", gap: 6 }}>
+        <Text text={formatTime(entry.timestamp)} size="xxs" style={{ color: colors.textMuted }} />
+        <TouchableOpacity onPress={() => onDelete(entry.id)} hitSlop={8}>
+          <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
 }
-const $headerTitle: TextStyle = { color: PALETTE.onSurface }
-const $listContent: ViewStyle = { paddingHorizontal: 20, paddingTop: 12, gap: 10 }
-const $entryRow: ViewStyle = {
-  backgroundColor: PALETTE.surfaceElevated,
-  borderRadius: 16,
-  paddingHorizontal: 16,
-  paddingVertical: 14,
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 12,
-}
-const $iconCircle: ViewStyle = {
-  width: 36,
-  height: 36,
-  borderRadius: 18,
-  alignItems: "center",
-  justifyContent: "center",
-}
-const $entryMiddle: ViewStyle = { flex: 1, gap: 4 }
-const $factorLabel: TextStyle = { color: PALETTE.onSurface }
-const $dotNoteRow: ViewStyle = { flexDirection: "row", alignItems: "center", gap: 8 }
-const $notePreview: TextStyle = { flex: 1, color: PALETTE.textMuted }
-const $entryRight: ViewStyle = { alignItems: "flex-end", gap: 6 }
-const $timeText: TextStyle = { color: PALETTE.textMuted }
-const $emptyContainer: ViewStyle = { alignItems: "center", paddingTop: 60 }
-const $emptyTitle: TextStyle = { color: PALETTE.textMuted, marginTop: 12 }
-const $emptySubtitle: TextStyle = { color: PALETTE.textMuted, marginTop: 4 }
+
+const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.screenBackground,
+  flex: 1,
+})
+
+const $container: ThemedStyle<ViewStyle> = () => ({
+  gap: 24,
+  paddingBottom: 60,
+  paddingHorizontal: 24,
+  paddingTop: 12,
+})

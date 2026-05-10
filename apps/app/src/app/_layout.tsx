@@ -17,6 +17,7 @@ import tamaguiConfig from "../../tamagui.config"
 import { AuthProvider } from "@/context/AuthContext"
 import { ToastProviderWithViewport } from "@/components/reactx/toast"
 import { DashboardProvider } from "@/context/DashboardContext"
+import { HealthKitProvider } from "@/context/HealthKitContext"
 import { ThemeProvider, ThemedSubtree, useColorMode } from "@/context/ThemeContext"
 import { initI18n } from "@/i18n"
 import { useNavigationTheme } from "@/navigators/useNavigationTheme"
@@ -34,6 +35,13 @@ import { SyncService } from "@/services/sync/SyncService"
 import { drainOnce } from "@/services/sync/uplinkDrainer"
 import { pullDownlink } from "@/services/sync/downlinkPuller"
 import { sweepRetention } from "@/services/sync/retentionSweeper"
+import { registerBackgroundCatchupTask } from "@/services/sync/backgroundCatchupTask"
+import {
+  startAndroidForegroundService,
+  stopAndroidForegroundService,
+} from "@/services/sync/androidForegroundService"
+import { runBackgroundDrain } from "@/services/sync/backgroundSync"
+import { bleManager } from "@/services/ble/ble-manager"
 
 function RootStackLayout() {
   const navigationTheme = useNavigationTheme()
@@ -166,6 +174,53 @@ export default function RootLayout() {
     }
   }, [isDbReady])
 
+  useEffect(() => {
+    if (!isDbReady) return
+    registerBackgroundCatchupTask().catch((err) =>
+      console.warn("[bg-catchup] register failed", err),
+    )
+    const unsubscribeState = bleManager.onConnectionStateChange((state) => {
+      if (state === "ready") {
+        startAndroidForegroundService().catch((err) =>
+          console.warn("[android-fgs] start failed", err),
+        )
+      } else if (state === "disconnected") {
+        stopAndroidForegroundService().catch((err) =>
+          console.warn("[android-fgs] stop failed", err),
+        )
+      }
+    })
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    let isBackground = AppState.currentState !== "active"
+    const appStateSub = AppState.addEventListener("change", (next) => {
+      const wasForeground = !isBackground
+      isBackground = next !== "active"
+      if (wasForeground && isBackground) {
+        runBackgroundDrain(15_000).catch((err) =>
+          console.warn("[bg-flush-on-background] failed", err),
+        )
+      }
+    })
+    const unsubscribePackets = bleManager.onPacket("*", () => {
+      if (!isBackground) return
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        runBackgroundDrain(15_000).catch((err) =>
+          console.warn("[bg-packet-drain] failed", err),
+        )
+      }, 1500)
+    })
+
+    return () => {
+      unsubscribeState()
+      unsubscribePackets()
+      appStateSub.remove()
+      if (debounceTimer) clearTimeout(debounceTimer)
+      stopAndroidForegroundService().catch(() => undefined)
+    }
+  }, [isDbReady])
+
   if (!isI18nInitialized || !isDbReady) {
     return null
   }
@@ -178,9 +233,11 @@ export default function RootLayout() {
             <AuthProvider>
               <ThemeProvider>
                 <DashboardProvider>
-                  <ToastProviderWithViewport>
-                    <RootStackLayout />
-                  </ToastProviderWithViewport>
+                  <HealthKitProvider>
+                    <ToastProviderWithViewport>
+                      <RootStackLayout />
+                    </ToastProviderWithViewport>
+                  </HealthKitProvider>
                 </DashboardProvider>
               </ThemeProvider>
             </AuthProvider>

@@ -229,7 +229,7 @@ export const HomeScreen: FC = () => {
       value: homeView?.activities.recoveryIndex || "--",
       desc: "ms",
       tint: colors.ringHrv,
-      onPress: () => navigateTo("HomeMetric", "home-metric", { metric: "recovery" }),
+      onPress: () => navigateTo("HrvDetail", "hrv-detail"),
     },
     {
       key: "journal",

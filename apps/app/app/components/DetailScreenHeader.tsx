@@ -3,6 +3,8 @@ import { Ionicons } from "@expo/vector-icons"
 import { router } from "expo-router"
 import { useNavigation } from "@react-navigation/native"
 import { TouchableOpacity } from "react-native"
+
+import { LOCAL_THEME } from "@/utils/localTheme"
 import { XStack, YStack, Paragraph } from "./tamagui-primitives"
 
 type DetailScreenHeaderProps = {
@@ -14,6 +16,7 @@ type DetailScreenHeaderProps = {
 
 export const DetailScreenHeader: FC<DetailScreenHeaderProps> = ({ title, subtitle, rightAction }) => {
   const navigation = useNavigation<any>()
+  const colors = LOCAL_THEME.colors
 
   const handleBack = () => {
     if (navigation.canGoBack?.()) {
@@ -33,16 +36,16 @@ export const DetailScreenHeader: FC<DetailScreenHeaderProps> = ({ title, subtitl
           height={36}
           borderRadius={18}
           borderWidth={1}
-          backgroundColor="rgba(255,255,255,0.04)"
-          borderColor="rgba(255,255,255,0.08)"
+          backgroundColor={colors.surfaceCard}
+          borderColor={colors.surfaceCardBorder}
         >
-          <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </XStack>
       </TouchableOpacity>
       <YStack flex={1} alignItems="center" gap={2}>
-        <Paragraph fontWeight="600">{title}</Paragraph>
+        <Paragraph fontWeight="600" color={colors.text}>{title}</Paragraph>
         {subtitle ? (
-          <Paragraph fontSize={12} color="rgba(255,255,255,0.6)">
+          <Paragraph fontSize={12} color={colors.textDim}>
             {subtitle}
           </Paragraph>
         ) : null}

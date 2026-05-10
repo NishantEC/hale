@@ -13,11 +13,16 @@ export async function setLastSyncAt(
   lastSyncAt: number,
   lastSyncedRowTimestamp?: number,
 ): Promise<void> {
+  const safeLastSyncAt = Number.isFinite(lastSyncAt) ? lastSyncAt : 0
+  const safeRowTs =
+    lastSyncedRowTimestamp != null && Number.isFinite(lastSyncedRowTimestamp)
+      ? lastSyncedRowTimestamp
+      : null
   await db
     .insert(syncState)
-    .values({ tableName, lastSyncAt, lastSyncedRowTimestamp: lastSyncedRowTimestamp ?? null })
+    .values({ tableName, lastSyncAt: safeLastSyncAt, lastSyncedRowTimestamp: safeRowTs })
     .onConflictDoUpdate({
       target: syncState.tableName,
-      set: { lastSyncAt, lastSyncedRowTimestamp: lastSyncedRowTimestamp ?? null },
+      set: { lastSyncAt: safeLastSyncAt, lastSyncedRowTimestamp: safeRowTs },
     })
 }

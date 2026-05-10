@@ -13,15 +13,8 @@ import {
 
 import { isRTL } from "@/i18n"
 import { translate } from "@/i18n/translate"
+import { LOCAL_THEME } from "@/utils/localTheme"
 const $rowFlex: ViewStyle = { flexDirection: "row" }
-const PALETTE = {
-  text: "#191015",
-  textDim: "#564E4A",
-  error: "#C03403",
-  transparent: "rgba(0,0,0,0)",
-  bg: "#F4F2F1",
-  border: "#B6ACA6",
-}
 
 import { Text, TextProps } from "./Text"
 
@@ -139,7 +132,7 @@ export const TextField = forwardRef(function TextField(props: TextFieldProps, re
   } = props
   const input = useRef<TextInput>(null)
 
-  const colors = PALETTE
+  const colors = LOCAL_THEME.colors
   const disabled = TextInputProps.editable === false || status === "disabled"
 
   const placeholderContent = placeholderTx
@@ -148,11 +141,12 @@ export const TextField = forwardRef(function TextField(props: TextFieldProps, re
 
   const $containerStyles = [$containerStyleOverride]
 
-  const $labelStyles = [$labelStyle, LabelTextProps?.style]
+  const $labelStyles = [$labelStyle, { color: colors.textDim }, LabelTextProps?.style]
 
   const $inputWrapperStyles: any[] = [
     $rowFlex,
     $inputWrapperStyle,
+    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
     status === "error" && { borderColor: colors.error },
     TextInputProps.multiline && { minHeight: 112 },
     LeftAccessory && { paddingStart: 0 },
@@ -162,6 +156,7 @@ export const TextField = forwardRef(function TextField(props: TextFieldProps, re
 
   const $inputStyles: any[] = [
     $inputStyle,
+    { color: colors.text },
     disabled && { color: colors.textDim },
     isRTL && { textAlign: "right" as TextStyle["textAlign"] },
     TextInputProps.multiline && { height: "auto" },
@@ -170,6 +165,7 @@ export const TextField = forwardRef(function TextField(props: TextFieldProps, re
 
   const $helperStyles = [
     $helperStyle,
+    { color: colors.textDim },
     status === "error" && { color: colors.error },
     HelperTextProps?.style,
   ]
@@ -218,7 +214,7 @@ export const TextField = forwardRef(function TextField(props: TextFieldProps, re
           underlineColorAndroid={colors.transparent}
           textAlignVertical="top"
           placeholder={placeholderContent}
-          placeholderTextColor={colors.textDim}
+          placeholderTextColor={colors.textMuted}
           {...TextInputProps}
           editable={!disabled}
           style={($inputStyles)}
@@ -253,9 +249,7 @@ const $labelStyle: TextStyle = { marginBottom: 8 }
 const $inputWrapperStyle: ViewStyle = {
   alignItems: "flex-start",
   borderWidth: 1,
-  borderRadius: 4,
-  backgroundColor: PALETTE.bg,
-  borderColor: PALETTE.border,
+  borderRadius: 9999,
   overflow: "hidden",
 }
 
@@ -263,13 +257,12 @@ const $inputStyle: TextStyle = {
   flex: 1,
   alignSelf: "stretch",
   fontWeight: "400",
-  color: PALETTE.text,
   fontSize: 16,
   height: 24,
   paddingVertical: 0,
   paddingHorizontal: 0,
-  marginVertical: 8,
-  marginHorizontal: 12,
+  marginVertical: 12,
+  marginHorizontal: 18,
 }
 
 const $helperStyle: TextStyle = { marginTop: 8 }

@@ -47,7 +47,17 @@ export async function pullDownlink(db: NoopDatabase, opts: PullOptions): Promise
       const { rows, hasMore } = await opts.apiGet(path)
       if (rows.length === 0) break
       await upserter(db, rows)
-      const maxUpdatedAt = Math.max(...rows.map((r: any) => r.updatedAt ?? since))
+      let maxUpdatedAt = since
+      for (const r of rows) {
+        const raw = (r as any).updatedAt
+        const ts =
+          typeof raw === "number"
+            ? raw
+            : raw
+              ? new Date(raw).getTime()
+              : NaN
+        if (Number.isFinite(ts) && ts > maxUpdatedAt) maxUpdatedAt = ts
+      }
       since = maxUpdatedAt
       await setLastSyncAt(db, tableName, since)
       if (!hasMore) break

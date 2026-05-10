@@ -1,15 +1,20 @@
-import Ionicons from "@expo/vector-icons/Ionicons"
 import { Tabs } from "expo-router"
+import Ionicons from "@expo/vector-icons/Ionicons"
 
-const ACCENT = "#C3E0FF"
+import { useColorMode } from "@/context/ThemeContext"
+import { LOCAL_THEME } from "@/utils/localTheme"
 
 const TAB_CONFIG = {
   index: { icon: "home-outline", activeIcon: "home", label: "Home" },
   sleep: { icon: "moon-outline", activeIcon: "moon", label: "Sleep" },
   trends: { icon: "stats-chart-outline", activeIcon: "stats-chart", label: "Trends" },
+  settings: { icon: "settings-outline", activeIcon: "settings", label: "Settings" },
 } as const
 
 export default function WebTabsLayout() {
+  useColorMode()
+  const colors = LOCAL_THEME.colors
+
   return (
     <Tabs
       screenOptions={({ route }) => {
@@ -21,15 +26,15 @@ export default function WebTabsLayout() {
 
         return {
           headerShown: false,
-          tabBarActiveTintColor: ACCENT,
-          tabBarInactiveTintColor: "rgba(255,255,255,0.72)",
+          tabBarActiveTintColor: colors.tint,
+          tabBarInactiveTintColor: colors.textDim,
           tabBarLabelStyle: {
             fontSize: 11,
             fontWeight: "600",
           },
           tabBarStyle: {
-            backgroundColor: "#0A0A0C",
-            borderTopColor: "rgba(255,255,255,0.08)",
+            backgroundColor: colors.background,
+            borderTopColor: colors.divider,
           },
           tabBarIcon: ({ color, focused }) => (
             <Ionicons

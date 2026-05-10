@@ -28,6 +28,7 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen name="device-settings" />
+      <Stack.Screen name="hrv-detail" />
       <Stack.Screen
         name="journal-entry"
         options={{

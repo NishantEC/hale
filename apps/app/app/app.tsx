@@ -30,6 +30,7 @@ import tamaguiConfig from "../tamagui.config"
 
 import { AuthProvider } from "./context/AuthContext"
 import { DashboardProvider } from "./context/DashboardContext"
+import { HealthKitProvider } from "./context/HealthKitContext"
 import { initI18n } from "./i18n"
 import { AppNavigator } from "./navigators/AppNavigator"
 import { useNavigationPersistence } from "./navigators/navigationUtilities"
@@ -204,11 +205,13 @@ export function App() {
           <KeyboardProvider>
             <AuthProvider>
               <DashboardProvider>
-                <AppNavigator
-                  linking={linking}
-                  initialState={initialNavigationState}
-                  onStateChange={onNavigationStateChange}
-                />
+                <HealthKitProvider>
+                  <AppNavigator
+                    linking={linking}
+                    initialState={initialNavigationState}
+                    onStateChange={onNavigationStateChange}
+                  />
+                </HealthKitProvider>
               </DashboardProvider>
             </AuthProvider>
           </KeyboardProvider>

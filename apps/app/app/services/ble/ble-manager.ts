@@ -7,6 +7,7 @@ import {
   ConnectionState, WhoopPacket, ScannedDevice,
 } from './packet-types';
 import { PacketAssembler } from './packet-assembler';
+import { runBackgroundDrain } from '../sync/backgroundSync';
 
 const PREFERRED_DEVICE_KEY = 'noop.preferredDeviceId';
 const SCAN_TIMEOUT_MS = 15000;
@@ -31,13 +32,48 @@ class WhoopBleManager {
   private pendingAutoConnect = false;
 
   constructor() {
-    this.manager = new RNBleManager();
+    this.manager = new RNBleManager({
+      restoreStateIdentifier: 'noop.strap.ble',
+      restoreStateFunction: (restoredState) => {
+        this.handleRestoreState(restoredState).catch((err) => {
+          console.warn('[ble] restoreState failed', err);
+        });
+      },
+    });
     this.stateSubscription = this.manager.onStateChange((state) => {
       if (state === State.PoweredOn && this.pendingAutoConnect && !this.manualDisconnect) {
         this.pendingAutoConnect = false;
         this.autoConnect().catch(() => undefined);
       }
     }, true);
+  }
+
+  private async handleRestoreState(
+    restoredState: { connectedPeripherals?: Device[] } | null,
+  ): Promise<void> {
+    const peripheral = restoredState?.connectedPeripherals?.[0];
+    if (!peripheral) return;
+    this.device = peripheral;
+    this.manualDisconnect = false;
+    this.setState('discovering');
+    try {
+      await peripheral.discoverAllServicesAndCharacteristics();
+      this.setupNotifications(peripheral);
+      this.setState('ready');
+      peripheral.onDisconnected(() => {
+        this.cleanup();
+        this.setState('disconnected');
+        if (!this.manualDisconnect) {
+          this.scheduleReconnect().catch(() => undefined);
+        }
+      });
+      runBackgroundDrain(20_000).catch((err) =>
+        console.warn('[ble-restore] background drain failed', err),
+      );
+    } catch (err) {
+      console.warn('[ble] restored peripheral re-attach failed', err);
+      this.setState('disconnected');
+    }
   }
 
   get connectionState(): ConnectionState {

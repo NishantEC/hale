@@ -22,15 +22,29 @@
       "backgroundImage": "./assets/images/app-icon-android-adaptive-background.png"
     },
     "allowBackup": false,
-    "edgeToEdgeEnabled": true
+    "edgeToEdgeEnabled": true,
+    "permissions": [
+      "android.permission.BLUETOOTH_CONNECT",
+      "android.permission.BLUETOOTH_SCAN",
+      "android.permission.ACCESS_FINE_LOCATION",
+      "android.permission.FOREGROUND_SERVICE",
+      "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+      "android.permission.FOREGROUND_SERVICE_HEALTH",
+      "android.permission.WAKE_LOCK",
+      "android.permission.POST_NOTIFICATIONS"
+    ]
   },
   "ios": {
     "icon": "./assets/images/app-icon-ios.png",
     "supportsTablet": false,
     "bundleIdentifier": "com.noopbase.noop.app",
     "infoPlist": {
-      "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to your WHOOP strap",
-      "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to connect to your WHOOP strap"
+      "NSBluetoothAlwaysUsageDescription": "Noop uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date.",
+      "NSBluetoothPeripheralUsageDescription": "Noop uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date.",
+      "NSHealthShareUsageDescription": "Noop reads steps, workouts, heart rate, sleep, and other Apple Health data so it can blend Apple Watch and iPhone signals with your WHOOP recovery and strain.",
+      "NSHealthUpdateUsageDescription": "Noop writes recovery, strain, sleep stages, and workout data back to Apple Health so other apps can use them.",
+      "NSMotionUsageDescription": "Noop reads iPhone barometer and motion data to detect hill climbs, stair climbing, and other altitude-aware activities the WHOOP strap can't see.",
+      "UIBackgroundModes": ["bluetooth-central", "processing"]
     },
     "appleTeamId": "LGMF2TG7P6"
   },
@@ -44,12 +58,12 @@
     [
       "react-native-ble-plx",
       {
-        "isBackgroundEnabled": false,
+        "isBackgroundEnabled": true,
         "modes": [
           "peripheral",
           "central"
         ],
-        "bluetoothAlwaysPermission": "This app uses Bluetooth to connect to your WHOOP strap"
+        "bluetoothAlwaysPermission": "Noop uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date."
       }
     ],
     [
@@ -70,7 +84,16 @@
         }
       }
     ],
-    "expo-build-properties"
+    [
+      "@kingstinct/react-native-healthkit",
+      {
+        "NSHealthShareUsageDescription": "Noop reads steps, workouts, heart rate, sleep, and other Apple Health data so it can blend Apple Watch and iPhone signals with your WHOOP recovery and strain.",
+        "NSHealthUpdateUsageDescription": "Noop writes recovery, strain, sleep stages, and workout data back to Apple Health so other apps can use them.",
+        "background": true
+      }
+    ],
+    "expo-build-properties",
+    "expo-background-task"
   ],
   "experiments": {
     "tsconfigPaths": true

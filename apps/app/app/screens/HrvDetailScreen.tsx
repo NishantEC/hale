@@ -14,16 +14,16 @@ import { VitalCard } from "@/components/VitalCard"
 import { useDashboard } from "@/context/DashboardContext"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
-const STRAIN_TINT = "#ffa42b"
-const STRESS_TINT = "#f87171"
+const HRV_TINT = "#539df5"
+const RHR_TINT = "#f87171"
 
-export const StrainActivityScreen: FC = () => {
+export const HrvDetailScreen: FC = () => {
   const colors = LOCAL_THEME.colors
   const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const {
     homeView,
-    liveDeviceState,
+    sleepView,
     isRefreshing,
     refreshDashboard,
     error,
@@ -60,51 +60,54 @@ export const StrainActivityScreen: FC = () => {
     }).format(new Date(year, month - 1, day, 12))
   })()
 
-  const strainValue = homeView?.rings.strain.value ?? "--"
-  const strainNumeric = parseFloat(strainValue)
-  const validStrain = Number.isFinite(strainNumeric)
+  const lookupSleepMetric = (label: string): string => {
+    const m = sleepView?.metrics.find((x) => x.label === label)
+    return m?.value ?? "--"
+  }
+
+  // Prefer the sleep view's HRV (RMSSD) — it's the authoritative nightly
+  // measurement; fall back to homeView.activities.recoveryIndex.
+  const hrvValueRaw =
+    lookupSleepMetric("HRV (RMSSD)") !== "--"
+      ? lookupSleepMetric("HRV (RMSSD)")
+      : homeView?.activities.recoveryIndex ?? "--"
+  const hrvNumeric = parseFloat(hrvValueRaw)
+  const validHrv = Number.isFinite(hrvNumeric)
+  const hrvDelta = sleepView?.vitalsDelta?.hrv ?? null
 
   const classification = (() => {
-    if (!validStrain) return { label: "No data", tint: colors.textMuted }
-    if (strainNumeric >= 18) return { label: "All-out", tint: "#ef4444" }
-    if (strainNumeric >= 14) return { label: "Strenuous", tint: "#ffa42b" }
-    if (strainNumeric >= 10) return { label: "Moderate", tint: "#fbbf24" }
-    if (strainNumeric >= 6) return { label: "Light", tint: "#4ade80" }
-    return { label: "Minimal", tint: colors.textDim }
+    if (!validHrv) return { label: "Awaiting data", tint: colors.textMuted }
+    if (hrvNumeric >= 60) return { label: "Elevated", tint: "#4ade80" }
+    if (hrvNumeric >= 30) return { label: "Normal", tint: HRV_TINT }
+    return { label: "Low", tint: "#f87171" }
   })()
 
-  const trendPoints = homeView?.strainTrend ?? []
-  const sevenDayStrain = trendPoints.map((p) => ({
+  // HRV trend: synthesize from sleepView.sleepScoreTrend timestamps + the
+  // current night's HRV value (a flat line until per-night HRV trend exists).
+  // When richer trend data is exposed, swap in here.
+  const hrvTrendPoints =
+    sleepView?.sleepScoreTrend?.map((p) => ({
+      date: p.timestamp.slice(0, 10),
+      value: validHrv ? hrvNumeric : 0,
+    })) ?? []
+
+  // RHR trend reuses the recovery (general health) trend as a stand-in.
+  const rhrTrendPoints = (homeView?.trendSummary.samples ?? []).map((p) => ({
     date: p.timestamp.slice(0, 10),
     value: p.value,
   }))
-  const sevenDayStress = (homeView?.stressTrend ?? []).map((p) => ({
-    date: p.timestamp.slice(0, 10),
-    value: p.value,
-  }))
-
-  const strainDelta = (() => {
-    const priors = trendPoints
-      .filter((p) => !p.timestamp.startsWith(selectedDate))
-      .map((p) => p.value)
-      .filter((v) => Number.isFinite(v))
-    if (priors.length < 3 || !validStrain) return null
-    const mean = priors.reduce((a, b) => a + b, 0) / priors.length
-    return Math.round((strainNumeric - mean) * 10) / 10
-  })()
 
   const labsRows = [
-    { label: "Training Load Ratio", value: homeView?.activities.trainingLoad ?? "--" },
-    { label: "Load Risk Zone", value: homeView?.activities.trainingLoadRiskZone ?? "--" },
-    { label: "Stress Load", value: homeView?.activities.stress ?? "--" },
-    { label: "SpO₂", value: homeView?.activities.spo2 ?? "--" },
-    { label: "SpO₂ Dips", value: homeView?.activities.spo2Dips ?? "--" },
-    { label: "Active Minutes", value: homeView?.activities.totalActiveMinutes ?? "--" },
+    { label: "Skin Temp Δ", value: lookupSleepMetric("Skin Temp Δ") },
+    { label: "Respiratory Rate", value: lookupSleepMetric("Respiratory Rate") },
+    { label: "Blood Oxygen", value: lookupSleepMetric("Blood Oxygen") },
+    { label: "Confidence", value: homeView?.confidence.confidence ?? "--" },
+    { label: "Pipeline", value: homeView?.confidence.pipelineStatus ?? "--" },
   ]
 
   return (
     <View style={themed($screenWrap)}>
-      <ScreenHeader title="Strain" subtitle={formattedDate} scrollY={scrollY} />
+      <ScreenHeader title="HRV" subtitle={formattedDate} scrollY={scrollY} />
       <Animated.ScrollView
         contentContainerStyle={[themed($container), { paddingTop: scrollTopPadding }]}
         refreshControl={
@@ -118,60 +121,64 @@ export const StrainActivityScreen: FC = () => {
         scrollEventThrottle={16}
       >
         <MetricHero
-          value={validStrain ? strainNumeric.toFixed(1) : "--"}
-          valueDetail="0 – 21 scale"
+          value={validHrv ? `${Math.round(hrvNumeric)}` : "--"}
+          valueDetail="RMSSD · ms"
           badge={{ label: classification.label, tint: classification.tint }}
-          delta={strainDelta}
-          deltaUnit=""
-          detail={`${homeView?.activities.totalActiveMinutes ?? "--"} active min · ${homeView?.activities.activityCount ?? 0} activities logged`}
+          delta={hrvDelta}
+          deltaUnit="ms"
+          detail="Heart-rate variability measured during sleep. Higher generally indicates better autonomic recovery."
         />
 
-        {sevenDayStrain.length ? (
-          <View
-            style={{
-              padding: 14,
-              backgroundColor: colors.surfaceCard,
-              borderRadius: 12,
-            }}
-          >
+        {hrvTrendPoints.length ? (
+          <View style={{ padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
             <Text
-              text="Strain · 7-day"
+              text="HRV · 7-night"
               size="xxs"
               style={{ color: colors.textDim, letterSpacing: 0.6, marginBottom: 8 }}
             />
             <InlineLineChart
-              points={homeView?.strainTrend ?? []}
+              points={
+                sleepView?.sleepScoreTrend?.map((p) => ({
+                  timestamp: p.timestamp,
+                  value: validHrv ? hrvNumeric : 0,
+                })) ?? []
+              }
               width={chartWidth - 28}
               height={120}
-              stroke={STRAIN_TINT}
+              stroke={HRV_TINT}
             />
           </View>
         ) : null}
 
         <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
           <VitalCard
-            label="Live HR"
-            value={liveDeviceState.realtimeHeartRate ? `${liveDeviceState.realtimeHeartRate}` : "--"}
-            unit="bpm"
-            delta={null}
+            label="HRV (RMSSD)"
+            value={validHrv ? `${Math.round(hrvNumeric)}` : "--"}
+            unit="ms"
+            delta={hrvDelta}
+            deltaUnit="ms"
           />
           <VitalCard
-            label="Stress"
-            value={homeView?.activities.stress ?? "--"}
-            delta={null}
+            label="Resting HR"
+            value={lookupSleepMetric("Resting HR")}
+            unit="bpm"
+            delta={sleepView?.vitalsDelta?.rhr ?? null}
+            deltaUnit="bpm"
+            deltaPositiveIsGood={false}
           />
         </View>
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
           <VitalCard
             label="Recovery"
-            value={homeView?.activities.recoveryIndex ?? "--"}
-            unit="ms"
+            value={homeView?.rings.recovery.value ?? "--"}
+            unit="%"
             delta={null}
           />
           <VitalCard
-            label="Load Pressure"
-            value={homeView?.todayOverview.loadPressure ?? "--"}
-            delta={null}
+            label="Sleep Efficiency"
+            value={lookupSleepMetric("Efficiency")}
+            delta={sleepView?.vitalsDelta?.efficiency ?? null}
+            deltaUnit="%"
           />
         </View>
 
@@ -184,18 +191,18 @@ export const StrainActivityScreen: FC = () => {
           }}
         >
           <TrendSparkline
-            label="Strain · 7-day"
-            points={sevenDayStrain}
+            label="HRV · 7-night"
+            points={hrvTrendPoints}
             currentDate={selectedDate}
-            color={STRAIN_TINT}
+            color={HRV_TINT}
             onPressPoint={(d) => setSelectedDate(d)}
           />
           <View style={{ height: 12 }} />
           <TrendSparkline
-            label="Stress · 7-day"
-            points={sevenDayStress}
+            label="Recovery · 7-day"
+            points={rhrTrendPoints}
             currentDate={selectedDate}
-            color={STRESS_TINT}
+            color={RHR_TINT}
             onPressPoint={(d) => setSelectedDate(d)}
           />
         </View>
