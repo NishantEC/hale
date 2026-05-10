@@ -92,15 +92,49 @@ export class ViewsService {
     const liveDateLabel = `${this.formatSelectedDateTitle(data.selectedDate)} · ${this.formatSelectedDateSubtitle(data.selectedDate)}`;
     const baselineReady = (data.baselineProfile?.nightsUsed ?? 0) >= 5;
 
-    const sleepAttainmentPercent = this.computeSleepAttainmentPercent(
-      selectedDetection?.durationHours ?? null,
-      data.sleepPlan?.targetSleepMinutes ?? 480,
+    const selectedStage = this.findSleepByDayOrLatestForToday(
+      data.sleepStages,
+      'nightDate',
+      data.selectedKey,
+      data.selectedDate,
     );
+    const homeSleepScore =
+      selectedDetection == null
+        ? null
+        : computeSleepScoreForNight(
+            selectedDetection.durationHours,
+            data.sleepPlan?.targetSleepMinutes ?? 480,
+            selectedStage ? this.toStageSummary(selectedStage) : null,
+            this.toDetectionSummary(selectedDetection),
+            selectedFeature == null
+              ? null
+              : {
+                  nightDate: selectedFeature.nightDate,
+                  restingHeartRate: selectedFeature.restingHeartRate,
+                  rmssd: selectedFeature.rmssd,
+                  sdnn: selectedFeature.sdnn,
+                  respiratoryRate: selectedFeature.respiratoryRate,
+                  continuity: selectedFeature.continuity,
+                  regularity: selectedFeature.regularity,
+                  validCoverage: selectedFeature.validCoverage,
+                  confidenceRaw: selectedFeature.confidenceRaw,
+                  sleepEstimateHours: selectedFeature.sleepEstimateHours,
+                  sourceBlend: selectedFeature.sourceBlend,
+                },
+            {
+              restingHeartRate: data.baselineProfile?.restingHeartRate ?? 0,
+              rmssd: data.baselineProfile?.rmssd ?? 0,
+              sdnn: data.baselineProfile?.sdnn ?? 0,
+              nightsUsed: data.baselineProfile?.nightsUsed ?? 0,
+              isWarmedUp: (data.baselineProfile?.nightsUsed ?? 0) >= 5,
+              maxHeartRate: data.baselineProfile?.maxHeartRate ?? null,
+            },
+          );
 
     const rings = {
       sleep: {
-        value: sleepAttainmentPercent == null ? '--' : `${Math.round(sleepAttainmentPercent)}%`,
-        progress: this.clamp01((sleepAttainmentPercent ?? 0) / 100),
+        value: homeSleepScore == null ? '--' : `${homeSleepScore}`,
+        progress: this.clamp01((homeSleepScore ?? 0) / 100),
       },
       recovery: {
         value: selectedScore ? `${selectedScore.dailyBalance}%` : '--',

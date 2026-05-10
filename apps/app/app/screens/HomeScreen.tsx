@@ -200,9 +200,7 @@ export const HomeScreen: FC = () => {
   })
 
   const recoveryProgress = homeView?.rings.recovery.progress ?? 0
-  const recoveryLabelText = homeView?.rings.recovery.value
-    ? `${homeView.rings.recovery.value}%`
-    : "--"
+  const recoveryLabelText = homeView?.rings.recovery.value ?? "--"
   const recoveryNumeric = homeView?.rings.recovery.value
     ? parseFloat(homeView.rings.recovery.value)
     : null
