@@ -24,6 +24,7 @@ import { DailyScore } from '../wellness/entities/daily-score.entity.js';
 import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
 import { UpdateSleepPlanDto } from './dto/update-sleep-plan.dto.js';
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
+import { deltaVsWeek } from './delta.js';
 
 type DashboardData = {
   selectedDate: Date;
@@ -385,6 +386,50 @@ export class ViewsService {
       })
       .filter(Boolean);
 
+    const priorScoreValues = data.dailyScores
+      .filter((s) => this.dayKey(s.dayDate) !== data.selectedKey)
+      .slice(-7)
+      .map((s) => s.dailyBalance);
+
+    const priorFeatures = data.nightFeatures
+      .filter((f) => this.dayKey(f.nightDate) !== data.selectedKey)
+      .slice(-7);
+
+    const priorMetrics = data.dailyMetrics
+      .filter((m) => this.dayKey(m.dayDate) !== data.selectedKey)
+      .slice(-7);
+
+    const priorDetections = data.sleepDetections
+      .filter((d) => this.dayKey(d.nightDate) !== data.selectedKey)
+      .slice(-7);
+
+    const score = {
+      value: selectedScore?.dailyBalance ?? null,
+      label: selectedScore?.recommendation ?? 'Unknown',
+      confidence: selectedScore?.confidence ?? 'Low',
+      detail: selectedScore?.detail ?? '',
+      deltaVsWeek: deltaVsWeek(selectedScore?.dailyBalance ?? null, priorScoreValues),
+    };
+
+    const vitalsDelta = {
+      efficiency: deltaVsWeek(
+        selectedDetection?.continuity ?? null,
+        priorDetections.map((d) => d.continuity),
+      ),
+      rhr: deltaVsWeek(
+        selectedFeature?.restingHeartRate ?? null,
+        priorFeatures.map((f) => f.restingHeartRate),
+      ),
+      hrv: deltaVsWeek(
+        selectedFeature?.rmssd ?? null,
+        priorFeatures.map((f) => f.rmssd),
+      ),
+      skinTempDelta: deltaVsWeek(
+        selectedMetric?.skinTempDeltaCelsius ?? null,
+        priorMetrics.map((m) => m.skinTempDeltaCelsius),
+      ),
+    };
+
     return {
       selectedDate: data.selectedKey,
       selectedDateTitle: this.formatSelectedDateTitle(data.selectedDate),
@@ -505,6 +550,8 @@ export class ViewsService {
         disclaimer:
           'Wellness estimates use wearable PPG trends and are not medical or diagnostic outputs.',
       },
+      score,
+      vitalsDelta,
     };
   }
 
