@@ -3,12 +3,10 @@ import { FC, useCallback, useEffect, useMemo, useState } from "react"
 import {
   Alert,
   Linking,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
-  TextInput,
   TextStyle,
   View,
   ViewStyle,
@@ -24,6 +22,7 @@ import { Text } from "@/components/Text"
 import { useAuth } from "@/context/AuthContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { ColorMode, useColorMode } from "@/context/ThemeContext"
+import { DateOfBirthSheet } from "@/components/DateOfBirthSheet"
 import { fetchProfile, updateProfile, type UserProfileData } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
@@ -38,8 +37,7 @@ export const SettingsScreen: FC = () => {
   const [now, setNow] = useState(Date.now())
   const [refreshing, setRefreshing] = useState(false)
   const [profile, setProfile] = useState<UserProfileData | null>(null)
-  const [dobModalOpen, setDobModalOpen] = useState(false)
-  const [dobDraft, setDobDraft] = useState("")
+  const [dobSheetOpen, setDobSheetOpen] = useState(false)
   const [dobSaving, setDobSaving] = useState(false)
 
   const scrollY = useSharedValue(0)
@@ -70,32 +68,29 @@ export const SettingsScreen: FC = () => {
   }, [])
 
   const openDobEditor = useCallback(() => {
-    setDobDraft(profile?.dateOfBirth ?? "")
-    setDobModalOpen(true)
-  }, [profile?.dateOfBirth])
+    setDobSheetOpen(true)
+  }, [])
 
-  const saveDob = useCallback(async () => {
-    const trimmed = dobDraft.trim()
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      Alert.alert("Invalid date", "Please enter your date of birth as YYYY-MM-DD.")
-      return
-    }
-    const dob = new Date(`${trimmed}T00:00:00.000Z`)
-    if (Number.isNaN(dob.getTime()) || dob > new Date()) {
-      Alert.alert("Invalid date", "Please enter a real date in the past.")
-      return
-    }
-    setDobSaving(true)
-    try {
-      const updated = await updateProfile({ dateOfBirth: trimmed })
-      setProfile(updated)
-      setDobModalOpen(false)
-    } catch (err: any) {
-      Alert.alert("Couldn't save", err?.message ?? "Try again")
-    } finally {
-      setDobSaving(false)
-    }
-  }, [dobDraft])
+  const saveDob = useCallback(
+    async (iso: string) => {
+      const dob = new Date(`${iso}T00:00:00.000Z`)
+      if (Number.isNaN(dob.getTime()) || dob > new Date()) {
+        Alert.alert("Invalid date", "Please pick a real date in the past.")
+        return
+      }
+      setDobSaving(true)
+      try {
+        const updated = await updateProfile({ dateOfBirth: iso })
+        setProfile(updated)
+        setDobSheetOpen(false)
+      } catch (err: any) {
+        Alert.alert("Couldn't save", err?.message ?? "Try again")
+      } finally {
+        setDobSaving(false)
+      }
+    },
+    [],
+  )
 
   const onRefresh = useCallback(() => {
     setRefreshing(true)
@@ -553,81 +548,13 @@ export const SettingsScreen: FC = () => {
 
       <BlurHeader title="Settings" scrollY={scrollY} fadeOver={64} />
 
-      <Modal
-        visible={dobModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDobModalOpen(false)}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.55)",
-            justifyContent: "center",
-            paddingHorizontal: 28,
-          }}
-        >
-          <View
-            style={{
-              backgroundColor: colors.surfaceCard,
-              borderColor: colors.surfaceCardBorder,
-              borderWidth: 1,
-              borderRadius: 16,
-              padding: 22,
-              gap: 14,
-            }}
-          >
-            <Text text="Date of Birth" style={{ color: colors.text, fontSize: 18, fontWeight: "700" }} />
-            <Text
-              text="Used to compute your Healthspan. Stays private to your account."
-              style={{ color: colors.textDim, fontSize: 13, lineHeight: 18 }}
-            />
-            <TextInput
-              value={dobDraft}
-              onChangeText={setDobDraft}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numbers-and-punctuation"
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={{
-                color: colors.text,
-                fontSize: 16,
-                paddingVertical: 12,
-                paddingHorizontal: 14,
-                borderRadius: 10,
-                backgroundColor: colors.surfaceSubtle,
-                borderWidth: 1,
-                borderColor: colors.surfaceCardBorder,
-              }}
-            />
-            <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 6 }}>
-              <Pressable
-                onPress={() => setDobModalOpen(false)}
-                style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 }}
-              >
-                <Text text="Cancel" style={{ color: colors.textDim, fontSize: 14, fontWeight: "600" }} />
-              </Pressable>
-              <Pressable
-                onPress={saveDob}
-                disabled={dobSaving}
-                style={{
-                  paddingHorizontal: 18,
-                  paddingVertical: 10,
-                  borderRadius: 10,
-                  backgroundColor: colors.tint,
-                  opacity: dobSaving ? 0.6 : 1,
-                }}
-              >
-                <Text
-                  text={dobSaving ? "Saving…" : "Save"}
-                  style={{ color: colors.background, fontSize: 14, fontWeight: "700" }}
-                />
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <DateOfBirthSheet
+        visible={dobSheetOpen}
+        initialIso={profile?.dateOfBirth ?? null}
+        onCancel={() => setDobSheetOpen(false)}
+        onSubmit={saveDob}
+        saving={dobSaving}
+      />
     </SafeAreaView>
   )
 }
