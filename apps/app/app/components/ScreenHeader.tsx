@@ -47,6 +47,12 @@ export const ScreenHeader: FC<ScreenHeaderProps> = ({
     return { opacity }
   })
 
+  const blurStyle = useAnimatedStyle(() => {
+    if (!scrollY) return { opacity: 0 }
+    const opacity = interpolate(scrollY.value, [0, 24], [0, 1], Extrapolation.CLAMP)
+    return { opacity }
+  })
+
   const handleBack = () => {
     if (onBackPress) return onBackPress()
     if (router.canGoBack()) router.back()
@@ -63,20 +69,22 @@ export const ScreenHeader: FC<ScreenHeaderProps> = ({
       pointerEvents="box-none"
       style={[$wrap, { paddingTop: insets.top, height: insets.top + SCREEN_HEADER_HEIGHT }]}
     >
-      {Platform.OS === "ios" ? (
-        <BlurView
-          intensity={60}
-          tint={isDark ? "dark" : "light"}
-          style={StyleSheet.absoluteFill}
-        />
-      ) : (
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: isDark ? "rgba(10,10,12,0.86)" : "rgba(245,242,238,0.92)" },
-          ]}
-        />
-      )}
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, blurStyle]}>
+        {Platform.OS === "ios" ? (
+          <BlurView
+            intensity={60}
+            tint={isDark ? "dark" : "light"}
+            style={StyleSheet.absoluteFill}
+          />
+        ) : (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: isDark ? "rgba(10,10,12,0.86)" : "rgba(245,242,238,0.92)" },
+            ]}
+          />
+        )}
+      </Animated.View>
 
       <View style={[$row, { height: SCREEN_HEADER_HEIGHT }]}>
         <View style={$side}>{left}</View>
