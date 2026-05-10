@@ -20,6 +20,11 @@ let sessionToken: string | null = null;
 function withBaseHeaders(headers: HeadersInit = {}): HeadersInit {
   return {
     'ngrok-skip-browser-warning': 'true',
+    // React Native's fetch doesn't send Origin by default. better-auth's
+    // CSRF check rejects requests with a missing/null origin (403). Send
+    // the API base URL itself so the server treats this as a trusted
+    // same-origin request.
+    Origin: BASE_URL,
     ...headers,
   };
 }

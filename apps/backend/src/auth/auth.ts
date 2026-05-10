@@ -37,6 +37,11 @@ export const auth = betterAuth({
     'http://localhost:5173',
     'http://localhost:5175',
     'https://4c2c-2a09-bac1-36e0-1468-00-243-a9.ngrok-free.app',
+    // Production hostnames used by the iOS app — the React Native client
+    // sets Origin to the BASE_URL it's configured against so the server
+    // sees a same-origin request.
+    'https://api.noop.enform.co',
+    'https://noop-backend-z7lfiw76rq-uc.a.run.app',
     ...extraTrustedOrigins,
   ],
 });
