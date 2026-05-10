@@ -1179,6 +1179,24 @@ export class ViewsService {
         detail: 'Uth formula (passive)',
       },
       {
+        // Strain Coach target band — recovery → recommended day-strain.
+        // Center mapped linearly across recovery 0-100 (4 → 17 strain),
+        // band width ±3. WHOOP publishes the existence of this mapping
+        // but not the slope; this matches their reported example
+        // (8.3–16.3 at 70% recovery → center ~12.3).
+        label: 'Today’s Strain Target',
+        value: (() => {
+          if (!selectedScore) return '--';
+          const center = 4 + 0.13 * selectedScore.dailyBalance;
+          const lo = Math.max(0, center - 3);
+          const hi = Math.min(21, center + 3);
+          return `${lo.toFixed(1)}–${hi.toFixed(1)}`;
+        })(),
+        detail: selectedScore
+          ? `Recovery ${selectedScore.dailyBalance}% → optimal band`
+          : null,
+      },
+      {
         label: 'HRV (RMSSD)',
         value: selectedFeature == null ? '--' : `${Math.round(selectedFeature.rmssd)} ms`,
         detail:
