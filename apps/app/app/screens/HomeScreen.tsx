@@ -24,6 +24,8 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BlurHeader } from "@/components/BlurHeader"
+import { DateSwitcher } from "@/components/DateSwitcher"
+import { AppleHealthCard } from "@/components/home/AppleHealthCard"
 import { RecoveryHero } from "@/components/home/RecoveryHero"
 import { StatGrid, type StatGridItem } from "@/components/home/StatGrid"
 import { TodayTape } from "@/components/home/TodayTape"
@@ -31,6 +33,7 @@ import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
+import { useHealthKit } from "@/context/HealthKitContext"
 import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopClient"
 import { buildTodayTape, type TapeEvent } from "@/utils/buildTodayTape"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
@@ -92,6 +95,7 @@ export const HomeScreen: FC = () => {
     refreshDashboard,
     clearError,
   } = useDashboard()
+  const { setActiveDate: setHealthKitActiveDate } = useHealthKit()
   const [isHorizontalDaySwipeActive, setIsHorizontalDaySwipeActive] = useState(false)
   const [journalEntries, setJournalEntries] = useState<JournalEntryResponse[]>([])
   const lastShownError = useRef<string | null>(null)
@@ -101,6 +105,10 @@ export const HomeScreen: FC = () => {
       .then((res) => setJournalEntries(res.entries))
       .catch(() => setJournalEntries([]))
   }, [selectedDate])
+
+  useEffect(() => {
+    setHealthKitActiveDate(selectedDate)
+  }, [selectedDate, setHealthKitActiveDate])
 
   useEffect(() => {
     if (error && error !== lastShownError.current) {
@@ -361,6 +369,20 @@ export const HomeScreen: FC = () => {
                 <StatGrid items={statItems} />
 
                 <Text
+                  text="APPLE HEALTH"
+                  style={{
+                    color: colors.textDim,
+                    fontSize: 11,
+                    fontWeight: "700",
+                    letterSpacing: 1.4,
+                    marginTop: 28,
+                    marginBottom: 8,
+                    marginLeft: 2,
+                  }}
+                />
+                <AppleHealthCard />
+
+                <Text
                   text="TODAY'S TAPE"
                   style={{
                     color: colors.textDim,
@@ -395,37 +417,6 @@ export const HomeScreen: FC = () => {
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
       </SafeAreaView>
     </PanGestureHandler>
-  )
-}
-
-function DateSwitcher({
-  title,
-  onPrevious,
-  onNext,
-}: {
-  title: string
-  onPrevious: () => void
-  onNext: () => void
-}) {
-  const colors = LOCAL_THEME.colors
-
-  return (
-    <View style={themed($dateSwitcher)}>
-      <TouchableOpacity style={themed($switcherButton)} onPress={onPrevious}>
-        <Ionicons name="chevron-back" size={20} color={colors.text} />
-      </TouchableOpacity>
-      <Animated.Text
-        key={title}
-        entering={FadeInRight.duration(200)}
-        exiting={FadeOutLeft.duration(150)}
-        style={themed($switcherTitle)}
-      >
-        {title}
-      </Animated.Text>
-      <TouchableOpacity style={themed($switcherButton)} onPress={onNext}>
-        <Ionicons name="chevron-forward" size={20} color={colors.text} />
-      </TouchableOpacity>
-    </View>
   )
 }
 
@@ -543,35 +534,6 @@ const $tabBarFab: ViewStyle = {
     android: { elevation: 10 },
   }),
 }
-
-const $dateSwitcher: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  backgroundColor: colors.surfaceSubtle,
-  borderColor: colors.surfaceCardBorder,
-  borderRadius: 999,
-  borderWidth: 1,
-  flexDirection: "row",
-  paddingHorizontal: 6,
-  paddingVertical: 4,
-})
-
-const $switcherButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  backgroundColor: colors.surfaceCard,
-  borderRadius: 999,
-  height: 26,
-  justifyContent: "center",
-  width: 26,
-})
-
-const $switcherTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-  fontSize: 13,
-  lineHeight: 16,
-  minWidth: 82,
-  paddingHorizontal: 8,
-  textAlign: "center",
-})
 
 const $devicePill: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
