@@ -9,6 +9,7 @@ import { useDashboard } from "@/context/DashboardContext"
 import { openDatabase } from "@/services/db"
 import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
 import {
+  apiPost,
   DebugOverview,
   DebugSleepNight,
   fetchDebugOverview,
@@ -17,6 +18,7 @@ import {
   INSPECTOR_WEB_URL,
   runDebugPipeline,
 } from "@/services/api/noopClient"
+import { drainLoop } from "@/services/sync/uplinkDrainer"
 import { useAuth } from "@/context/AuthContext"
 import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 
@@ -105,6 +107,27 @@ export const DebugInspectorScreen: FC = () => {
     )
   }, [refreshInspector])
 
+  const handleForceUpload = useCallback(async () => {
+    setBanner("Uploading to backend…")
+    setIsLoading(true)
+    setError(null)
+    try {
+      const db = openDatabase()
+      const { drained } = await drainLoop(db, {
+        post: (tableName, payloads) =>
+          apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
+        batchSize: 200,
+        backfillLimit: 500,
+      })
+      setBanner(`Uploaded ${drained} records to backend.`)
+      await refreshInspector()
+    } catch (err: any) {
+      setError(err?.message ?? "Upload failed")
+    } finally {
+      setIsLoading(false)
+    }
+  }, [refreshInspector])
+
   const handleRunPipeline = useCallback(async () => {
     setIsLoading(true)
     setError(null)
@@ -151,14 +174,17 @@ export const DebugInspectorScreen: FC = () => {
 
       <View style={themed($buttonRow)}>
         <ActionButton label={isLoading ? "Refreshing…" : "Refresh"} onPress={() => void refreshInspector()} />
-        <ActionButton label="Run Sync Now" onPress={() => void handleSync()} />
+        <ActionButton label="Sync from Strap" onPress={() => void handleSync()} />
       </View>
       <View style={themed($buttonRow)}>
+        <ActionButton label="Force Upload" onPress={() => void handleForceUpload()} />
         <ActionButton label="Run Pipeline Now" onPress={() => void handleRunPipeline()} />
-        <ActionButton label="Open Web Inspector" onPress={() => openLinkInBrowser(INSPECTOR_WEB_URL)} />
       </View>
       <View style={themed($buttonRow)}>
+        <ActionButton label="Open Web Inspector" onPress={() => openLinkInBrowser(INSPECTOR_WEB_URL)} />
         <ActionButton label="Clear Outbound Queue" onPress={handleClearQueue} />
+      </View>
+      <View style={themed($buttonRow)}>
         <ActionButton label="Log Out" onPress={() => { forceLogout(); void logout() }} />
       </View>
 
