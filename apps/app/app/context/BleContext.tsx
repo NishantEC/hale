@@ -242,6 +242,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const [deviceState, setDeviceState] = useState<BleDeviceState>(emptyDeviceState)
   const [scannedDevices, setScannedDevices] = useState<ScannedDevice[]>([])
   const [isSyncing, setIsSyncing] = useState(false)
+  const isSyncingRef = useRef(false)
   const [syncStage, setSyncStage] = useState("")
   const [syncProgress, setSyncProgress] = useState<DownloadProgress | null>(null)
   const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null)
@@ -317,6 +318,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       return
     }
 
+    isSyncingRef.current = true
     setIsSyncing(true)
     setSyncStage("Downloading from strap…")
     setSyncSummary(null)
@@ -363,13 +365,14 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       console.error("[syncNow] failed", nextError)
       setError(nextError?.message ?? "Sync failed")
     } finally {
+      isSyncingRef.current = false
       setIsSyncing(false)
       setSyncStage("")
     }
   }, [refreshDashboard])
 
   const maybeAutoSync = useCallback(async () => {
-    if (!isAuthenticated || isSyncing || bleManager.connectionState !== "ready") return
+    if (!isAuthenticated || isSyncingRef.current || bleManager.connectionState !== "ready") return
 
     const now = Date.now()
     if (now - lastAutoSyncAttemptAt.current < 60 * 1000) return
@@ -383,7 +386,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
     lastAutoSyncAttemptAt.current = now
     await syncNow()
-  }, [isAuthenticated, isSyncing, deviceState.lastSyncAt, syncNow])
+  }, [isAuthenticated, deviceState.lastSyncAt, syncNow])
 
   const toggleRealtimeHeartRate = useCallback(
     async (enabled: boolean) => {
@@ -571,9 +574,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         consoleLogForwarder.start(bleManager.getDeviceId() || "unknown")
         refreshDeviceState().catch(() => undefined)
         maybeAutoSync().catch(() => undefined)
-      }
-
-      if (connectionState === "ready") {
         startAndroidForegroundService().catch((err) =>
           console.warn("[android-fgs] start failed", err),
         )
