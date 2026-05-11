@@ -124,7 +124,7 @@ export const SettingsScreen: FC = () => {
       "You'll need to sign back in to sync your data.",
       [
         { text: "Cancel", style: "cancel" },
-        { text: "Sign out", style: "destructive", onPress: () => logout() },
+        { text: "Sign out", style: "destructive", onPress: () => void logout() },
       ],
       { cancelable: true },
     )

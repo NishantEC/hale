@@ -26,7 +26,7 @@ export type AuthContextType = {
   authEmail: string | null
   setAuthToken: (token: string | null) => Promise<void>
   setAuthEmail: (email: string) => void
-  logout: () => void
+  logout: () => Promise<void>
   validationError: string
 }
 
@@ -37,16 +37,20 @@ export const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
   const [authEmail, setAuthEmailState] = useState<string | null>(null)
 
   useEffect(() => {
+    let active = true
     SecureStore.getItemAsync(SECURE_TOKEN_KEY).then((t) => {
-      if (t) setAuthTokenState(t)
+      if (active && t) setAuthTokenState(t)
     })
     try {
       const { MMKV } = require("react-native-mmkv")
       const mmkv = new MMKV()
       const email = mmkv.getString(MMKV_EMAIL_KEY)
-      if (email) setAuthEmailState(email)
+      if (active && email) setAuthEmailState(email)
     } catch {
       // MMKV unavailable on first install — no email to restore.
+    }
+    return () => {
+      active = false
     }
   }, [])
 
@@ -82,8 +86,8 @@ export const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
     setAuthEmailState(email)
   }, [])
 
-  const logout = useCallback(() => {
-    void setAuthToken(null)
+  const logout = useCallback(async () => {
+    await setAuthToken(null)
     setAuthEmailState(null)
     try {
       const { MMKV } = require("react-native-mmkv")
