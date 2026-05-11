@@ -11,6 +11,7 @@ import {
 import { router } from "expo-router"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
+import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { SleepViewModel } from "@/services/api/noopClient"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
@@ -31,7 +32,8 @@ function formatClockMinutes(minutes: number) {
 
 export const SleepPlannerScreen: FC = () => {
   const colors = LOCAL_THEME.colors
-  const { sleepView, liveDeviceState, saveSleepPlan, armAlarm, disarmAlarm } = useDashboard()
+  const { sleepView, saveSleepPlan } = useDashboard()
+  const { connectionState, strapAlarmArmed, armAlarm, disarmAlarm } = useBle()
 
   const updatePlanner = useCallback(
     async (patch: Partial<SleepViewModel["planner"]>) => {
@@ -66,7 +68,7 @@ export const SleepPlannerScreen: FC = () => {
     )
   }
 
-  const isConnected = liveDeviceState.connectionState === "ready"
+  const isConnected = connectionState === "ready"
 
   return (
     <ScrollView style={themed($scrollOuter)} contentContainerStyle={themed($container)}>
@@ -229,9 +231,9 @@ export const SleepPlannerScreen: FC = () => {
 
         {/* Arm / Disarm action button */}
         <TouchableOpacity
-          style={themed(liveDeviceState.strapAlarmArmed ? $btnDestructive : $btnPrimary)}
+          style={themed(strapAlarmArmed ? $btnDestructive : $btnPrimary)}
           onPress={() => {
-            if (liveDeviceState.strapAlarmArmed) {
+            if (strapAlarmArmed) {
               disarmAlarm()
               Toast.show("Alarm disarmed", { type: "info", position: "top" })
             } else {
@@ -241,10 +243,10 @@ export const SleepPlannerScreen: FC = () => {
           }}
         >
           <Text
-            text={liveDeviceState.strapAlarmArmed ? "Disarm Alarm" : "Arm Alarm"}
+            text={strapAlarmArmed ? "Disarm Alarm" : "Arm Alarm"}
             size="xs"
             weight="semiBold"
-            style={themed(liveDeviceState.strapAlarmArmed ? $btnDestructiveText : $btnPrimaryText)}
+            style={themed(strapAlarmArmed ? $btnDestructiveText : $btnPrimaryText)}
           />
         </TouchableOpacity>
       </View>
@@ -253,7 +255,7 @@ export const SleepPlannerScreen: FC = () => {
       <Text
         text={
           isConnected
-            ? liveDeviceState.strapAlarmArmed ? "Strap alarm armed" : "Strap connected"
+            ? strapAlarmArmed ? "Strap alarm armed" : "Strap connected"
             : "Strap offline"
         }
         size="xxs"

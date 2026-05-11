@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import { LocalDbDiagnostics } from "@/components/LocalDbDiagnostics"
 import { Text } from "@/components/Text"
+import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { openDatabase } from "@/services/db"
 import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
@@ -41,7 +42,8 @@ function formatTimestamp(value?: string | null) {
 export const DebugInspectorScreen: FC = () => {
   const colors = PALETTE
   const themed = <T,>(s: T): T => s
-  const { selectedDate, refreshDashboard, syncNow } = useDashboard()
+  const { selectedDate, refreshDashboard } = useDashboard()
+  const { syncNow } = useBle()
   const { logout } = useAuth()
   const [overview, setOverview] = useState<DebugOverview | null>(null)
   const [sleepNight, setSleepNight] = useState<DebugSleepNight | null>(null)

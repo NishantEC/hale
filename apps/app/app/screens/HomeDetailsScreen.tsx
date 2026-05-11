@@ -7,11 +7,13 @@ import { GlassCard } from "@/components/GlassCard"
 import { InlineLineChart } from "@/components/InlineLineChart"
 import { Text } from "@/components/Text"
 import { XStack } from "@/components/tamagui-primitives"
+import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 
 export const HomeDetailsScreen: FC = () => {
   const { width } = useWindowDimensions()
-  const { homeView, liveDeviceState } = useDashboard()
+  const { homeView } = useDashboard()
+  const { realtimeSamples } = useBle()
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
@@ -33,7 +35,7 @@ export const HomeDetailsScreen: FC = () => {
         <GlassCard style={{ gap: 12 }}>
           <Text text="Live Heart Rate" size="xxs" weight="bold" style={{ letterSpacing: 0.8, textTransform: "uppercase" }} />
           <InlineLineChart
-            points={liveDeviceState.realtimeSamples}
+            points={realtimeSamples}
             width={width - 72}
             height={140}
             stroke="#C76542"

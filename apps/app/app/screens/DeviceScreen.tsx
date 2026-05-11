@@ -7,11 +7,15 @@ import { Text } from "@/components/Text"
 import { XStack, YStack } from "@/components/tamagui-primitives"
 import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Toast } from "@/components/reactx/toast"
-import { useDashboard } from "@/context/DashboardContext"
+import { useBle } from "@/context/BleContext"
 
 export const DeviceScreen: FC = () => {
   const {
-    liveDeviceState,
+    connectionState,
+    deviceName,
+    batteryLevel,
+    isCharging,
+    realtimeHeartRate,
     scannedDevices,
     isSyncing,
     syncStage,
@@ -23,7 +27,7 @@ export const DeviceScreen: FC = () => {
     disconnect,
     syncNow,
     clearError,
-  } = useDashboard()
+  } = useBle()
 
   const lastShownError = useRef<string | null>(null)
 
@@ -43,16 +47,16 @@ export const DeviceScreen: FC = () => {
         <Text text="Device" preset="heading" />
 
         <GlassCard style={{ gap: 12 }}>
-          <MetricRow label="Connection" value={liveDeviceState.connectionState} />
-          <MetricRow label="Device" value={liveDeviceState.deviceName ?? "WHOOP not connected"} />
+          <MetricRow label="Connection" value={connectionState} />
+          <MetricRow label="Device" value={deviceName ?? "WHOOP not connected"} />
           <MetricRow
             label="Battery"
-            value={liveDeviceState.batteryLevel == null ? "--" : `${Math.round(liveDeviceState.batteryLevel)}%`}
+            value={batteryLevel == null ? "--" : `${Math.round(batteryLevel)}%`}
           />
-          <MetricRow label="Charging" value={liveDeviceState.isCharging ? "Yes" : "No"} />
+          <MetricRow label="Charging" value={isCharging ? "Yes" : "No"} />
           <MetricRow
             label="Realtime HR"
-            value={liveDeviceState.realtimeHeartRate ? `${liveDeviceState.realtimeHeartRate}` : "--"}
+            value={realtimeHeartRate ? `${realtimeHeartRate}` : "--"}
           />
         </GlassCard>
 

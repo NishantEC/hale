@@ -30,6 +30,7 @@ import { TodayTape } from "@/components/home/TodayTape"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { Text } from "@/components/Text"
+import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { useHealthKit } from "@/context/HealthKitContext"
 import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopClient"
@@ -84,15 +85,14 @@ export const HomeScreen: FC = () => {
   const {
     selectedDate,
     homeView,
-    liveDeviceState,
     error,
     isRefreshing,
-    isSyncing,
     goToNextDay,
     goToPreviousDay,
     refreshDashboard,
     clearError,
   } = useDashboard()
+  const { connectionState, batteryLevel, isCharging, isSyncing } = useBle()
   const { setActiveDate: setHealthKitActiveDate } = useHealthKit()
   const [isHorizontalDaySwipeActive, setIsHorizontalDaySwipeActive] = useState(false)
   const [journalEntries, setJournalEntries] = useState<JournalEntryResponse[]>([])
@@ -119,10 +119,10 @@ export const HomeScreen: FC = () => {
   }, [error, clearError])
 
   const batteryLabel =
-    liveDeviceState.connectionState === "ready"
-      ? liveDeviceState.batteryLevel == null
+    connectionState === "ready"
+      ? batteryLevel == null
         ? "--"
-        : `${Math.round(liveDeviceState.batteryLevel)}%`
+        : `${Math.round(batteryLevel)}%`
       : isSyncing
         ? "..."
         : "--"
@@ -322,8 +322,8 @@ export const HomeScreen: FC = () => {
 
             <DevicePill
               batteryLabel={batteryLabel}
-              isCharging={liveDeviceState.isCharging}
-              isConnected={liveDeviceState.connectionState === "ready"}
+              isCharging={isCharging}
+              isConnected={connectionState === "ready"}
               onPress={() => navigateTo("DeviceSettings", "device-settings")}
             />
           </View>

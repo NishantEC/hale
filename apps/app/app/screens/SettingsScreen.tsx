@@ -20,7 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurHeader } from "@/components/BlurHeader"
 import { Text } from "@/components/Text"
 import { useAuth } from "@/context/AuthContext"
-import { useDashboard } from "@/context/DashboardContext"
+import { useBle } from "@/context/BleContext"
 import { ColorMode, useColorMode } from "@/context/ThemeContext"
 import { DateOfBirthSheet } from "@/components/DateOfBirthSheet"
 import { fetchProfile, updateProfile, type UserProfileData } from "@/services/api/noopClient"
@@ -32,7 +32,7 @@ export const SettingsScreen: FC = () => {
   const colors = LOCAL_THEME.colors
   const isDark = LOCAL_THEME.isDark
   const { authEmail, logout } = useAuth()
-  const { liveDeviceState } = useDashboard()
+  const { connectionState, lastSyncAt, deviceName, firmwareVersion } = useBle()
   const { mode: colorMode, setMode: setColorMode } = useColorMode()
   const [now, setNow] = useState(Date.now())
   const [refreshing, setRefreshing] = useState(false)
@@ -98,17 +98,17 @@ export const SettingsScreen: FC = () => {
     setTimeout(() => setRefreshing(false), 400)
   }, [])
 
-  const isConnected = liveDeviceState.connectionState === "ready"
+  const isConnected = connectionState === "ready"
   const isConnecting =
-    liveDeviceState.connectionState === "connecting" ||
-    liveDeviceState.connectionState === "discovering"
+    connectionState === "connecting" ||
+    connectionState === "discovering"
   const deviceStatusLabel = isConnected ? "Connected" : isConnecting ? "Pairing" : "Offline"
   const deviceStatusColor = isConnected
     ? colors.statusGreen
     : isConnecting
       ? colors.statusAmber
       : colors.textMuted
-  const lastSyncLabel = formatLastSync(liveDeviceState.lastSyncAt, now)
+  const lastSyncLabel = formatLastSync(lastSyncAt, now)
 
   const appVersion = Constants.expoConfig?.version ?? "1.0.0"
   const buildNumber =
@@ -453,7 +453,7 @@ export const SettingsScreen: FC = () => {
           <Row
             icon="watch-outline"
             iconColor={isConnected ? colors.statusGreen : colors.iconDim}
-            label={liveDeviceState.deviceName || "WHOOP"}
+            label={deviceName || "WHOOP"}
             value={deviceStatusLabel}
             valueColor={deviceStatusColor}
             chevron
@@ -461,13 +461,13 @@ export const SettingsScreen: FC = () => {
           />
           <Divider />
           <Row icon="time-outline" label="Last sync" value={lastSyncLabel} />
-          {liveDeviceState.firmwareVersion ? (
+          {firmwareVersion ? (
             <>
               <Divider />
               <Row
                 icon="hardware-chip-outline"
                 label="Firmware"
-                value={liveDeviceState.firmwareVersion}
+                value={firmwareVersion}
               />
             </>
           ) : null}

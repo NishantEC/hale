@@ -16,13 +16,20 @@ import { Text } from "@/components/Text"
 import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Dialog } from "@/components/reactx/dialog"
 import { Toast } from "@/components/reactx/toast"
-import { useDashboard } from "@/context/DashboardContext"
+import { useBle } from "@/context/BleContext"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 export const DeviceSettingsScreen: FC = () => {
   const colors = LOCAL_THEME.colors
   const {
-    liveDeviceState,
+    connectionState,
+    batteryLevel,
+    isCharging,
+    deviceName,
+    lastSyncAt,
+    firmwareVersion,
+    deviceClock,
+    isWorn,
     scannedDevices,
     isSyncing,
     syncStage,
@@ -31,25 +38,25 @@ export const DeviceSettingsScreen: FC = () => {
     connect,
     disconnect,
     syncNow,
-  } = useDashboard()
+  } = useBle()
 
-  const isConnected = liveDeviceState.connectionState === "ready"
-  const isBusy = liveDeviceState.connectionState === "connecting" || liveDeviceState.connectionState === "discovering"
+  const isConnected = connectionState === "ready"
+  const isBusy = connectionState === "connecting" || connectionState === "discovering"
   const batteryLabel =
-    liveDeviceState.batteryLevel == null ? "--" : `${Math.round(liveDeviceState.batteryLevel)}`
+    batteryLevel == null ? "--" : `${Math.round(batteryLevel)}`
   const batteryColor =
-    liveDeviceState.batteryLevel == null
+    batteryLevel == null
       ? colors.text
-      : liveDeviceState.isCharging
+      : isCharging
         ? colors.tint
-        : liveDeviceState.batteryLevel >= 50
+        : batteryLevel >= 50
           ? colors.statusGreen
-          : liveDeviceState.batteryLevel >= 20
+          : batteryLevel >= 20
             ? colors.statusAmber
             : colors.statusRed
-  const deviceNameLabel = (liveDeviceState.deviceName ?? "WHOOP").replace(/\s+/g, " ").trim()
-  const lastSyncText = liveDeviceState.lastSyncAt
-    ? new Date(liveDeviceState.lastSyncAt).toLocaleString([], {
+  const deviceNameLabel = (deviceName ?? "WHOOP").replace(/\s+/g, " ").trim()
+  const lastSyncText = lastSyncAt
+    ? new Date(lastSyncAt).toLocaleString([], {
         month: "short",
         day: "numeric",
         hour: "numeric",
@@ -60,7 +67,7 @@ export const DeviceSettingsScreen: FC = () => {
   // Charging pulse animation
   const chargingAnim = useRef(new Animated.Value(0)).current
   useEffect(() => {
-    if (liveDeviceState.isCharging) {
+    if (isCharging) {
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(chargingAnim, {
@@ -83,7 +90,7 @@ export const DeviceSettingsScreen: FC = () => {
       chargingAnim.setValue(0)
       return undefined
     }
-  }, [liveDeviceState.isCharging, chargingAnim])
+  }, [isCharging, chargingAnim])
 
   const chargingGlowOpacity = chargingAnim.interpolate({
     inputRange: [0, 1],
@@ -111,7 +118,7 @@ export const DeviceSettingsScreen: FC = () => {
       {/* ─── Hero: big watch + battery ─── */}
       <View style={themed($hero)}>
         <View style={themed($watchCircleOuter)}>
-          {liveDeviceState.isCharging ? (
+          {isCharging ? (
             <Animated.View
               style={[themed($chargingGlow), { opacity: chargingGlowOpacity }]}
             />
@@ -122,7 +129,7 @@ export const DeviceSettingsScreen: FC = () => {
               size={48}
               color={isConnected ? colors.tint : colors.iconDim}
             />
-            {liveDeviceState.isCharging ? (
+            {isCharging ? (
               <Animated.View
                 style={[themed($chargingBadge), { transform: [{ scale: chargingBadgeScale }] }]}
               >
@@ -143,7 +150,7 @@ export const DeviceSettingsScreen: FC = () => {
               style={themed(isConnected ? $pillTextDark : isBusy ? $pillTextDark : $pillTextLight)}
             />
           </View>
-          {isConnected && liveDeviceState.isWorn ? (
+          {isConnected && isWorn ? (
             <View style={themed($pill)}>
               <Text text="On wrist" size="xxs" weight="semiBold" style={themed($pillTextLight)} />
             </View>
@@ -156,7 +163,7 @@ export const DeviceSettingsScreen: FC = () => {
           <Text text="%" size="lg" weight="bold" style={[themed($batteryPercent), { color: batteryColor }]} />
         </View>
         <Text
-          text={liveDeviceState.isCharging ? "Charging" : isConnected ? "Battery" : "Last known battery"}
+          text={isCharging ? "Charging" : isConnected ? "Battery" : "Last known battery"}
           size="xxs"
           style={[themed($batteryCaption), { color: batteryColor, opacity: 0.6 }]}
         />
@@ -164,22 +171,22 @@ export const DeviceSettingsScreen: FC = () => {
 
       {/* ─── Info rows ─── */}
       <View style={themed($infoSection)}>
-        {liveDeviceState.firmwareVersion ? (
+        {firmwareVersion ? (
           <>
             <View style={themed($infoRow)}>
               <Text text="Firmware" size="xs" style={themed($infoLabel)} />
-              <Text text={liveDeviceState.firmwareVersion} size="xs" weight="semiBold" style={themed($infoValue)} />
+              <Text text={firmwareVersion} size="xs" weight="semiBold" style={themed($infoValue)} />
             </View>
             <View style={themed($divider)} />
           </>
         ) : null}
 
-        {liveDeviceState.deviceClock ? (
+        {deviceClock ? (
           <>
             <View style={themed($infoRow)}>
               <Text text="Device clock" size="xs" style={themed($infoLabel)} />
               <Text
-                text={liveDeviceState.deviceClock.toLocaleString([], {
+                text={deviceClock.toLocaleString([], {
                   month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
                 })}
                 size="xs"

@@ -9,6 +9,7 @@ import { GlassCard } from "@/components/GlassCard"
 import { InlineLineChart } from "@/components/InlineLineChart"
 import { Text } from "@/components/Text"
 import { XStack, YStack } from "@/components/tamagui-primitives"
+import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 
 const METRIC_OPTIONS = [
@@ -36,7 +37,8 @@ export const HomeMetricScreen: FC = () => {
   const metricParam = route.params?.metric as string | string[] | undefined
   const metric = resolveMetric(metricParam)
   const { width } = useWindowDimensions()
-  const { homeView, sleepView, liveDeviceState } = useDashboard()
+  const { homeView, sleepView } = useDashboard()
+  const { connectionState, realtimeSamples } = useBle()
   const accent = "#C76542"
 
   const content = useMemo(() => {
@@ -100,12 +102,12 @@ export const HomeMetricScreen: FC = () => {
         return {
           title: "Live Heart Rate",
           subtitle:
-            liveDeviceState.connectionState === "ready"
+            connectionState === "ready"
               ? "Realtime heart-rate stream from strap packets."
               : homeView.noDataReasons.liveHeartRate,
           chart: (
             <InlineLineChart
-              points={liveDeviceState.realtimeSamples}
+              points={realtimeSamples}
               width={width - 72}
               height={120}
               stroke={accent}
@@ -116,7 +118,7 @@ export const HomeMetricScreen: FC = () => {
       default:
         return { title: "Today's Activities", subtitle: "Current load and stress summary for activity planning.", chart: null }
     }
-  }, [homeView, liveDeviceState.connectionState, liveDeviceState.realtimeSamples, metric, sleepView, width])
+  }, [homeView, connectionState, realtimeSamples, metric, sleepView, width])
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={["top"]}>

@@ -11,6 +11,7 @@ import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { TrendSparkline } from "@/components/TrendSparkline"
 import { VitalCard } from "@/components/VitalCard"
+import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
@@ -23,7 +24,6 @@ export const StrainActivityScreen: FC = () => {
   const insets = useSafeAreaInsets()
   const {
     homeView,
-    liveDeviceState,
     isRefreshing,
     refreshDashboard,
     error,
@@ -31,6 +31,7 @@ export const StrainActivityScreen: FC = () => {
     selectedDate,
     setSelectedDate,
   } = useDashboard()
+  const { realtimeHeartRate } = useBle()
 
   const lastShownError = useRef<string | null>(null)
   const scrollY = useSharedValue(0)
@@ -151,7 +152,7 @@ export const StrainActivityScreen: FC = () => {
         <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
           <VitalCard
             label="Live HR"
-            value={liveDeviceState.realtimeHeartRate ? `${liveDeviceState.realtimeHeartRate}` : "--"}
+            value={realtimeHeartRate ? `${realtimeHeartRate}` : "--"}
             unit="bpm"
             delta={null}
           />
