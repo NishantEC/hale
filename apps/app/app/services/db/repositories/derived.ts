@@ -11,7 +11,7 @@ import {
   baselineProfile,
   sleepPlans,
 } from "../schema"
-import { getActiveUserId } from "../session"
+import { getActiveUserId, peekActiveUserId } from "../session"
 import { notifyTable } from "../observable"
 
 // Upserts backend-derived rows into their mirror tables. Always stamps
@@ -26,17 +26,36 @@ function backendMirror() {
   }
 }
 
+// The backend returns TypeORM entities where date columns are Date objects
+// (serialized to ISO strings in JSON). Drizzle/ExpoSQLite expects epoch ms
+// integers for those columns. Also strips undefined values, which ExpoSQLite
+// cannot bind and throws InvalidConvertibleException for.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
+function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(row)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => {
+        if (v instanceof Date) return [k, v.getTime()]
+        if (typeof v === "string" && ISO_DATE_RE.test(v)) return [k, new Date(v).getTime()]
+        return [k, v]
+      }),
+  )
+}
+
 async function upsertMany(db: NoopDatabase, table: any, rows: any[]): Promise<void> {
   if (rows.length === 0) return
-  const userId = getActiveUserId()
+  const userId = peekActiveUserId()
+  if (!userId) return
   const mirror = backendMirror()
   for (const row of rows) {
+    const clean = normalizeRow(row)
     await db
       .insert(table)
-      .values({ ...row, userId, ...mirror })
+      .values({ ...clean, userId, ...mirror })
       .onConflictDoUpdate({
         target: table.id,
-        set: { ...row, ...mirror, _origin: "backend" },
+        set: { ...clean, ...mirror, _origin: "backend" },
       })
   }
   notifyTable(table._ ? String(table._.name) : "unknown")
