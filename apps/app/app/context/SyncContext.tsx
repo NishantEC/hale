@@ -28,6 +28,10 @@ import {
   SETTING_RAW_RETENTION_DAYS,
   getSetting,
 } from "@/services/db/repositories/settings"
+import {
+  queueDepth,
+  listDeadLetters,
+} from "@/services/db/repositories/outboundQueue"
 import { SyncService } from "@/services/sync/SyncService"
 
 type SyncContextValue = {
@@ -53,10 +57,14 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
   const [deadCount, setDeadCount] = useState(0)
   const [syncError, setSyncError] = useState<string | null>(null)
 
-  const isOnlineRef = useRef(true)
+  const isOnlineRef = useRef(false)
   const isLowPowerRef = useRef(false)
+  const isDrainingRef = useRef(false)
 
   const drainFn = useCallback(async () => {
+    if (isDrainingRef.current) return
+    isDrainingRef.current = true
+
     if (!peekActiveUserId()) return
     if (!isOnlineRef.current) return
     if (isLowPowerRef.current) return
@@ -72,9 +80,6 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
       })
       setLastDrainAt(Date.now())
 
-      const { queueDepth, listDeadLetters } = await import(
-        "@/services/db/repositories/outboundQueue"
-      )
       const [pending, dead] = await Promise.all([
         queueDepth(db),
         listDeadLetters(db).then((rows) => rows.length),
@@ -85,11 +90,13 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
       setSyncError(err?.message ?? "Sync failed")
     } finally {
       setIsSyncing(false)
+      isDrainingRef.current = false
     }
   }, [])
 
   const pullFn = useCallback(async () => {
     if (!peekActiveUserId()) return
+    if (!isOnlineRef.current) return
     const db = openDatabase()
     await pullDownlink(db, {
       apiGet: async (path) => apiGet(path),
@@ -169,6 +176,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
           console.warn("[sync] retention sweep failed", err)
         }
         try {
+          // Pre-fetch update silently; the bundle is applied on next cold launch.
           const update = await Updates.checkForUpdateAsync()
           if (update.isAvailable) await Updates.fetchUpdateAsync()
         } catch {
