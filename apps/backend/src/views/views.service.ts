@@ -80,6 +80,10 @@ export class ViewsService {
     // Same Today→last-night shift as getSleepView: when the user opens
     // Home on a day that has no own night yet, fall back to the latest
     // and re-label the day so the header matches the data shown.
+    // requestedKey is preserved so the response selectedDate always echoes
+    // back the date the client asked for — prevents permanent shimmer on the
+    // app side when the mismatch would block the loading guard.
+    const requestedKey = data.selectedKey;
     const selectedDetection = this.findSleepByDayOrLatestForToday(
       data.sleepDetections,
       'nightDate',
@@ -168,7 +172,7 @@ export class ViewsService {
     const liveHeartRateSubtitle = 'Offline';
 
     return {
-      selectedDate: data.selectedKey,
+      selectedDate: requestedKey,
       selectedDateTitle: this.formatSelectedDateTitle(data.selectedDate),
       selectedDateSubtitle: this.formatSelectedDateSubtitle(data.selectedDate),
       topStrip: {
@@ -314,6 +318,9 @@ export class ViewsService {
     // when the user requests Today and we fall back to the latest night.
     // Without this shift, the screen header says "Today" while the hypnogram
     // shows yesterday's data — confusing.
+    // requestedKey preserved so selectedDate in the response always echoes
+    // back what the client asked for.
+    const requestedKey = data.selectedKey;
     let selectedDetection = this.findSleepByDayOrLatestForToday(
       data.sleepDetections,
       'nightDate',
@@ -493,7 +500,7 @@ export class ViewsService {
     };
 
     return {
-      selectedDate: data.selectedKey,
+      selectedDate: requestedKey,
       selectedDateTitle: this.formatSelectedDateTitle(data.selectedDate),
       selectedDateSubtitle: this.formatSelectedDateSubtitle(data.selectedDate),
       emptyState: {
