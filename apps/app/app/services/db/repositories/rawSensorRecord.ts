@@ -1,7 +1,7 @@
 import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
 import { rawSensorRecords } from "../schema"
-import { getActiveUserId } from "../session"
+import { getActiveUserId, peekActiveUserId } from "../session"
 import { notifyTable } from "../observable"
 import { enqueueOutbound } from "./outboundQueue"
 
@@ -98,7 +98,8 @@ export async function insertRawSensorRecord(
 export async function backfillUnsyncedRawSensorRecords(
   db: NoopDatabase,
 ): Promise<number> {
-  const userId = getActiveUserId()
+  const userId = peekActiveUserId()
+  if (!userId) return 0
   const unsynced = await db
     .select()
     .from(rawSensorRecords)

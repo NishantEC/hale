@@ -118,26 +118,25 @@ export default function RootLayout() {
     if (!isDbReady) return
     const db = openDatabase()
 
-    // One-time backfill: enqueue any raw_sensor_records that pre-date the
-    // fix where insertRawSensorRecord didn't push to the outbound queue.
-    // Idempotent: re-enqueues are no-ops via the (tableName, rowId)
-    // unique index. Done on every mount; cheap when nothing's pending.
-    void import("@/services/db/repositories/rawSensorRecord")
-      .then(({ backfillUnsyncedRawSensorRecords }) =>
-        backfillUnsyncedRawSensorRecords(db),
-      )
-      .then((count) => {
-        if (count > 0) console.log(`[sync] backfilled ${count} raw records into outbound queue`)
-      })
-      .catch((err) => console.warn("[sync] raw-record backfill failed", err))
-
     const svc = new SyncService({
-      drainFn: () =>
-        drainOnce(db, {
+      drainFn: async () => {
+        // Before each drain, top up the outbound queue with any
+        // raw_sensor_records that the legacy insert path skipped.
+        // No-op when nothing's pending or no user is set.
+        try {
+          const { backfillUnsyncedRawSensorRecords } = await import(
+            "@/services/db/repositories/rawSensorRecord"
+          )
+          await backfillUnsyncedRawSensorRecords(db)
+        } catch (err) {
+          console.warn("[sync] raw-record backfill failed", err)
+        }
+        await drainOnce(db, {
           post: (tableName, payloads) =>
             apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
           batchSize: 200,
-        }),
+        })
+      },
       pullFn: async () => {
         await pullDownlink(db, {
           apiGet: async (path) => apiGet(path),
