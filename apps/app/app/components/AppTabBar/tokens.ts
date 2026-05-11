@@ -1,7 +1,7 @@
 import type { WithSpringConfig } from "react-native-reanimated"
 
 export const BAR_MARGIN_X = 24
-export const BAR_BOTTOM_GAP = 30
+export const BAR_BOTTOM_GAP = 4
 export const PILL_FAB_GAP = 14
 export const PILL_HEIGHT = 66
 export const PILL_RADIUS = 33
@@ -24,5 +24,4 @@ export const SPRING_PUNCHY: WithSpringConfig = {
   mass: 0.8,
 }
 
-export const PULSE_DURATION_MS = 600
 export const MOUNT_DELAY_MS = 80

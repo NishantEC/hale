@@ -6,27 +6,23 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withSpring,
-  withTiming,
 } from "react-native-reanimated"
 import Ionicons from "@expo/vector-icons/Ionicons"
 
 import { LOCAL_THEME } from "@/utils/localTheme"
 
-import { FAB_ICON_SIZE, FAB_SIZE, PULSE_DURATION_MS, SPRING_DEFAULT, SPRING_PUNCHY } from "./tokens"
+import { FAB_ICON_SIZE, FAB_SIZE, SPRING_DEFAULT, SPRING_PUNCHY } from "./tokens"
 
 export type PlusFabProps = {
   isOpen: boolean
   onPress: () => void
 }
 
-const HALO_INSET = -10
-
 export function PlusFab({ isOpen, onPress }: PlusFabProps) {
   const colors = LOCAL_THEME.colors
   const reduced = useReducedMotion()
 
   const scale = useSharedValue(1)
-  const pulse = useSharedValue(0)
 
   const openness = useDerivedValue(() => {
     return reduced ? (isOpen ? 1 : 0) : withSpring(isOpen ? 1 : 0, SPRING_DEFAULT)
@@ -39,35 +35,17 @@ export function PlusFab({ isOpen, onPress }: PlusFabProps) {
     scale.value = reduced ? 1 : withSpring(1, SPRING_PUNCHY)
   }
 
-  const triggerPress = () => {
-    if (!reduced) {
-      pulse.value = 0
-      pulse.value = withTiming(1, { duration: PULSE_DURATION_MS })
-    }
-    onPress()
-  }
-
   const fabStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }))
   const iconStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${interpolate(openness.value, [0, 1], [0, 45])}deg` }],
   }))
-  const haloStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(pulse.value, [0, 1], [0.8, 0]),
-    transform: [{ scale: interpolate(pulse.value, [0, 1], [0.85, 1.15]) }],
-  }))
 
   return (
     <Animated.View style={[styles.wrap, fabStyle]}>
-      {!reduced && (
-        <Animated.View
-          pointerEvents="none"
-          style={[styles.halo, { borderColor: colors.tint }, haloStyle]}
-        />
-      )}
       <Pressable
-        onPress={triggerPress}
+        onPress={onPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
         hitSlop={8}
@@ -91,15 +69,6 @@ const styles = StyleSheet.create({
   wrap: {
     height: FAB_SIZE,
     width: FAB_SIZE,
-  },
-  halo: {
-    borderRadius: FAB_SIZE,
-    borderWidth: 2,
-    bottom: HALO_INSET,
-    left: HALO_INSET,
-    position: "absolute",
-    right: HALO_INSET,
-    top: HALO_INSET,
   },
   button: {
     alignItems: "center",
