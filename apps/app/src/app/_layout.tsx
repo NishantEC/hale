@@ -119,6 +119,8 @@ export default function RootLayout() {
 
     const svc = new SyncService({
       drainFn: async () => {
+        const { peekActiveUserId } = await import("@/services/db/session")
+        if (!peekActiveUserId()) return
         const db = openDatabase()
         try {
           const { queueDepth } = await import(

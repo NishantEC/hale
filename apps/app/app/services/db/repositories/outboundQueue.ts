@@ -17,22 +17,31 @@ function newId(): string {
 }
 
 export async function enqueueOutbound(db: NoopDatabase, input: EnqueueInput): Promise<void> {
-  // onConflictDoNothing on (table_name, row_id) — see migration 0002. Re-enqueue
-  // of the same record is a silent no-op. The existing queue row will be drained
-  // once and that delivers the latest persisted state.
+  // On conflict (tableName, rowId): reset attempts to 0 and refresh the payload.
+  // This revives dead-letter rows (attempts ≥ MAX) and ensures the latest
+  // merged data is what gets uploaded, not a stale snapshot from a prior attempt.
+  const payloadStr = JSON.stringify(input.payload)
   await db
     .insert(outboundQueue)
     .values({
       id: newId(),
       tableName: input.tableName,
       rowId: input.rowId,
-      payload: JSON.stringify(input.payload),
+      payload: payloadStr,
       attempts: 0,
       lastAttemptAt: null,
       lastError: null,
       createdAt: Date.now(),
     })
-    .onConflictDoNothing({ target: [outboundQueue.tableName, outboundQueue.rowId] })
+    .onConflictDoUpdate({
+      target: [outboundQueue.tableName, outboundQueue.rowId],
+      set: {
+        payload: payloadStr,
+        attempts: 0,
+        lastAttemptAt: null,
+        lastError: null,
+      },
+    })
 }
 
 export async function purgeOutboundQueue(db: NoopDatabase): Promise<number> {
@@ -81,6 +90,9 @@ export async function listDeadLetters(db: NoopDatabase) {
 }
 
 export async function queueDepth(db: NoopDatabase): Promise<number> {
-  const rows = await db.select({ c: sql<number>`count(*)` }).from(outboundQueue)
+  const rows = await db
+    .select({ c: sql<number>`count(*)` })
+    .from(outboundQueue)
+    .where(sql`${outboundQueue.attempts} < ${MAX_ATTEMPTS_BEFORE_DEAD_LETTER}`)
   return rows[0]?.c ?? 0
 }
