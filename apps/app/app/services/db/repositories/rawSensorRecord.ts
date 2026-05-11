@@ -152,3 +152,29 @@ export async function markRawSensorRecordsSynced(
     await db.update(rawSensorRecords).set({ _syncedAt: syncedAt }).where(eq(rawSensorRecords.id, id))
   }
 }
+
+export async function getRawSyncBreakdown(db: NoopDatabase): Promise<{
+  total: number
+  synced: number
+  pending: number
+  oldestPendingMs: number | null
+}> {
+  const userId = peekActiveUserId()
+  const rows = await db
+    .select({
+      total: sql<number>`count(*)`,
+      synced: sql<number>`sum(case when ${rawSensorRecords._syncedAt} is not null then 1 else 0 end)`,
+      oldestPending: sql<number | null>`min(case when ${rawSensorRecords._syncedAt} is null then ${rawSensorRecords.timestamp} end)`,
+    })
+    .from(rawSensorRecords)
+    .where(userId ? eq(rawSensorRecords.userId, userId) : sql`1=1`)
+  const row = rows[0]
+  const total = row?.total ?? 0
+  const synced = row?.synced ?? 0
+  return {
+    total,
+    synced,
+    pending: total - synced,
+    oldestPendingMs: row?.oldestPending ?? null,
+  }
+}

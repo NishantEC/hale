@@ -6,10 +6,13 @@ import { Text } from "@/components/Text"
 import { openDatabase } from "@/services/db"
 import * as schema from "@/services/db/schema"
 import { listDeadLetters, queueDepth } from "@/services/db/repositories/outboundQueue"
+import { getRawSyncBreakdown } from "@/services/db/repositories/rawSensorRecord"
 import { getLastSyncAt } from "@/services/db/repositories/syncState"
 
 type Diagnostics = {
-  rawCount: number
+  rawSynced: number
+  rawPending: number
+  rawOldestPendingMs: number | null
   dailyMetricsCount: number
   sleepStagesCount: number
   journalCount: number
@@ -27,7 +30,7 @@ async function computeDiagnostics(): Promise<Diagnostics> {
     return rows[0]?.c ?? 0
   }
   const [
-    rawCount,
+    { synced: rawSynced, pending: rawPending, oldestPendingMs: rawOldestPendingMs },
     dailyMetricsCount,
     sleepStagesCount,
     journalCount,
@@ -37,7 +40,7 @@ async function computeDiagnostics(): Promise<Diagnostics> {
     lastSyncDailyMetrics,
     lastSyncSleepStages,
   ] = await Promise.all([
-    count(schema.rawSensorRecords),
+    getRawSyncBreakdown(db),
     count(schema.dailyMetrics),
     count(schema.sleepStages),
     count(schema.journalEntries),
@@ -48,7 +51,9 @@ async function computeDiagnostics(): Promise<Diagnostics> {
     getLastSyncAt(db, "sleep_stages"),
   ])
   return {
-    rawCount,
+    rawSynced,
+    rawPending,
+    rawOldestPendingMs,
     dailyMetricsCount,
     sleepStagesCount,
     journalCount,
@@ -98,7 +103,12 @@ export const LocalDbDiagnostics: FC = () => {
   return (
     <View style={$card}>
       <Text text="Local DB" size="sm" weight="semiBold" />
-      <Row label="Raw records" value={String(d.rawCount)} />
+      <Row label="Raw records" value={`${d.rawSynced + d.rawPending} total`} />
+      <Row label="  · synced" value={String(d.rawSynced)} />
+      <Row label="  · pending" value={String(d.rawPending)} />
+      {d.rawPending > 0 && d.rawOldestPendingMs != null && (
+        <Row label="  · oldest pending" value={formatTs(d.rawOldestPendingMs)} />
+      )}
       <Row label="Daily metrics" value={String(d.dailyMetricsCount)} />
       <Row label="Sleep stages" value={String(d.sleepStagesCount)} />
       <Row label="Journal entries" value={String(d.journalCount)} />
