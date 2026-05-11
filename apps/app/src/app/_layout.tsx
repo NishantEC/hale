@@ -5,7 +5,7 @@ if (__DEV__) {
 import "@/utils/gestureHandler"
 
 import { useEffect, useState } from "react"
-import { Alert, AppState } from "react-native"
+import { Alert } from "react-native"
 import { ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
 import { Stack } from "expo-router"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
@@ -15,6 +15,8 @@ import { TamaguiProvider } from "tamagui"
 
 import tamaguiConfig from "../../tamagui.config"
 import { AuthProvider } from "@/context/AuthContext"
+import { SyncProvider } from "@/context/SyncContext"
+import { BleProvider } from "@/context/BleContext"
 import { ToastProviderWithViewport } from "@/components/reactx/toast"
 import { DashboardProvider } from "@/context/DashboardContext"
 import { HealthKitProvider } from "@/context/HealthKitContext"
@@ -23,25 +25,7 @@ import { initI18n } from "@/i18n"
 import { useNavigationTheme } from "@/navigators/useNavigationTheme"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { loadDateFnsLocale } from "@/utils/formatDate"
-import { apiGet, apiPost } from "@/services/api/noopClient"
-import { openDatabase, runMigrations, wipeDatabase } from "@/services/db"
-import {
-  DEFAULT_RAW_RETENTION_DAYS,
-  SETTING_RAW_RETENTION_DAYS,
-  getSetting,
-} from "@/services/db/repositories/settings"
-import { setViewCache } from "@/services/db/repositories/viewCache"
-import { SyncService } from "@/services/sync/SyncService"
-import { drainOnce } from "@/services/sync/uplinkDrainer"
-import { pullDownlink } from "@/services/sync/downlinkPuller"
-import { sweepRetention } from "@/services/sync/retentionSweeper"
-import { registerBackgroundCatchupTask } from "@/services/sync/backgroundCatchupTask"
-import {
-  startAndroidForegroundService,
-  stopAndroidForegroundService,
-} from "@/services/sync/androidForegroundService"
-import { runBackgroundDrain } from "@/services/sync/backgroundSync"
-import { bleManager } from "@/services/ble/ble-manager"
+import { runMigrations, wipeDatabase } from "@/services/db"
 
 function RootStackLayout() {
   const navigationTheme = useNavigationTheme()
@@ -82,9 +66,6 @@ export default function RootLayout() {
         })
         .catch((err) => {
           if (cancelled) return
-          // Don't proceed with isDbReady=true on a broken DB. The app would
-          // load and then explode on the first repository call. Surface the
-          // failure and offer recovery.
           console.error("[db] migration failed", err)
           Alert.alert(
             "Local database error",
@@ -114,133 +95,6 @@ export default function RootLayout() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!isDbReady) return
-
-    const svc = new SyncService({
-      drainFn: async () => {
-        const { peekActiveUserId } = await import("@/services/db/session")
-        if (!peekActiveUserId()) return
-        const db = openDatabase()
-        try {
-          const { queueDepth } = await import(
-            "@/services/db/repositories/outboundQueue"
-          )
-          const depth = await queueDepth(db)
-          if (depth === 0) {
-            const { backfillUnsyncedRawSensorRecords } = await import(
-              "@/services/db/repositories/rawSensorRecord"
-            )
-            await backfillUnsyncedRawSensorRecords(db, 200)
-          }
-        } catch (err) {
-          console.warn("[sync] raw-record backfill failed", err)
-        }
-        await drainOnce(db, {
-          post: (tableName, payloads) =>
-            apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
-          batchSize: 200,
-        })
-      },
-      pullFn: async () => {
-        const db = openDatabase()
-        await pullDownlink(db, {
-          apiGet: async (path) => apiGet(path),
-          tables: [
-            "daily_metrics",
-            "daily_scores",
-            "sleep_detections",
-            "sleep_stages",
-            "night_features",
-            "signal_samples",
-            "activity_detections",
-            "baseline_profile",
-            "sleep_plans",
-          ],
-        })
-        const today = new Date().toISOString().slice(0, 10)
-        try {
-          const [home, sleep, trends] = await Promise.all([
-            apiGet(`/views/home?date=${today}`),
-            apiGet(`/views/sleep?date=${today}`),
-            apiGet(`/views/trends?days=30`),
-          ])
-          await setViewCache(db, "home", today, home)
-          await setViewCache(db, "sleep", today, sleep)
-          await setViewCache(db, "trends", "30d", trends)
-        } catch (err) {
-          console.warn("[sync] view cache refresh failed", err)
-        }
-      },
-      intervalMs: 15_000,
-    })
-    svc.start()
-    const sub = AppState.addEventListener("change", async (state) => {
-      if (state !== "active") return
-      await svc.refresh()
-      try {
-        const db = openDatabase()
-        const raw =
-          Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) ||
-          DEFAULT_RAW_RETENTION_DAYS
-        if (raw > 0) await sweepRetention(db, { rawDays: raw })
-      } catch (err) {
-        console.warn("[sync] retention sweep failed", err)
-      }
-    })
-    return () => {
-      svc.stop()
-      sub.remove()
-    }
-  }, [isDbReady])
-
-  useEffect(() => {
-    if (!isDbReady) return
-    registerBackgroundCatchupTask().catch((err) =>
-      console.warn("[bg-catchup] register failed", err),
-    )
-    const unsubscribeState = bleManager.onConnectionStateChange((state) => {
-      if (state === "ready") {
-        startAndroidForegroundService().catch((err) =>
-          console.warn("[android-fgs] start failed", err),
-        )
-      } else if (state === "disconnected") {
-        stopAndroidForegroundService().catch((err) =>
-          console.warn("[android-fgs] stop failed", err),
-        )
-      }
-    })
-
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null
-    let isBackground = AppState.currentState !== "active"
-    const appStateSub = AppState.addEventListener("change", (next) => {
-      const wasForeground = !isBackground
-      isBackground = next !== "active"
-      if (wasForeground && isBackground) {
-        runBackgroundDrain(15_000).catch((err) =>
-          console.warn("[bg-flush-on-background] failed", err),
-        )
-      }
-    })
-    const unsubscribePackets = bleManager.onPacket("*", () => {
-      if (!isBackground) return
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        runBackgroundDrain(15_000).catch((err) =>
-          console.warn("[bg-packet-drain] failed", err),
-        )
-      }, 1500)
-    })
-
-    return () => {
-      unsubscribeState()
-      unsubscribePackets()
-      appStateSub.remove()
-      if (debounceTimer) clearTimeout(debounceTimer)
-      stopAndroidForegroundService().catch(() => undefined)
-    }
-  }, [isDbReady])
-
   if (!isI18nInitialized || !isDbReady) {
     return null
   }
@@ -251,15 +105,19 @@ export default function RootLayout() {
         <TamaguiProvider config={tamaguiConfig} defaultTheme="dark">
           <KeyboardProvider>
             <AuthProvider>
-              <ThemeProvider>
-                <DashboardProvider>
-                  <HealthKitProvider>
-                    <ToastProviderWithViewport>
-                      <RootStackLayout />
-                    </ToastProviderWithViewport>
-                  </HealthKitProvider>
-                </DashboardProvider>
-              </ThemeProvider>
+              <SyncProvider isDbReady={isDbReady}>
+                <ThemeProvider>
+                  <DashboardProvider>
+                    <BleProvider>
+                      <HealthKitProvider>
+                        <ToastProviderWithViewport>
+                          <RootStackLayout />
+                        </ToastProviderWithViewport>
+                      </HealthKitProvider>
+                    </BleProvider>
+                  </DashboardProvider>
+                </ThemeProvider>
+              </SyncProvider>
             </AuthProvider>
           </KeyboardProvider>
         </TamaguiProvider>
