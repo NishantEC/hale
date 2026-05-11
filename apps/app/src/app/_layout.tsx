@@ -116,15 +116,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!isDbReady) return
-    const db = openDatabase()
 
     const svc = new SyncService({
       drainFn: async () => {
-        // If the outbound queue is empty, top it up with any
-        // raw_sensor_records that the legacy insert path skipped.
-        // Skipping when the queue is non-empty avoids piling more
-        // writes onto the SQLite thread while a drain is already
-        // in flight — which was blocking the home view's cache read.
+        const db = openDatabase()
         try {
           const { queueDepth } = await import(
             "@/services/db/repositories/outboundQueue"
@@ -146,6 +141,7 @@ export default function RootLayout() {
         })
       },
       pullFn: async () => {
+        const db = openDatabase()
         await pullDownlink(db, {
           apiGet: async (path) => apiGet(path),
           tables: [
@@ -181,6 +177,7 @@ export default function RootLayout() {
       if (state !== "active") return
       await svc.refresh()
       try {
+        const db = openDatabase()
         const raw =
           Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) ||
           DEFAULT_RAW_RETENTION_DAYS

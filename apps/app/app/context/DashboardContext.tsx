@@ -34,7 +34,6 @@ import {
   fetchResults,
   fetchSleepView,
   HomeViewModel,
-  ingestHistoricalRecords,
   PipelineResults,
 } from "../services/api/noopClient"
 import { openDatabase } from "../services/db"
@@ -819,23 +818,6 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
         console.log("[syncNow] calling ingestBleRecords for", mapped.length, "records")
         const ingestLocalResult = await ingestBleRecords(db, mapped)
         console.log("[syncNow] ingestBleRecords done", ingestLocalResult)
-
-        setSyncStage(`Uploading ${records.length} records…`)
-        // Best-effort direct POST for immediate pipeline UX. If it fails,
-        // the outbound_queue drainer will retry the rows we already wrote
-        // locally above. Verbose logging so sync failures are debuggable.
-        console.log("[syncNow] Uploading", records.length, "records to /pipeline/ingest")
-        try {
-          const ingestResult = await ingestHistoricalRecords(records)
-          console.log("[syncNow] Ingest response:", JSON.stringify(ingestResult))
-          if ((ingestResult.sensorRecords ?? 0) <= 0) {
-            console.warn(
-              `[syncNow] Backend stored 0 sensor records from ${records.length} uploaded. Response: ${JSON.stringify(ingestResult)} — drainer will retry.`,
-            )
-          }
-        } catch (postErr: any) {
-          console.warn("[sync] direct ingest failed — drainer will retry", postErr?.message ?? postErr)
-        }
 
         setSyncStage("Running pipeline…")
         console.log("[syncNow] Running pipeline on backend")
