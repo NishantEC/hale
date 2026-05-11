@@ -41,7 +41,6 @@ import { getViewCache, setViewCache } from "../services/db/repositories/viewCach
 import { historicalRecordToRawRow, ingestBleRecords } from "../services/sync/bleIngest"
 import {
   runPipeline,
-  setSessionToken,
   SeriesPoint,
   SleepPlanInput,
   SleepViewModel,
@@ -1028,10 +1027,6 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
   const goToNextDay = useCallback(() => {
     setSelectedDate((current) => addDays(current, 1))
   }, [])
-
-  useEffect(() => {
-    setSessionToken(authToken)
-  }, [authToken])
 
   useEffect(() => {
     AsyncStorage.getItem(LAST_SYNC_KEY).then((lastSyncAt) => {

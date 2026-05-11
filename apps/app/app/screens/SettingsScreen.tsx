@@ -360,7 +360,7 @@ export const SettingsScreen: FC = () => {
               ]}
             >
               <Text
-                text={initialsOf(authEmail)}
+                text={initialsOf(authEmail ?? undefined)}
                 style={{
                   color: colors.tint,
                   fontSize: 22,
@@ -380,7 +380,7 @@ export const SettingsScreen: FC = () => {
                 }}
               />
               <Text
-                text={displayNameFromEmail(authEmail)}
+                text={displayNameFromEmail(authEmail ?? undefined)}
                 style={{
                   color: colors.text,
                   fontSize: 18,
