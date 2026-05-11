@@ -1,11 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MMKV } from 'react-native-mmkv';
 import { HistoricalRecord } from '../ble/packet-types';
-
-// Shared MMKV store used by AuthContext. Clearing these keys from
-// here on a 401 signs the user out in-app, not just in our local
-// HTTP layer.
-const mmkv = new MMKV();
 
 const DEFAULT_BASE_URL = 'https://api.noop.enform.co';
 const BASE_URL =
@@ -16,6 +9,12 @@ const REQUEST_TIMEOUT_MS = 20000;
 export const INSPECTOR_WEB_URL = process.env.EXPO_PUBLIC_INSPECTOR_URL || 'https://noop.enform.co';
 
 let sessionToken: string | null = null;
+
+let sessionClearedCallback: (() => void) | null = null
+
+export function registerSessionClearedCallback(cb: () => void): void {
+  sessionClearedCallback = cb
+}
 
 // React Native's fetch doesn't send Origin by default. better-auth's CSRF
 // check rejects requests with a missing/null origin (403 "missing or null
@@ -357,23 +356,13 @@ export interface DebugViewsRecompute {
   overview: DebugOverview;
 }
 
-async function clearSession() {
-  sessionToken = null;
-  await AsyncStorage.removeItem('sessionToken');
-  // Also clear the MMKV keys AuthContext watches, so a 401 actually
-  // signs the user out in the UI (not just in our local fetch layer).
-  try {
-    mmkv.delete('AuthProvider.authToken');
-    mmkv.delete('AuthProvider.authEmail');
-  } catch {
-    // best effort
-  }
+function clearSession() {
+  sessionToken = null
+  sessionClearedCallback?.()
 }
 
-// Called from the UI "Log Out" button to force a sign-out without
-// needing to wait for a 401 response.
-export async function forceLogout() {
-  await clearSession();
+export function forceLogout() {
+  clearSession()
 }
 
 export function setSessionToken(token?: string | null) {
@@ -392,7 +381,7 @@ async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQ
   });
 
     if (res.status === 401) {
-      await clearSession();
+      clearSession()
     }
 
     const text = await res.text();
@@ -443,10 +432,6 @@ async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQ
   }
 }
 
-export async function initAuth() {
-  sessionToken = await AsyncStorage.getItem('sessionToken');
-}
-
 export function isAuthenticated() {
   return sessionToken !== null;
 }
@@ -474,43 +459,37 @@ async function readAuthErrorBody(res: Response): Promise<{ code: string | null; 
   }
 }
 
-export async function register(email: string, password: string): Promise<boolean> {
+export async function register(email: string, password: string): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/auth/sign-up/email`, {
     method: 'POST',
     headers: withBaseHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ email, password, name: email }),
-  });
+  })
   if (!res.ok) {
-    const { code, message } = await readAuthErrorBody(res);
-    throw new AuthError(res.status, code, message);
+    const { code, message } = await readAuthErrorBody(res)
+    throw new AuthError(res.status, code, message)
   }
-  const data = await res.json();
-  sessionToken = data.token;
-  await AsyncStorage.setItem('sessionToken', data.token);
-  return true;
+  const data = await res.json()
+  sessionToken = data.token
+  return data.token
 }
 
-export async function login(email: string, password: string): Promise<boolean> {
+export async function login(email: string, password: string): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
     method: 'POST',
     headers: withBaseHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ email, password }),
-  });
+  })
   if (!res.ok) {
-    const { code, message } = await readAuthErrorBody(res);
-    throw new AuthError(res.status, code, message);
+    const { code, message } = await readAuthErrorBody(res)
+    throw new AuthError(res.status, code, message)
   }
-  const data = await res.json();
+  const data = await res.json()
   if (!data?.token) {
-    throw new AuthError(res.status, 'NO_TOKEN', 'Sign-in succeeded but the server returned no token.');
+    throw new AuthError(res.status, 'NO_TOKEN', 'Sign-in succeeded but the server returned no token.')
   }
-  sessionToken = data.token;
-  await AsyncStorage.setItem('sessionToken', data.token);
-  return true;
-}
-
-export async function logout() {
-  await clearSession();
+  sessionToken = data.token
+  return data.token
 }
 
 export async function apiGet(path: string) {

@@ -1,6 +1,5 @@
 import { FC, useRef, useState } from "react"
 import { Ionicons } from "@expo/vector-icons"
-import AsyncStorage from "@react-native-async-storage/async-storage"
 // eslint-disable-next-line no-restricted-imports
 import {
   ActivityIndicator,
@@ -62,16 +61,9 @@ export const LoginScreen: FC = () => {
       // Persist to MMKV right before the API call so the AuthProvider
       // (and any downstream readers) see the same email we authed with.
       setAuthEmail(normalizedEmail)
-      if (isSignUp) {
-        await apiRegister(normalizedEmail, authPassword)
-      } else {
-        await apiLogin(normalizedEmail, authPassword)
-      }
-      const token = await AsyncStorage.getItem("sessionToken")
-      if (!token) {
-        setAuthError("Sign-in succeeded but no session token was stored.")
-        return
-      }
+      const token = isSignUp
+        ? await apiRegister(normalizedEmail, authPassword)
+        : await apiLogin(normalizedEmail, authPassword)
       setIsSubmitted(false)
       setAuthPassword("")
       setAuthToken(token)
