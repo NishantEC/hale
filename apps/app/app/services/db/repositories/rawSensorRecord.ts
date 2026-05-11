@@ -1,8 +1,9 @@
-import { and, asc, eq, gte, lte, sql } from "drizzle-orm"
+import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
 import { rawSensorRecords } from "../schema"
 import { getActiveUserId } from "../session"
 import { notifyTable } from "../observable"
+import { enqueueOutbound } from "./outboundQueue"
 
 export interface RawSensorRecordInput {
   id: string
@@ -75,7 +76,48 @@ export async function insertRawSensorRecord(
         _syncedAt: sql`NULL`,
       },
     })
+  // Push every raw record into the outbound queue so the drain loop
+  // ships them to /pipeline/ingest-table. Idempotent via the
+  // (tableName, rowId) unique index — re-merges from later packets
+  // just bump _syncedAt back to null above without duplicating queue
+  // entries.
+  await enqueueOutbound(db, {
+    tableName: "raw_sensor_records",
+    rowId: input.id,
+    payload: input,
+  })
   notifyTable("raw_sensor_records")
+}
+
+/**
+ * Backfill helper: enqueue any locally-unsynced raw_sensor_records
+ * into the outbound queue. Used once on app launch after upgrading
+ * past the fix, so records inserted by older builds (which didn't
+ * enqueue) finally get shipped.
+ */
+export async function backfillUnsyncedRawSensorRecords(
+  db: NoopDatabase,
+): Promise<number> {
+  const userId = getActiveUserId()
+  const unsynced = await db
+    .select()
+    .from(rawSensorRecords)
+    .where(
+      and(
+        eq(rawSensorRecords.userId, userId),
+        isNull(rawSensorRecords._syncedAt),
+      ),
+    )
+    .orderBy(asc(rawSensorRecords.timestamp))
+
+  for (const row of unsynced) {
+    await enqueueOutbound(db, {
+      tableName: "raw_sensor_records",
+      rowId: row.id,
+      payload: row,
+    })
+  }
+  return unsynced.length
 }
 
 export async function listRawSensorRecordsByDateRange(
