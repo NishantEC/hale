@@ -157,7 +157,7 @@ export const DebugInspectorScreen: FC = () => {
       </View>
       <View style={themed($buttonRow)}>
         <ActionButton label="Clear Outbound Queue" onPress={handleClearQueue} />
-        <ActionButton label="Log Out" onPress={() => void forceLogout().then(() => logout())} />
+        <ActionButton label="Log Out" onPress={() => { forceLogout(); logout() }} />
       </View>
 
       {isLoading && !overview ? (

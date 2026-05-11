@@ -470,6 +470,9 @@ export async function register(email: string, password: string): Promise<string>
     throw new AuthError(res.status, code, message)
   }
   const data = await res.json()
+  if (!data?.token) {
+    throw new AuthError(res.status, 'NO_TOKEN', 'Sign-up succeeded but the server returned no token.')
+  }
   sessionToken = data.token
   return data.token
 }
