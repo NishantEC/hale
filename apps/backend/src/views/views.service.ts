@@ -77,14 +77,25 @@ export class ViewsService {
       where: { userId, startTime: Between(dayStart, dayEnd) },
       order: { startTime: 'ASC' },
     });
-    const selectedScore = this.findByDay(data.dailyScores, 'dayDate', data.selectedKey);
-    const selectedMetric = this.findByDay(data.dailyMetrics, 'dayDate', data.selectedKey);
+    // Same Today→last-night shift as getSleepView: when the user opens
+    // Home on a day that has no own night yet, fall back to the latest
+    // and re-label the day so the header matches the data shown.
     const selectedDetection = this.findSleepByDayOrLatestForToday(
       data.sleepDetections,
       'nightDate',
       data.selectedKey,
       data.selectedDate,
     );
+    if (
+      selectedDetection &&
+      this.dayKey(selectedDetection.nightDate) !== data.selectedKey
+    ) {
+      data.selectedKey = this.dayKey(selectedDetection.nightDate);
+      data.selectedDate = new Date(selectedDetection.nightDate);
+    }
+
+    const selectedScore = this.findByDay(data.dailyScores, 'dayDate', data.selectedKey);
+    const selectedMetric = this.findByDay(data.dailyMetrics, 'dayDate', data.selectedKey);
     const selectedFeature = this.findSleepByDayOrLatestForToday(
       data.nightFeatures,
       'nightDate',
@@ -298,14 +309,27 @@ export class ViewsService {
 
   async getSleepView(userId: string, selectedDateInput?: string) {
     const data = await this.loadDashboardData(userId, selectedDateInput);
-    const selectedScore = this.findByDay(data.dailyScores, 'dayDate', data.selectedKey);
-    const selectedMetric = this.findByDay(data.dailyMetrics, 'dayDate', data.selectedKey);
-    const selectedDetection = this.findSleepByDayOrLatestForToday(
+
+    // Find tonight's detection first so we can shift the selected day
+    // when the user requests Today and we fall back to the latest night.
+    // Without this shift, the screen header says "Today" while the hypnogram
+    // shows yesterday's data — confusing.
+    let selectedDetection = this.findSleepByDayOrLatestForToday(
       data.sleepDetections,
       'nightDate',
       data.selectedKey,
       data.selectedDate,
     );
+    if (
+      selectedDetection &&
+      this.dayKey(selectedDetection.nightDate) !== data.selectedKey
+    ) {
+      data.selectedKey = this.dayKey(selectedDetection.nightDate);
+      data.selectedDate = new Date(selectedDetection.nightDate);
+    }
+
+    const selectedScore = this.findByDay(data.dailyScores, 'dayDate', data.selectedKey);
+    const selectedMetric = this.findByDay(data.dailyMetrics, 'dayDate', data.selectedKey);
     const selectedStage = this.findSleepByDayOrLatestForToday(
       data.sleepStages,
       'nightDate',
