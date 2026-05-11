@@ -3,8 +3,12 @@ import {
   claimOutboundBatch,
   markOutboundSynced,
   recordOutboundFailure,
+  queueDepth,
 } from "../db/repositories/outboundQueue"
-import { markRawSensorRecordsSynced } from "../db/repositories/rawSensorRecord"
+import {
+  markRawSensorRecordsSynced,
+  backfillUnsyncedRawSensorRecords,
+} from "../db/repositories/rawSensorRecord"
 
 export interface DrainOptions {
   post: (tableName: string, payloads: unknown[]) => Promise<unknown>
@@ -52,6 +56,7 @@ export async function drainOnce(db: NoopDatabase, opts: DrainOptions): Promise<v
 export interface DrainLoopOptions {
   post: (tableName: string, payloads: unknown[]) => Promise<unknown>
   batchSize?: number
+  backfillLimit?: number
   maxMs?: number
 }
 
@@ -59,22 +64,18 @@ export async function drainLoop(
   db: NoopDatabase,
   opts: DrainLoopOptions,
 ): Promise<{ drained: number }> {
-  const { post, batchSize = 200, maxMs } = opts
+  const { post, batchSize = 200, backfillLimit = 200, maxMs } = opts
   const deadline = maxMs != null ? Date.now() + maxMs : Infinity
 
   // Backfill unsynced raw sensor records into the outbound queue before draining.
   try {
-    const { backfillUnsyncedRawSensorRecords } = await import(
-      "../db/repositories/rawSensorRecord"
-    )
-    await backfillUnsyncedRawSensorRecords(db, batchSize)
+    await backfillUnsyncedRawSensorRecords(db, backfillLimit)
   } catch (err) {
     console.warn("[drainLoop] backfill failed", err)
   }
 
   let totalDrained = 0
   while (Date.now() < deadline) {
-    const { queueDepth } = await import("../db/repositories/outboundQueue")
     const before = await queueDepth(db)
     if (before === 0) break
     await drainOnce(db, { post, batchSize })
