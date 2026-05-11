@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
 import { viewCache } from "../schema"
-import { getActiveUserId } from "../session"
+import { peekActiveUserId } from "../session"
 import { notifyTable } from "../observable"
 
 export async function setViewCache(
@@ -10,7 +10,8 @@ export async function setViewCache(
   date: string,
   payload: unknown,
 ): Promise<void> {
-  const userId = getActiveUserId()
+  const userId = peekActiveUserId()
+  if (!userId) return
   await db
     .insert(viewCache)
     .values({
@@ -32,7 +33,8 @@ export async function getViewCache<T>(
   viewName: string,
   date: string,
 ): Promise<T | null> {
-  const userId = getActiveUserId()
+  const userId = peekActiveUserId()
+  if (!userId) return null
   const [row] = await db
     .select()
     .from(viewCache)

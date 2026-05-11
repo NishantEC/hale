@@ -4,6 +4,7 @@ import {
   RawSensorRecordInput,
 } from "../db/repositories/rawSensorRecord"
 import { enqueueOutbound } from "../db/repositories/outboundQueue"
+import { peekActiveUserId } from "../db/session"
 import type { HistoricalRecord } from "../ble/packet-types"
 
 // Map a decoded BLE HistoricalRecord to the SQLite RawSensorRecordInput shape.
@@ -62,6 +63,7 @@ export async function ingestBleRecord(
   db: NoopDatabase,
   record: RawSensorRecordInput,
 ): Promise<void> {
+  if (!peekActiveUserId()) return
   await insertRawSensorRecord(db, record)
   await enqueueOutbound(db, {
     tableName: "raw_sensor_records",
@@ -74,8 +76,7 @@ export async function ingestBleRecords(
   db: NoopDatabase,
   records: RawSensorRecordInput[],
 ): Promise<{ ok: number; failed: number }> {
-  // Per-record try/catch so one bad row doesn't kill the entire batch.
-  // Returns counts so the caller can surface partial failure visibly.
+  if (!peekActiveUserId()) return { ok: 0, failed: 0 }
   let ok = 0
   let failed = 0
   for (const r of records) {

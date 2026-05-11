@@ -1072,23 +1072,23 @@ async function upsertRawSensorRows(
       .insert()
       .values(values as any)
       .onConflict(`("userId", timestamp) DO UPDATE SET
-        "heartRate"        = CASE WHEN EXCLUDED."heartRate" > 0 THEN EXCLUDED."heartRate" ELSE "heartRate" END,
-        "rrAverageMs"      = COALESCE(EXCLUDED."rrAverageMs",      "rrAverageMs"),
-        "spo2Red"          = COALESCE(EXCLUDED."spo2Red",          "spo2Red"),
-        "spo2IR"           = COALESCE(EXCLUDED."spo2IR",           "spo2IR"),
-        "skinTempRaw"      = COALESCE(EXCLUDED."skinTempRaw",      "skinTempRaw"),
-        "gravityMagnitude" = COALESCE(EXCLUDED."gravityMagnitude", "gravityMagnitude"),
-        "gravityX"         = COALESCE(EXCLUDED."gravityX",         "gravityX"),
-        "gravityY"         = COALESCE(EXCLUDED."gravityY",         "gravityY"),
-        "gravityZ"         = COALESCE(EXCLUDED."gravityZ",         "gravityZ"),
-        "respRateRaw"      = COALESCE(EXCLUDED."respRateRaw",      "respRateRaw"),
-        "skinContact"      = COALESCE(EXCLUDED."skinContact",      "skinContact"),
-        "ppgGreen"         = COALESCE(EXCLUDED."ppgGreen",         "ppgGreen"),
-        "ppgRedIr"         = COALESCE(EXCLUDED."ppgRedIr",         "ppgRedIr"),
-        "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     "ambientLight"),
-        "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        "ledDrive1"),
-        "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        "ledDrive2"),
-        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    "signalQuality")
+        "heartRate"        = CASE WHEN EXCLUDED."heartRate" > 0 THEN EXCLUDED."heartRate" ELSE raw_sensor_records."heartRate" END,
+        "rrAverageMs"      = COALESCE(EXCLUDED."rrAverageMs",      raw_sensor_records."rrAverageMs"),
+        "spo2Red"          = COALESCE(EXCLUDED."spo2Red",          raw_sensor_records."spo2Red"),
+        "spo2IR"           = COALESCE(EXCLUDED."spo2IR",           raw_sensor_records."spo2IR"),
+        "skinTempRaw"      = COALESCE(EXCLUDED."skinTempRaw",      raw_sensor_records."skinTempRaw"),
+        "gravityMagnitude" = COALESCE(EXCLUDED."gravityMagnitude", raw_sensor_records."gravityMagnitude"),
+        "gravityX"         = COALESCE(EXCLUDED."gravityX",         raw_sensor_records."gravityX"),
+        "gravityY"         = COALESCE(EXCLUDED."gravityY",         raw_sensor_records."gravityY"),
+        "gravityZ"         = COALESCE(EXCLUDED."gravityZ",         raw_sensor_records."gravityZ"),
+        "respRateRaw"      = COALESCE(EXCLUDED."respRateRaw",      raw_sensor_records."respRateRaw"),
+        "skinContact"      = COALESCE(EXCLUDED."skinContact",      raw_sensor_records."skinContact"),
+        "ppgGreen"         = COALESCE(EXCLUDED."ppgGreen",         raw_sensor_records."ppgGreen"),
+        "ppgRedIr"         = COALESCE(EXCLUDED."ppgRedIr",         raw_sensor_records."ppgRedIr"),
+        "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     raw_sensor_records."ambientLight"),
+        "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        raw_sensor_records."ledDrive1"),
+        "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        raw_sensor_records."ledDrive2"),
+        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    raw_sensor_records."signalQuality")
       `)
       .execute();
     total += slice.length;
