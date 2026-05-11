@@ -120,14 +120,22 @@ export default function RootLayout() {
 
     const svc = new SyncService({
       drainFn: async () => {
-        // Before each drain, top up the outbound queue with any
+        // If the outbound queue is empty, top it up with any
         // raw_sensor_records that the legacy insert path skipped.
-        // No-op when nothing's pending or no user is set.
+        // Skipping when the queue is non-empty avoids piling more
+        // writes onto the SQLite thread while a drain is already
+        // in flight — which was blocking the home view's cache read.
         try {
-          const { backfillUnsyncedRawSensorRecords } = await import(
-            "@/services/db/repositories/rawSensorRecord"
+          const { queueDepth } = await import(
+            "@/services/db/repositories/outboundQueue"
           )
-          await backfillUnsyncedRawSensorRecords(db)
+          const depth = await queueDepth(db)
+          if (depth === 0) {
+            const { backfillUnsyncedRawSensorRecords } = await import(
+              "@/services/db/repositories/rawSensorRecord"
+            )
+            await backfillUnsyncedRawSensorRecords(db, 200)
+          }
         } catch (err) {
           console.warn("[sync] raw-record backfill failed", err)
         }

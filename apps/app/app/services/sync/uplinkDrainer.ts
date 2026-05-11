@@ -4,6 +4,7 @@ import {
   markOutboundSynced,
   recordOutboundFailure,
 } from "../db/repositories/outboundQueue"
+import { markRawSensorRecordsSynced } from "../db/repositories/rawSensorRecord"
 
 export interface DrainOptions {
   post: (tableName: string, payloads: unknown[]) => Promise<unknown>
@@ -30,6 +31,16 @@ export async function drainOnce(db: NoopDatabase, opts: DrainOptions): Promise<v
         db,
         rows.map((r) => r.id),
       )
+      // Mirror the queue's "synced" state onto the originating table
+      // for tables that track _syncedAt locally. Keeps the backfill
+      // helper from re-enqueueing rows that already shipped.
+      if (tableName === "raw_sensor_records") {
+        await markRawSensorRecordsSynced(
+          db,
+          rows.map((r) => r.rowId),
+          Date.now(),
+        )
+      }
     } catch (err: any) {
       for (const r of rows) {
         await recordOutboundFailure(db, r.id, err?.message ?? "unknown error")

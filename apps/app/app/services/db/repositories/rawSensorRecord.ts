@@ -97,6 +97,7 @@ export async function insertRawSensorRecord(
  */
 export async function backfillUnsyncedRawSensorRecords(
   db: NoopDatabase,
+  limit = 100,
 ): Promise<number> {
   const userId = peekActiveUserId()
   if (!userId) return 0
@@ -110,6 +111,7 @@ export async function backfillUnsyncedRawSensorRecords(
       ),
     )
     .orderBy(asc(rawSensorRecords.timestamp))
+    .limit(limit)
 
   for (const row of unsynced) {
     await enqueueOutbound(db, {
