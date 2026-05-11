@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage"
 import {
   createContext,
   FC,
@@ -7,132 +6,38 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react"
 
 import { useAuth } from "@/context/AuthContext"
-import {
-  bleManager,
-  CommandNumber,
-  CommandService,
-  ConnectionState,
-  DownloadProgress,
-  EventNumber,
-  HistoryDownloader,
-  PacketType,
-  createEventForwarder,
-  RealtimeSessionForwarder,
-  ConsoleLogLineForwarder,
-  ScannedDevice,
-  uint8ArrayToBase64,
-  WhoopPacket,
-} from "@/services/ble"
-import type { DeviceEventPayload } from "@/services/ble"
 import {
   fetchHomeView,
   fetchResults,
   fetchSleepView,
   HomeViewModel,
   PipelineResults,
-} from "../services/api/noopClient"
-import { openDatabase } from "../services/db"
-import { getViewCache, setViewCache } from "../services/db/repositories/viewCache"
-import { historicalRecordToRawRow, ingestBleRecords } from "../services/sync/bleIngest"
-import {
-  runPipeline,
-  SeriesPoint,
   SleepPlanInput,
   SleepViewModel,
   updateSleepPlan,
-} from "@/services/api/noopClient"
-
-const LAST_SYNC_KEY = "noop.lastSyncTimestamp"
-const REALTIME_HR_KEY = "noop.prefersRealtimeHeartRate"
-const BROADCAST_HR_KEY = "noop.prefersBroadcastHeartRate"
-const RAW_STREAM_KEY = "noop.prefersRawDataStream"
-
-type SyncSummary = {
-  nights: number
-  stages: number
-  scores: number
-}
-
-type LiveDeviceState = {
-  connectionState: ConnectionState
-  deviceName: string | null
-  batteryLevel: number | null
-  isCharging: boolean
-  isBusy: boolean
-  isRealtimeHeartRateEnabled: boolean
-  isBroadcastHeartRateEnabled: boolean
-  isRawDataStreamingEnabled: boolean
-  realtimeHeartRate: number | null
-  realtimeSamples: SeriesPoint[]
-  strapAlarmAt: string | null
-  strapAlarmArmed: boolean
-  isWorn: boolean
-  lastSyncAt: string | null
-  firmwareVersion: string | null
-  deviceClock: Date | null
-}
+} from "../services/api/noopClient"
+import { openDatabase } from "../services/db"
+import { getViewCache, setViewCache } from "../services/db/repositories/viewCache"
 
 type DashboardContextValue = {
   selectedDate: string
   homeView: HomeViewModel | null
   sleepView: SleepViewModel | null
-  liveDeviceState: LiveDeviceState
-  scannedDevices: ScannedDevice[]
   isRefreshing: boolean
-  isSyncing: boolean
-  syncStage: string
-  syncProgress: DownloadProgress | null
-  syncSummary: SyncSummary | null
   error: string | null
   setSelectedDate: (date: string) => void
   goToPreviousDay: () => void
   goToNextDay: () => void
   refreshDashboard: () => Promise<void>
-  scan: () => Promise<void>
-  connect: (deviceId: string) => Promise<void>
-  disconnect: () => Promise<void>
-  syncNow: () => Promise<void>
-  refreshStrapMetadata: () => Promise<void>
-  toggleRealtimeHeartRate: (enabled: boolean) => Promise<void>
-  toggleBroadcastHeartRate: (enabled: boolean) => Promise<void>
-  toggleRawDataStreaming: (enabled: boolean) => Promise<void>
   saveSleepPlan: (input: SleepPlanInput) => Promise<void>
-  armAlarm: () => Promise<void>
-  disarmAlarm: () => Promise<void>
-  testAlarm: () => Promise<void>
   clearError: () => void
 }
 
 const DashboardContext = createContext<DashboardContextValue | null>(null)
-
-const commandService = new CommandService()
-const eventForwarder = createEventForwarder()
-const consoleLogForwarder = new ConsoleLogLineForwarder()
-const realtimeForwarder = new RealtimeSessionForwarder()
-
-const emptyDeviceState: LiveDeviceState = {
-  connectionState: "disconnected",
-  deviceName: null,
-  batteryLevel: null,
-  isCharging: false,
-  isBusy: false,
-  isRealtimeHeartRateEnabled: true,
-  isBroadcastHeartRateEnabled: true,
-  isRawDataStreamingEnabled: true,
-  realtimeHeartRate: null,
-  realtimeSamples: [],
-  strapAlarmAt: null,
-  strapAlarmArmed: false,
-  isWorn: true,
-  lastSyncAt: null,
-  firmwareVersion: null,
-  deviceClock: null,
-}
 
 function todayKey() {
   return dayKeyForDate(new Date())
@@ -154,120 +59,6 @@ function dayKeyForDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, "0")
   const day = String(date.getDate()).padStart(2, "0")
   return `${year}-${month}-${day}`
-}
-
-function parseUint32LE(data: Uint8Array, offset: number) {
-  if (offset + 3 >= data.length) return null
-  return (
-    data[offset] |
-    (data[offset + 1] << 8) |
-    (data[offset + 2] << 16) |
-    ((data[offset + 3] << 24) >>> 0)
-  )
-}
-
-function readUint16LE(data: Uint8Array, offset: number) {
-  if (offset + 1 >= data.length) return null
-  return data[offset] | (data[offset + 1] << 8)
-}
-
-function normalizeBatteryRaw(raw: number): number | null {
-  if (raw <= 100) return raw                              // direct percent
-  if (raw <= 1000) return Math.round(raw / 10)            // tenths of percent
-  if (raw >= 3000 && raw <= 4300) {                       // millivolts → percent
-    return Math.round(Math.max(0, Math.min(100, ((raw - 3300) / 900) * 100)))
-  }
-  if (raw <= 10000) return Math.round(raw / 100)          // hundredths
-  if (raw <= 100000) return Math.round(raw / 1000)        // thousandths
-  return null
-}
-
-function parseBatteryLevel(packet: WhoopPacket) {
-  if (packet.command !== CommandNumber.GetBatteryLevel || packet.data.length < 2) return null
-
-  // Try offset 0 first (battery percent), then offset 2 (may hold different metric).
-  // Both are 16-bit LE values in tenths-of-percent or other fixed-point format.
-  // Uses same normalization as Swift DashboardCommandService.parseBatteryLevel.
-  const rawAt0 = readUint16LE(packet.data, 0)
-  const normAt0 = rawAt0 != null ? normalizeBatteryRaw(rawAt0) : null
-
-  if (packet.data.length >= 4) {
-    const rawAt2 = readUint16LE(packet.data, 2)
-    const normAt2 = rawAt2 != null ? normalizeBatteryRaw(rawAt2) : null
-    // Prefer the smaller plausible value — the actual battery % is typically lower
-    // than auxiliary metrics encoded in other bytes.
-    if (normAt0 != null && normAt2 != null) return Math.min(normAt0, normAt2)
-    return normAt2 ?? normAt0
-  }
-
-  return normAt0
-}
-
-function parseVersionInfo(packet: WhoopPacket): string | null {
-  if (packet.command !== CommandNumber.ReportVersionInfo) return null
-  // Payload: 3 bytes padding + 16 x uint32 LE values
-  // Harvard = values[0..3] joined by ".", Boylston = values[4..7]
-  if (packet.data.length < 3 + 8 * 4) return null
-  const values: number[] = []
-  for (let i = 0; i < 8; i++) {
-    const v = parseUint32LE(packet.data, 3 + i * 4)
-    if (v == null) return null
-    values.push(v)
-  }
-  const harvard = values.slice(0, 4).join(".")
-  const boylston = values.slice(4, 8).join(".")
-  return `${harvard} / ${boylston}`
-}
-
-function parseDeviceClock(packet: WhoopPacket): Date | null {
-  if (packet.command !== CommandNumber.GetClock || packet.data.length < 6) return null
-  const unix = parseUint32LE(packet.data, 2)
-  if (unix == null || unix === 0) return null
-  return new Date(unix * 1000)
-}
-
-function parseScheduledAlarm(packet: WhoopPacket, now = new Date()) {
-  if (packet.command !== CommandNumber.GetScheduledAlarm) return null
-
-  const nowUnix = Math.floor(now.getTime() / 1000)
-  const lowerBound = nowUnix - 365 * 24 * 60 * 60
-  const upperBound = nowUnix + 365 * 24 * 60 * 60
-  let sawZero = false
-
-  for (let offset = 0; offset <= Math.min(16, packet.data.length - 4); offset += 1) {
-    const value = parseUint32LE(packet.data, offset)
-    if (value == null) continue
-    if (value === 0) {
-      sawZero = true
-      continue
-    }
-    if (value >= lowerBound && value <= upperBound) {
-      return new Date(value * 1000).toISOString()
-    }
-  }
-
-  return sawZero ? null : null
-}
-
-function parseRealtimeHeartRate(packet: WhoopPacket) {
-  if (packet.type !== PacketType.RealtimeData || packet.data.length <= 5) return null
-  const heartRate = packet.data[5]
-  return heartRate > 0 ? heartRate : null
-}
-
-function nextAlarmDate(alarmMinutes: number) {
-  const now = new Date()
-  const next = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-    Math.floor(alarmMinutes / 60),
-    alarmMinutes % 60,
-    0,
-    0,
-  )
-  if (next <= now) next.setDate(next.getDate() + 1)
-  return next
 }
 
 function formatSelectedDateTitle(dateKey: string) {
@@ -324,7 +115,11 @@ function pointDateKey(value?: string | Date | null) {
   return dayKeyForDate(date)
 }
 
-function pickForSelectedDay<T extends Record<string, any>>(items: T[], dateField: string, selectedKey: string) {
+function pickForSelectedDay<T extends Record<string, any>>(
+  items: T[],
+  dateField: string,
+  selectedKey: string,
+) {
   return (
     items.find((item) => pointDateKey(item?.[dateField]) === selectedKey) ??
     items[items.length - 1] ??
@@ -376,9 +171,7 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
   const detection = pickSleepForSelectedDay(results.sleepDetections ?? [], "nightDate", selectedKey)
   const feature = pickSleepForSelectedDay(results.nightFeatures ?? [], "nightDate", selectedKey)
   const targetSleepMinutes =
-    results.sleepPlan?.targetSleepMinutes ??
-    results.sleepPlan?.wakeTargetMinutes ??
-    480
+    results.sleepPlan?.targetSleepMinutes ?? results.sleepPlan?.wakeTargetMinutes ?? 480
 
   return {
     selectedDate: selectedKey,
@@ -440,11 +233,20 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
         metric?.skinTempAvgCelsius != null ? `${metric.skinTempAvgCelsius.toFixed(1)}C` : "--",
       strain: metric?.strainScore != null ? `${metric.strainScore.toFixed(0)}` : "--",
       skinTempDelta:
-        metric?.skinTempDeltaCelsius != null ? `${metric.skinTempDeltaCelsius.toFixed(1)}C` : "--",
-      recoveryIndex: (metric as any)?.recoveryIndex != null ? `${Math.round((metric as any).recoveryIndex)}` : "--",
-      trainingLoad: (metric as any)?.trainingLoadRatio != null ? `${(metric as any).trainingLoadRatio.toFixed(2)}` : "--",
+        metric?.skinTempDeltaCelsius != null
+          ? `${metric.skinTempDeltaCelsius.toFixed(1)}C`
+          : "--",
+      recoveryIndex:
+        (metric as any)?.recoveryIndex != null
+          ? `${Math.round((metric as any).recoveryIndex)}`
+          : "--",
+      trainingLoad:
+        (metric as any)?.trainingLoadRatio != null
+          ? `${(metric as any).trainingLoadRatio.toFixed(2)}`
+          : "--",
       trainingLoadRiskZone: (metric as any)?.trainingLoadRiskZone ?? "--",
-      spo2Dips: (metric as any)?.spo2DipCount != null ? `${(metric as any).spo2DipCount}` : "--",
+      spo2Dips:
+        (metric as any)?.spo2DipCount != null ? `${(metric as any).spo2DipCount}` : "--",
       activityFeed: [],
       totalActiveMinutes: "--",
       activityCount: 0,
@@ -585,14 +387,57 @@ function buildLegacySleepView(results: PipelineResults, selectedKey: string): Sl
       value: item.dailyBalance ?? 0,
     })),
     metrics: [
-      { label: "Recovery", value: score?.dailyBalance != null ? `${score.dailyBalance}%` : "--", detail: score?.recommendation ?? null },
-      { label: "Sleep Reserve", value: score?.sleepReserveHours != null ? `${score.sleepReserveHours.toFixed(1)}h` : "--", detail: null },
-      { label: "Efficiency", value: totalInBedMinutes && detection?.durationHours != null ? `${Math.round((detection.durationHours * 60 * 100) / totalInBedMinutes)}%` : "--", detail: null },
-      { label: "Interruptions", value: detection?.interruptionCount != null ? `${detection.interruptionCount}` : "--", detail: null },
-      { label: "Resting HR", value: feature?.restingHeartRate != null ? `${Math.round(feature.restingHeartRate)} bpm` : "--", detail: null },
-      { label: "HRV (RMSSD)", value: feature?.rmssd != null ? `${Math.round(feature.rmssd)} ms` : "--", detail: null },
-      { label: "Respiratory Rate", value: feature?.respiratoryRate != null ? `${feature.respiratoryRate.toFixed(1)} rpm` : "--", detail: null },
-      { label: "Consistency", value: metric?.sleepConsistencyScore != null ? `${Math.round(metric.sleepConsistencyScore)}` : "--", detail: "/ 100" },
+      {
+        label: "Recovery",
+        value: score?.dailyBalance != null ? `${score.dailyBalance}%` : "--",
+        detail: score?.recommendation ?? null,
+      },
+      {
+        label: "Sleep Reserve",
+        value:
+          score?.sleepReserveHours != null ? `${score.sleepReserveHours.toFixed(1)}h` : "--",
+        detail: null,
+      },
+      {
+        label: "Efficiency",
+        value:
+          totalInBedMinutes && detection?.durationHours != null
+            ? `${Math.round((detection.durationHours * 60 * 100) / totalInBedMinutes)}%`
+            : "--",
+        detail: null,
+      },
+      {
+        label: "Interruptions",
+        value: detection?.interruptionCount != null ? `${detection.interruptionCount}` : "--",
+        detail: null,
+      },
+      {
+        label: "Resting HR",
+        value:
+          feature?.restingHeartRate != null
+            ? `${Math.round(feature.restingHeartRate)} bpm`
+            : "--",
+        detail: null,
+      },
+      {
+        label: "HRV (RMSSD)",
+        value: feature?.rmssd != null ? `${Math.round(feature.rmssd)} ms` : "--",
+        detail: null,
+      },
+      {
+        label: "Respiratory Rate",
+        value:
+          feature?.respiratoryRate != null ? `${feature.respiratoryRate.toFixed(1)} rpm` : "--",
+        detail: null,
+      },
+      {
+        label: "Consistency",
+        value:
+          metric?.sleepConsistencyScore != null
+            ? `${Math.round(metric.sleepConsistencyScore)}`
+            : "--",
+        detail: "/ 100",
+      },
     ],
     factorInsights: (results.journalCorrelations ?? []).map((item) => {
       const deepMin = Math.round(item.avgDeepDelta ?? 0)
@@ -613,8 +458,12 @@ function buildLegacySleepView(results: PipelineResults, selectedKey: string): Sl
       alarmMinutes,
       smartWakeEnabled: results.sleepPlan?.smartWakeEnabled ?? false,
       alarmStatusText: results.sleepPlan?.alarmEnabled ? "Legacy plan active" : "Alarm disabled",
-      sleepReserveText: score?.sleepReserveHours != null ? `${score.sleepReserveHours.toFixed(1)}h` : "--",
-      estimatedSleepHours: feature?.sleepEstimateHours != null ? `${feature.sleepEstimateHours.toFixed(1)} h` : "--",
+      sleepReserveText:
+        score?.sleepReserveHours != null ? `${score.sleepReserveHours.toFixed(1)}h` : "--",
+      estimatedSleepHours:
+        feature?.sleepEstimateHours != null
+          ? `${feature.sleepEstimateHours.toFixed(1)} h`
+          : "--",
       smartWakeStatusText: results.sleepPlan?.smartWakeEnabled ? "Smart wake enabled" : "",
     },
     confidence: {
@@ -646,291 +495,77 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
   const [selectedDate, setSelectedDate] = useState(todayKey)
   const [homeView, setHomeView] = useState<HomeViewModel | null>(null)
   const [sleepView, setSleepView] = useState<SleepViewModel | null>(null)
-  const [liveDeviceState, setLiveDeviceState] = useState<LiveDeviceState>(emptyDeviceState)
-  const [scannedDevices, setScannedDevices] = useState<ScannedDevice[]>([])
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [syncStage, setSyncStage] = useState("")
-  const [syncProgress, setSyncProgress] = useState<DownloadProgress | null>(null)
-  const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const lastAutoSyncAttemptAt = useRef<number>(0)
 
-  const loadDashboardForDate = useCallback(async (showRefreshSpinner: boolean) => {
-    if (!authToken) {
-      setHomeView(null)
-      setSleepView(null)
-      return
-    }
+  const clearError = useCallback(() => setError(null), [])
 
-    if (showRefreshSpinner) {
-      setIsRefreshing(true)
-    }
-    setError(null)
+  const loadDashboardForDate = useCallback(
+    async (showRefreshSpinner: boolean) => {
+      if (!authToken) {
+        setHomeView(null)
+        setSleepView(null)
+        return
+      }
 
-    // 1) Instant render from local cache if available.
-    try {
-      const db = openDatabase()
-      const [cachedHome, cachedSleep] = await Promise.all([
-        getViewCache<HomeViewModel>(db, "home", selectedDate),
-        getViewCache<SleepViewModel>(db, "sleep", selectedDate),
-      ])
-      if (cachedHome) setHomeView(cachedHome)
-      if (cachedSleep) setSleepView(cachedSleep)
-    } catch (cacheErr) {
-      console.warn("[dashboard] cache read failed", cacheErr)
-    }
+      if (showRefreshSpinner) {
+        setIsRefreshing(true)
+      }
+      setError(null)
 
-    try {
-      const [nextHomeView, nextSleepView] = await Promise.all([
-        fetchHomeView(selectedDate),
-        fetchSleepView(selectedDate),
-      ])
-      setHomeView(nextHomeView)
-      setSleepView(nextSleepView)
-      // 2) Refresh cache with fresh backend values for offline next time.
       try {
         const db = openDatabase()
-        await setViewCache(db, "home", selectedDate, nextHomeView)
-        await setViewCache(db, "sleep", selectedDate, nextSleepView)
-      } catch (cacheWriteErr) {
-        console.warn("[dashboard] cache write failed", cacheWriteErr)
-      }
-    } catch (nextError: any) {
-      if (isViewsApiUnavailable(nextError)) {
-        try {
-          const legacyResults = await fetchResults()
-          setHomeView(buildLegacyHomeView(legacyResults, selectedDate))
-          setSleepView(buildLegacySleepView(legacyResults, selectedDate))
-          setError(null)
-          return
-        } catch (legacyError: any) {
-          setError(legacyError?.message ?? "Failed to refresh dashboard")
-          return
-        }
+        const [cachedHome, cachedSleep] = await Promise.all([
+          getViewCache<HomeViewModel>(db, "home", selectedDate),
+          getViewCache<SleepViewModel>(db, "sleep", selectedDate),
+        ])
+        if (cachedHome) setHomeView(cachedHome)
+        if (cachedSleep) setSleepView(cachedSleep)
+      } catch (cacheErr) {
+        console.warn("[dashboard] cache read failed", cacheErr)
       }
 
-      setError(nextError?.message ?? "Failed to refresh dashboard")
-    } finally {
-      if (showRefreshSpinner) {
-        setIsRefreshing(false)
+      try {
+        const [nextHomeView, nextSleepView] = await Promise.all([
+          fetchHomeView(selectedDate),
+          fetchSleepView(selectedDate),
+        ])
+        setHomeView(nextHomeView)
+        setSleepView(nextSleepView)
+        try {
+          const db = openDatabase()
+          await setViewCache(db, "home", selectedDate, nextHomeView)
+          await setViewCache(db, "sleep", selectedDate, nextSleepView)
+        } catch (cacheWriteErr) {
+          console.warn("[dashboard] cache write failed", cacheWriteErr)
+        }
+      } catch (nextError: any) {
+        if (isViewsApiUnavailable(nextError)) {
+          try {
+            const legacyResults = await fetchResults()
+            setHomeView(buildLegacyHomeView(legacyResults, selectedDate))
+            setSleepView(buildLegacySleepView(legacyResults, selectedDate))
+            setError(null)
+            return
+          } catch (legacyError: any) {
+            setError(legacyError?.message ?? "Failed to refresh dashboard")
+            return
+          }
+        }
+
+        setError(nextError?.message ?? "Failed to refresh dashboard")
+      } finally {
+        if (showRefreshSpinner) {
+          setIsRefreshing(false)
+        }
       }
-    }
-  }, [authToken, selectedDate])
+    },
+    [authToken, selectedDate],
+  )
 
   const refreshDashboard = useCallback(async () => {
     await loadDashboardForDate(true)
   }, [loadDashboardForDate])
-
-  const refreshDeviceState = useCallback(async () => {
-    if (bleManager.connectionState !== "ready") return
-    try {
-      await bleManager.writeCommand(commandService.buildGetBatteryLevel())
-      await bleManager.writeCommand(commandService.buildGetHelloHarvard())
-      await bleManager.writeCommand(commandService.buildGetScheduledAlarm())
-      await bleManager.writeCommand(commandService.buildReportVersionInfo())
-      await bleManager.writeCommand(commandService.buildGetClock())
-      await bleManager.writeCommand(commandService.buildToggleRealtimeHR(true))
-      await bleManager.writeCommand(commandService.buildToggleGenericHRProfile(true))
-      await bleManager.writeCommand(commandService.buildStartRawData())
-    } catch {
-      // Keep device refresh best-effort to avoid interrupting screen load.
-    }
-  }, [])
-
-  const clearError = useCallback(() => setError(null), [])
-
-  const persistDevicePreference = useCallback(async (key: string, value: boolean) => {
-    await AsyncStorage.setItem(key, JSON.stringify(value))
-  }, [])
-
-  const scan = useCallback(async () => {
-    setError(null)
-    setScannedDevices([])
-    try {
-      const allowed = await bleManager.requestPermissions()
-      if (!allowed) {
-        throw new Error("Bluetooth permission was denied")
-      }
-      await bleManager.startScan((device) => {
-        setScannedDevices((current) => {
-          if (current.some((candidate) => candidate.id === device.id)) return current
-          return [...current, device]
-        })
-      })
-    } catch (nextError: any) {
-      setError(nextError?.message ?? "Unable to scan for WHOOP devices")
-    }
-  }, [])
-
-  const connect = useCallback(async (deviceId: string) => {
-    setError(null)
-    try {
-      await bleManager.connect(deviceId)
-      setLiveDeviceState((current) => ({
-        ...current,
-        deviceName: bleManager.getDeviceName() || "WHOOP",
-      }))
-      await refreshDeviceState()
-    } catch (nextError: any) {
-      setError(nextError?.message ?? "Connection failed")
-    }
-  }, [refreshDeviceState])
-
-  const disconnect = useCallback(async () => {
-    await bleManager.disconnect()
-  }, [])
-
-  const syncNow = useCallback(async () => {
-    console.log("[syncNow] start; bleState=", bleManager.connectionState)
-    if (bleManager.connectionState !== "ready") {
-      setError("Connect your WHOOP strap before syncing.")
-      return
-    }
-
-    setIsSyncing(true)
-    setSyncStage("Downloading from strap…")
-    setSyncSummary(null)
-    setError(null)
-
-    try {
-      const downloader = new HistoryDownloader()
-      const records = await downloader.startDownload(setSyncProgress)
-      console.log("[syncNow] download resolved with", records.length, "records")
-      setSyncProgress((current) => ({
-        state: "complete",
-        chunksReceived: current?.chunksReceived ?? 0,
-        recordsParsed: records.length,
-        totalBytes: current?.totalBytes ?? 0,
-      }))
-
-      // Mark sync time as soon as we finish downloading from strap,
-      // regardless of whether backend upload succeeds.
-      const lastSyncAt = new Date().toISOString()
-      await AsyncStorage.setItem(LAST_SYNC_KEY, lastSyncAt)
-      setLiveDeviceState((current) => ({ ...current, lastSyncAt }))
-
-      if (records.length > 0) {
-        setSyncStage(`Writing ${records.length} records locally…`)
-        const db = openDatabase()
-        const mapped = records.map(historicalRecordToRawRow)
-        console.log("[syncNow] calling ingestBleRecords for", mapped.length, "records")
-        const ingestLocalResult = await ingestBleRecords(db, mapped)
-        console.log("[syncNow] ingestBleRecords done", ingestLocalResult)
-
-        setSyncStage("Running pipeline…")
-        console.log("[syncNow] Running pipeline on backend")
-        await runPipeline()
-
-        setSyncStage("Refreshing views…")
-        const results = await fetchResults()
-        setSyncSummary({
-          nights: results.sleepDetections?.length ?? 0,
-          stages: results.sleepStages?.length ?? 0,
-          scores: results.dailyScores?.length ?? 0,
-        })
-      }
-
-      await refreshDashboard()
-    } catch (nextError: any) {
-      console.error("[syncNow] failed", nextError)
-      setError(nextError?.message ?? "Sync failed")
-    } finally {
-      setIsSyncing(false)
-      setSyncStage("")
-    }
-  }, [refreshDashboard])
-
-  const maybeAutoSync = useCallback(async () => {
-    if (!isAuthenticated || isSyncing || bleManager.connectionState !== "ready") return
-
-    const now = Date.now()
-    if (now - lastAutoSyncAttemptAt.current < 60 * 1000) return
-
-    if (liveDeviceState.lastSyncAt) {
-      const lastSyncMs = new Date(liveDeviceState.lastSyncAt).getTime()
-      if (!Number.isNaN(lastSyncMs) && now - lastSyncMs < 3 * 60 * 1000) {
-        return
-      }
-    }
-
-    lastAutoSyncAttemptAt.current = now
-    await syncNow()
-  }, [isAuthenticated, isSyncing, liveDeviceState.lastSyncAt, syncNow])
-
-  const toggleRealtimeHeartRate = useCallback(
-    async (enabled: boolean) => {
-      if (bleManager.connectionState !== "ready") {
-        setLiveDeviceState((current) => ({ ...current, isRealtimeHeartRateEnabled: enabled }))
-        await persistDevicePreference(REALTIME_HR_KEY, enabled)
-        return
-      }
-
-      try {
-        await bleManager.writeCommand(commandService.buildToggleRealtimeHR(enabled))
-        setLiveDeviceState((current) => ({
-          ...current,
-          isRealtimeHeartRateEnabled: enabled,
-          realtimeHeartRate: enabled ? current.realtimeHeartRate : null,
-          realtimeSamples: enabled ? current.realtimeSamples : [],
-        }))
-        await persistDevicePreference(REALTIME_HR_KEY, enabled)
-        if (enabled) {
-          realtimeForwarder.startSession(bleManager.getDeviceId() || 'unknown')
-        } else {
-          realtimeForwarder.endSession()
-        }
-      } catch (nextError: any) {
-        setError(nextError?.message ?? "Failed to toggle realtime heart rate")
-      }
-    },
-    [persistDevicePreference],
-  )
-
-  const toggleBroadcastHeartRate = useCallback(
-    async (enabled: boolean) => {
-      if (bleManager.connectionState !== "ready") {
-        setLiveDeviceState((current) => ({ ...current, isBroadcastHeartRateEnabled: enabled }))
-        await persistDevicePreference(BROADCAST_HR_KEY, enabled)
-        return
-      }
-
-      try {
-        await bleManager.writeCommand(commandService.buildToggleGenericHRProfile(enabled))
-        setLiveDeviceState((current) => ({ ...current, isBroadcastHeartRateEnabled: enabled }))
-        await persistDevicePreference(BROADCAST_HR_KEY, enabled)
-      } catch (nextError: any) {
-        setError(nextError?.message ?? "Failed to toggle broadcast heart rate")
-      }
-    },
-    [persistDevicePreference],
-  )
-
-  const toggleRawDataStreaming = useCallback(
-    async (enabled: boolean) => {
-      if (bleManager.connectionState !== "ready") {
-        setLiveDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: enabled }))
-        await persistDevicePreference(RAW_STREAM_KEY, enabled)
-        return
-      }
-
-      try {
-        await bleManager.writeCommand(
-          enabled ? commandService.buildStartRawData() : commandService.buildStopRawData(),
-        )
-        setLiveDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: enabled }))
-        await persistDevicePreference(RAW_STREAM_KEY, enabled)
-        if (enabled) {
-          realtimeForwarder.startSession(bleManager.getDeviceId() || 'unknown')
-        } else {
-          realtimeForwarder.endSession()
-        }
-      } catch (nextError: any) {
-        setError(nextError?.message ?? "Failed to toggle raw data stream")
-      }
-    },
-    [persistDevicePreference],
-  )
 
   const saveSleepPlan = useCallback(
     async (input: SleepPlanInput) => {
@@ -949,7 +584,9 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
                   planner: {
                     ...current.planner,
                     ...input,
-                    alarmStatusText: input.alarmEnabled ? "Alarm enabled locally" : "Alarm disabled",
+                    alarmStatusText: input.alarmEnabled
+                      ? "Alarm enabled locally"
+                      : "Alarm disabled",
                     smartWakeStatusText: input.smartWakeEnabled ? "Smart wake enabled" : "",
                   },
                 }
@@ -965,91 +602,12 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
     [selectedDate],
   )
 
-  const armAlarm = useCallback(async () => {
-    if (bleManager.connectionState !== "ready" || !sleepView) {
-      setError("Connect your WHOOP strap before arming the strap alarm.")
-      return
-    }
-
-    const alarmDate = nextAlarmDate(sleepView.planner.alarmMinutes)
-
-    try {
-      await bleManager.writeCommand(commandService.buildSetScheduledAlarm(alarmDate))
-      await bleManager.writeCommand(commandService.buildGetScheduledAlarm())
-      setLiveDeviceState((current) => ({
-        ...current,
-        strapAlarmAt: alarmDate.toISOString(),
-        strapAlarmArmed: true,
-      }))
-      await refreshDashboard()
-    } catch (nextError: any) {
-      setError(nextError?.message ?? "Failed to arm strap alarm")
-    }
-  }, [sleepView, refreshDashboard])
-
-  const disarmAlarm = useCallback(async () => {
-    if (bleManager.connectionState !== "ready") {
-      setError("Connect your WHOOP strap before disarming the strap alarm.")
-      return
-    }
-
-    try {
-      await bleManager.writeCommand(commandService.buildClearScheduledAlarm())
-      await bleManager.writeCommand(commandService.buildGetScheduledAlarm())
-      setLiveDeviceState((current) => ({
-        ...current,
-        strapAlarmAt: null,
-        strapAlarmArmed: false,
-      }))
-      await refreshDashboard()
-    } catch (nextError: any) {
-      setError(nextError?.message ?? "Failed to disarm strap alarm")
-    }
-  }, [refreshDashboard])
-
-  const testAlarm = useCallback(async () => {
-    if (bleManager.connectionState !== "ready") {
-      setError("Connect your WHOOP strap before testing the alarm.")
-      return
-    }
-
-    try {
-      await bleManager.writeCommand(commandService.buildRunAlarm())
-    } catch (nextError: any) {
-      setError(nextError?.message ?? "Failed to trigger strap alarm")
-    }
-  }, [])
-
   const goToPreviousDay = useCallback(() => {
     setSelectedDate((current) => addDays(current, -1))
   }, [])
 
   const goToNextDay = useCallback(() => {
     setSelectedDate((current) => addDays(current, 1))
-  }, [])
-
-  useEffect(() => {
-    AsyncStorage.getItem(LAST_SYNC_KEY).then((lastSyncAt) => {
-      setLiveDeviceState((current) => ({ ...current, lastSyncAt }))
-    })
-  }, [])
-
-  useEffect(() => {
-    Promise.all([
-      AsyncStorage.getItem(REALTIME_HR_KEY),
-      AsyncStorage.getItem(BROADCAST_HR_KEY),
-      AsyncStorage.getItem(RAW_STREAM_KEY),
-    ]).then(([realtimeValue, broadcastValue, rawStreamValue]) => {
-      setLiveDeviceState((current) => ({
-        ...current,
-        isRealtimeHeartRateEnabled:
-          realtimeValue == null ? current.isRealtimeHeartRateEnabled : JSON.parse(realtimeValue),
-        isBroadcastHeartRateEnabled:
-          broadcastValue == null ? current.isBroadcastHeartRateEnabled : JSON.parse(broadcastValue),
-        isRawDataStreamingEnabled:
-          rawStreamValue == null ? current.isRawDataStreamingEnabled : JSON.parse(rawStreamValue),
-      }))
-    })
   }, [])
 
   useEffect(() => {
@@ -1061,259 +619,30 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
     loadDashboardForDate(false).catch(() => undefined)
   }, [isAuthenticated, loadDashboardForDate])
 
-  useEffect(() => {
-    bleManager.autoConnect().catch(() => undefined)
-
-    const unsubscribeState = bleManager.onConnectionStateChange((connectionState) => {
-      setLiveDeviceState((current) => {
-        if (connectionState === "disconnected") {
-          return {
-            ...emptyDeviceState,
-            deviceName: current.deviceName,
-            isRealtimeHeartRateEnabled: current.isRealtimeHeartRateEnabled,
-            isBroadcastHeartRateEnabled: current.isBroadcastHeartRateEnabled,
-            isRawDataStreamingEnabled: current.isRawDataStreamingEnabled,
-            lastSyncAt: current.lastSyncAt,
-          }
-        }
-        return {
-          ...current,
-          connectionState,
-          isBusy: connectionState !== "ready",
-          deviceName: bleManager.getDeviceName() || current.deviceName,
-        }
-      })
-
-      if (connectionState === "ready") {
-        // Start all telemetry forwarders
-        eventForwarder.start()
-        realtimeForwarder.startSession(bleManager.getDeviceId() || 'unknown')
-        consoleLogForwarder.start(bleManager.getDeviceId() || 'unknown')
-        refreshDeviceState().catch(() => undefined)
-        maybeAutoSync().catch(() => undefined)
-      }
-    })
-
-    const unsubscribePackets = bleManager.onPacket("*", (packet) => {
-      // If we're receiving packets, the device is connected — reconcile stale disconnected state
-      setLiveDeviceState((current) => {
-        if (current.connectionState === "disconnected") {
-          return {
-            ...current,
-            connectionState: "ready" as ConnectionState,
-            isBusy: false,
-            deviceName: bleManager.getDeviceName() || current.deviceName,
-          }
-        }
-        return current
-      })
-
-      const parsedBattery =
-        packet.type === PacketType.CommandResponse ? parseBatteryLevel(packet) : null
-      if (parsedBattery != null) {
-        setLiveDeviceState((current) => ({ ...current, batteryLevel: parsedBattery }))
-      }
-
-      if (
-        packet.type === PacketType.CommandResponse &&
-        packet.command === CommandNumber.GetHelloHarvard &&
-        packet.data.length > 7
-      ) {
-        setLiveDeviceState((current) => ({ ...current, isCharging: packet.data[7] !== 0 }))
-      }
-
-      if (
-        packet.type === PacketType.CommandResponse &&
-        packet.command === CommandNumber.GetScheduledAlarm
-      ) {
-        const scheduledAlarm = parseScheduledAlarm(packet)
-        setLiveDeviceState((current) => ({
-          ...current,
-          strapAlarmAt: scheduledAlarm,
-          strapAlarmArmed: scheduledAlarm != null,
-        }))
-      }
-
-      if (packet.type === PacketType.CommandResponse) {
-        const version = parseVersionInfo(packet)
-        if (version != null) {
-          setLiveDeviceState((current) => ({ ...current, firmwareVersion: version }))
-        }
-        const clock = parseDeviceClock(packet)
-        if (clock != null) {
-          setLiveDeviceState((current) => ({ ...current, deviceClock: clock }))
-        }
-        // Also parse isWorn from HelloHarvard (offset 116)
-        if (packet.command === CommandNumber.GetHelloHarvard && packet.data.length > 116) {
-          setLiveDeviceState((current) => ({ ...current, isWorn: packet.data[116] !== 0 }))
-        }
-      }
-
-      if (packet.type === PacketType.Event) {
-        // BatteryLevel events ignored — Swift app doesn't parse them either.
-        // Battery level is read from GetBatteryLevel command responses only.
-        if (packet.command === EventNumber.ChargingOn) {
-          setLiveDeviceState((current) => ({ ...current, isCharging: true }))
-        } else if (packet.command === EventNumber.ChargingOff) {
-          setLiveDeviceState((current) => ({ ...current, isCharging: false }))
-        } else if (packet.command === EventNumber.StrapDrivenAlarmSet) {
-          setLiveDeviceState((current) => ({ ...current, strapAlarmArmed: true }))
-        } else if (packet.command === EventNumber.BleRealtimeHROn) {
-          setLiveDeviceState((current) => ({ ...current, isRealtimeHeartRateEnabled: true }))
-        } else if (packet.command === EventNumber.BleRealtimeHROff) {
-          setLiveDeviceState((current) => ({
-            ...current,
-            isRealtimeHeartRateEnabled: false,
-            realtimeHeartRate: null,
-            realtimeSamples: [],
-          }))
-        } else if (packet.command === EventNumber.RawDataCollectionOn) {
-          setLiveDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: true }))
-        } else if (packet.command === EventNumber.RawDataCollectionOff) {
-          setLiveDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: false }))
-        } else if (packet.command === EventNumber.WristOn) {
-          setLiveDeviceState((current) => ({ ...current, isWorn: true }))
-        } else if (packet.command === EventNumber.WristOff) {
-          setLiveDeviceState((current) => ({ ...current, isWorn: false }))
-        }
-
-        // Forward all device events to backend telemetry
-        const deviceId = bleManager.getDeviceId() || 'unknown';
-        eventForwarder.push({
-          deviceId,
-          eventNumber: packet.command,
-          eventName: EventNumber[packet.command] ?? `unknown_${packet.command}`,
-          rawPayload: packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
-          capturedAt: new Date().toISOString(),
-        });
-      }
-
-      const realtimeHeartRate = parseRealtimeHeartRate(packet)
-      if (realtimeHeartRate != null) {
-        const sample = { timestamp: new Date().toISOString(), value: realtimeHeartRate }
-        setLiveDeviceState((current) => ({
-          ...current,
-          realtimeHeartRate,
-          realtimeSamples: [...current.realtimeSamples.slice(-39), sample],
-        }))
-
-        // Forward realtime HR to backend telemetry
-        realtimeForwarder.pushHR(
-          realtimeHeartRate,
-          packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
-          sample.timestamp,
-        );
-      }
-
-      // Parse IMU data packets
-      if (
-        packet.type === PacketType.RealtimeIMUStream ||
-        packet.type === PacketType.HistoricalIMUStream
-      ) {
-        // IMU packets are received but not forwarded yet — log count for debugging
-        console.log(`[IMU] Received ${packet.type === PacketType.RealtimeIMUStream ? 'realtime' : 'historical'} IMU packet (${packet.data.length} bytes)`);
-      }
-
-      // Parse and forward console output from the strap
-      if (packet.type === PacketType.ConsoleLogs && packet.data.length > 7) {
-        const raw = packet.data.slice(7);
-        // Filter out magic bytes [0x34, 0x00, 0x01]
-        const filtered: number[] = [];
-        for (let i = 0; i < raw.length; i++) {
-          if (i + 2 < raw.length && raw[i] === 0x34 && raw[i + 1] === 0x00 && raw[i + 2] === 0x01) {
-            i += 2;
-            continue;
-          }
-          filtered.push(raw[i]);
-        }
-        if (filtered.length > 0) {
-          const text = new TextDecoder().decode(new Uint8Array(filtered));
-          consoleLogForwarder.push(text);
-        }
-      }
-
-      // Forward raw sensor data to backend telemetry
-      if (packet.type === PacketType.RealtimeRawData && packet.data.length > 0) {
-        realtimeForwarder.pushRaw(
-          null,
-          uint8ArrayToBase64(packet.data),
-          new Date().toISOString(),
-        );
-      }
-    })
-
-    const syncTimer = setInterval(() => {
-      maybeAutoSync().catch(() => undefined)
-    }, 2 * 60 * 1000)
-
-    return () => {
-      unsubscribeState()
-      unsubscribePackets()
-      clearInterval(syncTimer)
-      eventForwarder.stop()
-      realtimeForwarder.endSession()
-      consoleLogForwarder.stop()
-    }
-  }, [maybeAutoSync, refreshDeviceState])
-
   const value = useMemo<DashboardContextValue>(
     () => ({
       selectedDate,
       homeView,
       sleepView,
-      liveDeviceState,
-      scannedDevices,
       isRefreshing,
-      isSyncing,
-      syncStage,
-      syncProgress,
-      syncSummary,
       error,
       setSelectedDate,
       goToPreviousDay,
       goToNextDay,
       refreshDashboard,
-      scan,
-      connect,
-      disconnect,
-      syncNow,
-      refreshStrapMetadata: refreshDeviceState,
-      toggleRealtimeHeartRate,
-      toggleBroadcastHeartRate,
-      toggleRawDataStreaming,
       saveSleepPlan,
-      armAlarm,
-      disarmAlarm,
-      testAlarm,
       clearError,
     }),
     [
       selectedDate,
       homeView,
       sleepView,
-      liveDeviceState,
-      scannedDevices,
       isRefreshing,
-      isSyncing,
-      syncStage,
-      syncProgress,
-      syncSummary,
       error,
       goToPreviousDay,
       goToNextDay,
       refreshDashboard,
-      scan,
-      connect,
-      disconnect,
-      syncNow,
-      refreshDeviceState,
-      toggleRealtimeHeartRate,
-      toggleBroadcastHeartRate,
-      toggleRawDataStreaming,
       saveSleepPlan,
-      armAlarm,
-      disarmAlarm,
-      testAlarm,
       clearError,
     ],
   )
