@@ -26,10 +26,10 @@ function backendMirror() {
   }
 }
 
-// The backend returns TypeORM entities where date columns are Date objects
-// (serialized to ISO strings in JSON). Drizzle/ExpoSQLite expects epoch ms
-// integers for those columns. Also strips undefined values, which ExpoSQLite
-// cannot bind and throws InvalidConvertibleException for.
+// The backend returns TypeORM entities where:
+//   - Date columns (nightDate, updatedAt, etc.) are ISO strings → convert to epoch ms
+//   - jsonb columns (epochTimeline) are parsed objects → stringify for TEXT storage
+//   - undefined values → strip (ExpoSQLite cannot bind undefined)
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/
 function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
@@ -38,6 +38,7 @@ function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
       .map(([k, v]) => {
         if (v instanceof Date) return [k, v.getTime()]
         if (typeof v === "string" && ISO_DATE_RE.test(v)) return [k, new Date(v).getTime()]
+        if (v !== null && typeof v === "object") return [k, JSON.stringify(v)]
         return [k, v]
       }),
   )
