@@ -1,7 +1,9 @@
 import * as SQLite from "expo-sqlite"
 import { drizzle, ExpoSQLiteDatabase } from "drizzle-orm/expo-sqlite"
 import { migrate } from "drizzle-orm/expo-sqlite/migrator"
+
 import * as schema from "./schema"
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const migrations = require("./migrations/migrations.js")
 
@@ -15,6 +17,7 @@ export function openDatabase(): NoopDatabase {
   sqliteInstance = SQLite.openDatabaseSync("noop.db")
   sqliteInstance.execSync("PRAGMA journal_mode = WAL;")
   sqliteInstance.execSync("PRAGMA foreign_keys = ON;")
+  sqliteInstance.execSync("PRAGMA busy_timeout = 5000;")
   dbInstance = drizzle(sqliteInstance, { schema })
   return dbInstance
 }

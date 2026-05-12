@@ -36,10 +36,10 @@ import { AppNavigator } from "./navigators/AppNavigator"
 import { useNavigationPersistence } from "./navigators/navigationUtilities"
 import { apiGet, apiPost } from "./services/api/noopClient"
 import { openDatabase, runMigrations, wipeDatabase } from "./services/db"
-import { setViewCache } from "./services/db/repositories/viewCache"
 import { SyncService } from "./services/sync/SyncService"
 import { drainOnce } from "./services/sync/uplinkDrainer"
 import { pullDownlink } from "./services/sync/downlinkPuller"
+import { refreshAllViews } from "./services/sync/refreshAllViews"
 import { sweepRetention } from "./services/sync/retentionSweeper"
 import {
   DEFAULT_RAW_RETENTION_DAYS,
@@ -149,19 +149,7 @@ export function App() {
             "sleep_plans",
           ],
         })
-        const today = new Date().toISOString().slice(0, 10)
-        try {
-          const [home, sleep, trends] = await Promise.all([
-            apiGet(`/views/home?date=${today}`),
-            apiGet(`/views/sleep?date=${today}`),
-            apiGet(`/views/trends?days=30`),
-          ])
-          await setViewCache(db, "home", today, home)
-          await setViewCache(db, "sleep", today, sleep)
-          await setViewCache(db, "trends", "30d", trends)
-        } catch (err) {
-          console.warn("[sync] view cache refresh failed", err)
-        }
+        await refreshAllViews(db)
       },
       intervalMs: 15_000,
     })

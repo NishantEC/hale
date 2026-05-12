@@ -6,6 +6,7 @@ const BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   DEFAULT_BASE_URL;
 const REQUEST_TIMEOUT_MS = 20000;
+const PIPELINE_TIMEOUT_MS = 300000;
 export const INSPECTOR_WEB_URL = process.env.EXPO_PUBLIC_INSPECTOR_URL || 'https://noop.enform.co';
 
 let sessionToken: string | null = null;
@@ -23,6 +24,26 @@ export function registerSessionClearedCallback(cb: () => void): void {
 // trustedOrigins list so the request is accepted without a backend redeploy.
 // Configurable via EXPO_PUBLIC_AUTH_ORIGIN if needed.
 const AUTH_ORIGIN = process.env.EXPO_PUBLIC_AUTH_ORIGIN || 'http://localhost:3009';
+
+export function deviceTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+export function deviceDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function withDeviceTimeZone(path: string): string {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}timeZone=${encodeURIComponent(deviceTimeZone())}`;
+}
 
 function withBaseHeaders(headers: HeadersInit = {}): HeadersInit {
   return {
@@ -371,14 +392,26 @@ export function setSessionToken(token?: string | null) {
 
 async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutMessage = `Request timed out after ${Math.round(timeoutMs / 1000)}s`;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutReject = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+  });
 
   try {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: withBaseHeaders(init.headers),
-    signal: controller.signal,
-  });
+    const request = fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: withBaseHeaders(init.headers),
+      signal: controller.signal,
+    });
+    // If timeoutReject wins the race, the still-pending fetch eventually
+    // rejects with AbortError. Mark that rejection as handled so it doesn't
+    // surface as an unhandledRejection.
+    request.catch(() => {});
+    const res = await Promise.race([request, timeoutReject]);
 
     if (res.status === 401) {
       clearSession()
@@ -424,11 +457,11 @@ async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQ
     return data;
   } catch (error: any) {
     if (error?.name === 'AbortError') {
-      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s`);
+      throw new Error(timeoutMessage);
     }
     throw error;
   } finally {
-    clearTimeout(timeout);
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -501,7 +534,7 @@ export async function apiGet(path: string) {
   });
 }
 
-export async function apiPost(path: string, body: any) {
+export async function apiPost(path: string, body: any, timeoutMs = REQUEST_TIMEOUT_MS) {
   return requestJson(path, {
     method: 'POST',
     headers: withBaseHeaders({
@@ -509,7 +542,7 @@ export async function apiPost(path: string, body: any) {
       Authorization: `Bearer ${sessionToken}`,
     }),
     body: JSON.stringify(body),
-  });
+  }, timeoutMs);
 }
 
 export async function apiPut(path: string, body: any) {
@@ -592,7 +625,7 @@ export async function ingestHistoricalRecords(records: HistoricalRecord[]): Prom
 }
 
 export async function runPipeline(): Promise<{ ok: boolean; computed: any }> {
-  return apiPost('/pipeline/run', {});
+  return apiPost(withDeviceTimeZone('/pipeline/run'), {}, PIPELINE_TIMEOUT_MS);
 }
 
 export async function fetchResults(): Promise<PipelineResults> {
@@ -600,11 +633,11 @@ export async function fetchResults(): Promise<PipelineResults> {
 }
 
 export async function fetchHomeView(date: string): Promise<HomeViewModel> {
-  return apiGet(`/views/home?date=${encodeURIComponent(date)}`);
+  return apiGet(withDeviceTimeZone(`/views/home?date=${encodeURIComponent(date)}`));
 }
 
 export async function fetchSleepView(date: string): Promise<SleepViewModel> {
-  return apiGet(`/views/sleep?date=${encodeURIComponent(date)}`);
+  return apiGet(withDeviceTimeZone(`/views/sleep?date=${encodeURIComponent(date)}`));
 }
 
 export interface TrendsViewModel {
@@ -749,15 +782,17 @@ export async function pushMotionActivity(
 }
 
 export async function fetchDebugOverview(date: string): Promise<DebugOverview> {
-  return apiGet(`/debug/overview?date=${encodeURIComponent(date)}`);
+  return apiGet(withDeviceTimeZone(`/debug/overview?date=${encodeURIComponent(date)}`));
 }
 
 export async function fetchDebugRawRecords(date: string, limit = 120): Promise<DebugRawRecords> {
-  return apiGet(`/debug/raw-records?date=${encodeURIComponent(date)}&limit=${limit}`);
+  return apiGet(
+    withDeviceTimeZone(`/debug/raw-records?date=${encodeURIComponent(date)}&limit=${limit}`),
+  );
 }
 
 export async function fetchDebugSleepNight(date: string): Promise<DebugSleepNight> {
-  return apiGet(`/debug/sleep-night?date=${encodeURIComponent(date)}`);
+  return apiGet(withDeviceTimeZone(`/debug/sleep-night?date=${encodeURIComponent(date)}`));
 }
 
 export async function fetchDebugPipelineResults(): Promise<DebugPipelineResults> {
@@ -765,11 +800,15 @@ export async function fetchDebugPipelineResults(): Promise<DebugPipelineResults>
 }
 
 export async function runDebugPipeline(date: string): Promise<{ runResult: { ok: boolean; computed: Record<string, number> }; overview: DebugOverview }> {
-  return apiPost(`/debug/pipeline/run?date=${encodeURIComponent(date)}`, {});
+  return apiPost(
+    withDeviceTimeZone(`/debug/pipeline/run?date=${encodeURIComponent(date)}`),
+    {},
+    PIPELINE_TIMEOUT_MS,
+  );
 }
 
 export async function recomputeDebugViews(date: string): Promise<DebugViewsRecompute> {
-  return apiPost(`/debug/views/recompute?date=${encodeURIComponent(date)}`, {});
+  return apiPost(withDeviceTimeZone(`/debug/views/recompute?date=${encodeURIComponent(date)}`), {});
 }
 
 // Journal CRUD

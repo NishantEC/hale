@@ -7,8 +7,8 @@ import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { openDatabase } from "@/services/db"
-import { claimOutboundBatch, listDeadLetters, markOutboundSynced, purgeOutboundQueue, queueDepth, recordOutboundFailure } from "@/services/db/repositories/outboundQueue"
-import { backfillUnsyncedRawSensorRecords, markRawSensorRecordsSynced } from "@/services/db/repositories/rawSensorRecord"
+import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
+import { runForceUpload } from "@/services/sync/forceUpload"
 import {
   apiPost,
   DebugOverview,
@@ -113,58 +113,25 @@ export const DebugInspectorScreen: FC = () => {
     setBanner(null)
     try {
       const db = openDatabase()
+      const result = await runForceUpload(db, {
+        post: (tableName, payloads) =>
+          apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
+        onProgress: (progress) => {
+          setBanner(
+            `Uploading ${progress.tableName} batch (${progress.batchSize})… ${progress.uploaded} / ${progress.total}`,
+          )
+        },
+      })
 
-      await backfillUnsyncedRawSensorRecords(db, 2000).catch(() => undefined)
-
-      const totalDepth = await queueDepth(db)
-      if (totalDepth === 0) {
+      if (result.depthAfter === 0 && result.uploaded === 0 && !result.error) {
         setBanner("Queue is empty — nothing to upload.")
         return
       }
 
-      let totalUploaded = 0
-      let firstError: string | null = null
-
-      // Drain all batches, stop on first POST error so the error is visible.
-      while (!firstError) {
-        const batch = await claimOutboundBatch(db, 200)
-        if (batch.length === 0) break
-
-        setBanner(`Uploading… ${totalUploaded} / ${totalDepth}`)
-
-        const groups = new Map<string, typeof batch>()
-        for (const row of batch) {
-          const list = groups.get(row.tableName) ?? []
-          list.push(row)
-          groups.set(row.tableName, list)
-        }
-
-        for (const [tableName, rows] of groups) {
-          try {
-            await apiPost(`/pipeline/ingest-table`, { tableName, rows: rows.map((r) => r.payload) })
-            await markOutboundSynced(db, rows.map((r) => r.id))
-            if (tableName === "raw_sensor_records") {
-              await markRawSensorRecordsSynced(db, rows.map((r) => r.rowId), Date.now())
-            }
-            totalUploaded += rows.length
-          } catch (err: any) {
-            const errMsg: string = err?.message ?? String(err)
-            firstError = errMsg
-            for (const r of rows) {
-              await recordOutboundFailure(db, r.id, errMsg)
-            }
-            break
-          }
-        }
-      }
-
-      const depthAfter = await queueDepth(db)
-      const dead = await listDeadLetters(db)
-
-      if (firstError) {
-        setError(`Upload failed: ${firstError}`)
+      if (result.error) {
+        setError(`Upload failed after ${result.uploaded} records: ${result.error}`)
       } else {
-        setBanner(`Uploaded ${totalUploaded} records. ${depthAfter} still queued. ${dead.length} dead.`)
+        setBanner(`Uploaded ${result.uploaded} records. ${result.depthAfter} still queued. ${result.deadCount} dead.`)
       }
     } catch (err: any) {
       setError(err?.message ?? "Upload failed")

@@ -1,6 +1,3 @@
-import * as Battery from "expo-battery"
-import * as Network from "expo-network"
-import * as Updates from "expo-updates"
 import {
   createContext,
   FC,
@@ -13,26 +10,26 @@ import {
   useState,
 } from "react"
 import { AppState } from "react-native"
+import * as Battery from "expo-battery"
+import * as Network from "expo-network"
+import * as Updates from "expo-updates"
 
-import { peekActiveUserId } from "@/services/db/session"
-import { openDatabase } from "@/services/db"
 import { apiGet, apiPost } from "@/services/api/noopClient"
-import { pullDownlink } from "@/services/sync/downlinkPuller"
-import { sweepRetention } from "@/services/sync/retentionSweeper"
-import { drainLoop } from "@/services/sync/uplinkDrainer"
-import { runBackgroundDrain } from "@/services/sync/backgroundSync"
-import { registerBackgroundCatchupTask } from "@/services/sync/backgroundCatchupTask"
-import { setViewCache } from "@/services/db/repositories/viewCache"
+import { openDatabase } from "@/services/db"
+import { queueDepth, listDeadLetters } from "@/services/db/repositories/outboundQueue"
 import {
   DEFAULT_RAW_RETENTION_DAYS,
   SETTING_RAW_RETENTION_DAYS,
   getSetting,
 } from "@/services/db/repositories/settings"
-import {
-  queueDepth,
-  listDeadLetters,
-} from "@/services/db/repositories/outboundQueue"
+import { peekActiveUserId } from "@/services/db/session"
+import { registerBackgroundCatchupTask } from "@/services/sync/backgroundCatchupTask"
+import { runBackgroundDrain } from "@/services/sync/backgroundSync"
+import { pullDownlink } from "@/services/sync/downlinkPuller"
+import { refreshAllViews } from "@/services/sync/refreshAllViews"
+import { sweepRetention } from "@/services/sync/retentionSweeper"
 import { SyncService } from "@/services/sync/SyncService"
+import { drainLoop } from "@/services/sync/uplinkDrainer"
 
 type SyncContextValue = {
   isOnline: boolean
@@ -63,11 +60,11 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
 
   const drainFn = useCallback(async () => {
     if (isDrainingRef.current) return
-    isDrainingRef.current = true
-
     if (!peekActiveUserId()) return
     if (!isOnlineRef.current) return
     if (isLowPowerRef.current) return
+
+    isDrainingRef.current = true
 
     const db = openDatabase()
     setIsSyncing(true)
@@ -112,19 +109,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
         "sleep_plans",
       ],
     })
-    const today = new Date().toISOString().slice(0, 10)
-    try {
-      const [home, sleep, trends] = await Promise.all([
-        apiGet(`/views/home?date=${today}`),
-        apiGet(`/views/sleep?date=${today}`),
-        apiGet(`/views/trends?days=30`),
-      ])
-      await setViewCache(db, "home", today, home)
-      await setViewCache(db, "sleep", today, sleep)
-      await setViewCache(db, "trends", "30d", trends)
-    } catch (err) {
-      console.warn("[sync] view cache refresh failed", err)
-    }
+    await refreshAllViews(db)
   }, [])
 
   const refresh = useCallback(async () => {
@@ -169,8 +154,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
         try {
           const db = openDatabase()
           const raw =
-            Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) ||
-            DEFAULT_RAW_RETENTION_DAYS
+            Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) || DEFAULT_RAW_RETENTION_DAYS
           if (raw > 0) await sweepRetention(db, { rawDays: raw })
         } catch (err) {
           console.warn("[sync] retention sweep failed", err)
