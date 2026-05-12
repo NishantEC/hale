@@ -14,6 +14,7 @@ import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
 import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
 import { RealtimeSample } from '../telemetry/entities/realtime-sample.entity.js';
 import { ConsoleLog } from '../telemetry/entities/console-log.entity.js';
+import { PipelineState } from '../pipeline/entities/pipeline-state.entity.js';
 import { ViewsModule } from '../views/views.module.js';
 import { DebugController } from './debug.controller.js';
 import { DebugService } from './debug.service.js';
@@ -35,6 +36,7 @@ import { DebugService } from './debug.service.js';
       DeviceEvent,
       RealtimeSample,
       ConsoleLog,
+      PipelineState,
     ]),
   ],
   controllers: [DebugController],

@@ -15,6 +15,7 @@ import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
 import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
 import { RealtimeSample } from '../telemetry/entities/realtime-sample.entity.js';
 import { ConsoleLog } from '../telemetry/entities/console-log.entity.js';
+import { PipelineState } from '../pipeline/entities/pipeline-state.entity.js';
 import { ViewsService } from '../views/views.service.js';
 import {
   calendarDayBounds,
@@ -66,7 +67,74 @@ export class DebugService {
     private readonly realtimeSampleRepo: Repository<RealtimeSample>,
     @InjectRepository(ConsoleLog)
     private readonly consoleLogRepo: Repository<ConsoleLog>,
+    @InjectRepository(PipelineState)
+    private readonly pipelineStateRepo: Repository<PipelineState>,
   ) {}
+
+  // Snapshot of pipeline state + the data-freshness inputs that drive
+  // the incremental short-circuit. Powers the inspector's Pipeline tab.
+  async getPipelineState(userId: string) {
+    this.assertEnabled();
+    const cutoff = new Date(Date.now() - 45 * 24 * 60 * 1000);
+    const [state, rawRow, sigRow, rawCounts, sigCounts] = await Promise.all([
+      this.pipelineStateRepo.findOne({ where: { userId } }),
+      this.rawSensorRepo
+        .createQueryBuilder('r')
+        .select('MAX(r."updatedAt")', 'max')
+        .addSelect('MAX(r."timestamp")', 'latestTimestamp')
+        .where('r."userId" = :userId', { userId })
+        .andWhere('r."timestamp" >= :cutoff', { cutoff })
+        .getRawOne<{ max: Date | string | null; latestTimestamp: Date | string | null }>(),
+      this.signalSampleRepo
+        .createQueryBuilder('s')
+        .select('MAX(s."updatedAt")', 'max')
+        .addSelect('MAX(s."timestamp")', 'latestTimestamp')
+        .where('s."userId" = :userId', { userId })
+        .andWhere('s."timestamp" >= :cutoff', { cutoff })
+        .getRawOne<{ max: Date | string | null; latestTimestamp: Date | string | null }>(),
+      this.rawSensorRepo.count({ where: { userId, timestamp: MoreThanOrEqual(cutoff) } }),
+      this.signalSampleRepo.count({ where: { userId, timestamp: MoreThanOrEqual(cutoff) } }),
+    ]);
+
+    const toIso = (v: Date | string | null | undefined) =>
+      v ? new Date(v).toISOString() : null;
+    const currentMax = (() => {
+      const r = rawRow?.max ? new Date(rawRow.max).getTime() : null;
+      const s = sigRow?.max ? new Date(sigRow.max).getTime() : null;
+      if (r == null && s == null) return null;
+      return new Date(Math.max(r ?? 0, s ?? 0)).toISOString();
+    })();
+    const isDirty = (() => {
+      if (currentMax == null) return false;
+      if (state?.lastInputMaxUpdatedAt == null) return true;
+      return new Date(currentMax).getTime() > state.lastInputMaxUpdatedAt.getTime();
+    })();
+
+    return {
+      state: state
+        ? {
+            lastRunAt: toIso(state.lastRunAt),
+            lastInputMaxUpdatedAt: toIso(state.lastInputMaxUpdatedAt),
+            lastRunDurationMs: state.lastRunDurationMs,
+          }
+        : null,
+      inputs: {
+        rawSensorRecords: {
+          count: rawCounts,
+          latestUpdatedAt: toIso(rawRow?.max),
+          latestTimestamp: toIso(rawRow?.latestTimestamp),
+        },
+        signalSamples: {
+          count: sigCounts,
+          latestUpdatedAt: toIso(sigRow?.max),
+          latestTimestamp: toIso(sigRow?.latestTimestamp),
+        },
+      },
+      currentMaxUpdatedAt: currentMax,
+      isDirty,
+      windowStart: cutoff.toISOString(),
+    };
+  }
 
   assertEnabled() {
     if (!this.enabled) {

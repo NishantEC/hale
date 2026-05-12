@@ -78,6 +78,16 @@ export class DebugController {
     }
   }
 
+  @Get('pipeline-state')
+  async getPipelineState(@Req() req: any) {
+    try {
+      return await this.debugService.getPipelineState(req.user.userId);
+    } catch (e) {
+      this.logger.error(`pipeline-state failed: ${e.message}`, e.stack);
+      throw e;
+    }
+  }
+
   @Post('pipeline/run')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async runPipeline(@Req() req: any, @Query() query: DebugDateQueryDto) {
