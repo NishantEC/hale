@@ -12,6 +12,7 @@ import { BaselineProfile } from '../plans/baseline-profile.entity.js';
 import { JournalEntry } from '../journal/journal-entry.entity.js';
 import { SleepPlan } from '../plans/sleep-plan.entity.js';
 import { RawSensorRecord } from './entities/raw-sensor-record.entity.js';
+import { PipelineState } from './entities/pipeline-state.entity.js';
 
 import { IngestDto } from './dto/ingest.dto.js';
 import { IngestTableDto } from './dto/ingest-table.dto.js';
@@ -83,6 +84,8 @@ export class PipelineService {
     private healthkitSummaryRepo: Repository<HealthkitDailySummary>,
     @InjectRepository(HealthkitWorkout)
     private healthkitWorkoutRepo: Repository<HealthkitWorkout>,
+    @InjectRepository(PipelineState)
+    private pipelineStateRepo: Repository<PipelineState>,
   ) {}
 
   // ------------------------------------------------------------------ ingest
@@ -228,6 +231,27 @@ export class PipelineService {
     const timeZone = resolveTimeZone(timeZoneInput);
     const now = new Date();
     const cutoff = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
+    const startedAt = Date.now();
+
+    // 0. Incremental short-circuit: if neither raw_sensor_records nor
+    // signal_samples have advanced since the last successful run, the
+    // pipeline's outputs would be identical — skip the full ~10–25s
+    // compute. This makes idle re-syncs (the common case once nothing
+    // is changing) effectively free.
+    const currentInputMax = await this.maxInputUpdatedAt(userId, cutoff);
+    const state = await this.pipelineStateRepo.findOne({ where: { userId } });
+    if (
+      currentInputMax != null &&
+      state?.lastInputMaxUpdatedAt != null &&
+      currentInputMax <= state.lastInputMaxUpdatedAt.getTime()
+    ) {
+      return {
+        ok: true,
+        skipped: 'no-new-input' as const,
+        lastRunAt: state.lastRunAt,
+        lastInputMaxUpdatedAt: state.lastInputMaxUpdatedAt,
+      };
+    }
 
     // 1. Fetch raw data
     const [dbSignalSamples, dbSensorRecords, dbBaseline, dbSleepPlan, dbJournalEntries] =
@@ -562,6 +586,19 @@ export class PipelineService {
       }
 
       await this.upsertBaseline(baselineRepo, userId, recomputedBaseline);
+
+      // Persist the watermark inside the same transaction so the next run
+      // either sees the new state (and skips correctly) or sees the old
+      // state (and reruns the full pipeline) — never a half-applied mix.
+      const stateRepo = manager.getRepository(PipelineState);
+      const next = stateRepo.create({
+        userId,
+        lastRunAt: new Date(),
+        lastInputMaxUpdatedAt:
+          currentInputMax != null ? new Date(currentInputMax) : null,
+        lastRunDurationMs: Date.now() - startedAt,
+      });
+      await stateRepo.upsert(next, { conflictPaths: ['userId'] });
     });
 
     this.logger.log(
@@ -693,6 +730,32 @@ export class PipelineService {
   }
 
   // --------------------------------------------------------- private helpers
+
+  // Max(updatedAt) across both raw_sensor_records and signal_samples for
+  // the user in the 45-day pipeline window. Used as the change-detection
+  // watermark — returns ms since epoch (or null when the user has zero
+  // data, which short-circuits the watermark check and forces a run).
+  private async maxInputUpdatedAt(
+    userId: string,
+    since: Date,
+  ): Promise<number | null> {
+    const [rawRow] = await this.rawSensorRepo
+      .createQueryBuilder('r')
+      .select('MAX(r."updatedAt")', 'max')
+      .where('r."userId" = :userId', { userId })
+      .andWhere('r."timestamp" >= :since', { since })
+      .getRawMany<{ max: Date | string | null }>();
+    const [sigRow] = await this.signalSampleRepo
+      .createQueryBuilder('s')
+      .select('MAX(s."updatedAt")', 'max')
+      .where('s."userId" = :userId', { userId })
+      .andWhere('s."timestamp" >= :since', { since })
+      .getRawMany<{ max: Date | string | null }>();
+    const rawMax = rawRow?.max ? new Date(rawRow.max).getTime() : null;
+    const sigMax = sigRow?.max ? new Date(sigRow.max).getTime() : null;
+    if (rawMax == null && sigMax == null) return null;
+    return Math.max(rawMax ?? 0, sigMax ?? 0);
+  }
 
   private async findOneByCalendarDay<T extends { id: string }>(
     repo: Repository<any>,
@@ -1261,7 +1324,10 @@ async function upsertRawSensorRows(
         "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     "existing_raw_sensor_records"."ambientLight"),
         "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        "existing_raw_sensor_records"."ledDrive1"),
         "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        "existing_raw_sensor_records"."ledDrive2"),
-        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    "existing_raw_sensor_records"."signalQuality")
+        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    "existing_raw_sensor_records"."signalQuality"),
+        -- Bump the change-detection watermark on every merge so the
+        -- incremental pipeline sees this row as updated.
+        "updatedAt"        = NOW()
       `)
       .execute();
     total += slice.length;

@@ -1,7 +1,14 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  Index,
+  UpdateDateColumn,
+} from 'typeorm';
 
 @Entity('raw_sensor_records')
 @Index(['userId', 'timestamp'])
+@Index(['userId', 'updatedAt'])
 export class RawSensorRecord {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -62,4 +69,11 @@ export class RawSensorRecord {
 
   @Column('double precision', { nullable: true })
   signalQuality: number;
+
+  // Bumped on every insert (default NOW()) and on every ON CONFLICT merge
+  // (see upsertRawSensorRows). Powers incremental-pipeline change
+  // detection: the pipeline state row stores max(updatedAt) at last run,
+  // and a fresh run is skipped if the current max hasn't advanced.
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
