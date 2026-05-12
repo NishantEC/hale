@@ -36,7 +36,10 @@ import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.
 import { extractEpochFeatures } from '../processing/epoch-features.js';
 import { classifySleepStages } from '../processing/sleep-stage-classifier.js';
 import { median } from '../processing/utils.js';
-import { computeDerivedMetrics } from '../processing/derived-metrics.js';
+import {
+  computeDerivedMetrics,
+  precomputeMetricSeries,
+} from '../processing/derived-metrics.js';
 import { computeSleepScoreForNight } from '../processing/sleep-score.js';
 import { computeTypicalRanges } from '../processing/typical-ranges.js';
 import { journalSleepCorrelations } from '../processing/journal-correlations.js';
@@ -496,6 +499,12 @@ export class PipelineService {
       );
     }
 
+    // Hoist the expensive series computations (stressPoints,
+    // spo2Points, skinTemperaturePoints, rollingRmssd, plus the
+    // sensorSamples filter) out of the per-day loop. They depend only
+    // on the full input set, not on referenceDate — recomputing per
+    // day made compute spend ~165s for a 45-day window.
+    const metricsPrecomputed = precomputeMetricSeries(sanitized, sensorRecords);
     const derivedMetricsByDay = this.collectReferenceDays(
       sensorRecords,
       sleepDetections,
@@ -511,6 +520,7 @@ export class PipelineService {
         recomputedBaseline,
         dayDate,
         timeZone,
+        metricsPrecomputed,
       ),
     }));
 

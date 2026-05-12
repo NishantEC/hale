@@ -27,23 +27,24 @@ interface TimestampedValue {
 
 const STRAIN_LN_7201 = 8.882_643_961_783_384;
 
-export function computeDerivedMetrics(
+// Precomputed time-series that don't depend on the per-day window.
+// computeDerivedMetrics used to compute all of these inside its body
+// once per reference day, which made the pipeline's compute stage spend
+// ~165s scanning the same signal_samples 45 times for a 45-day window.
+// Hoisting them into a single precompute call cuts compute to a few
+// seconds.
+export interface PrecomputedMetricSeries {
+  stress: TimestampedValue[];
+  sensorSamples: SensorSample[];
+  spo2: TimestampedValue[];
+  skinTemp: TimestampedValue[];
+  hrvRmssd: { timestamp: Date; value: number }[];
+}
+
+export function precomputeMetricSeries(
   samples: SignalSample[],
   sensorRecords: HistoricalSensorRecord[],
-  nightFeatures: NightFeatureSet[],
-  sleepDetections: SleepDetectionSummary[],
-  baseline: BaselineProfile,
-  referenceDate: Date,
-  timeZoneInput?: string,
-): DerivedMetricsBundle {
-  const referenceKey = calendarDayKey(referenceDate, timeZoneInput);
-  const { start: dayStart, end: dayEnd } = calendarDayBounds(
-    referenceKey,
-    timeZoneInput,
-  );
-
-  const stress = stressPoints(samples);
-
+): PrecomputedMetricSeries {
   const sensorSamples: SensorSample[] = sensorRecords
     .filter(
       (r) => r.spo2Red != null && r.spo2IR != null && r.skinTempRaw != null,
@@ -54,9 +55,38 @@ export function computeDerivedMetrics(
       spo2IR: r.spo2IR!,
       skinTempRaw: r.skinTempRaw!,
     }));
+  return {
+    stress: stressPoints(samples),
+    sensorSamples,
+    spo2: spo2Points(sensorSamples),
+    skinTemp: skinTemperaturePoints(sensorSamples),
+    hrvRmssd: rollingRmssd(samples),
+  };
+}
 
-  const spo2 = spo2Points(sensorSamples);
-  const skinTemp = skinTemperaturePoints(sensorSamples);
+export function computeDerivedMetrics(
+  samples: SignalSample[],
+  sensorRecords: HistoricalSensorRecord[],
+  nightFeatures: NightFeatureSet[],
+  sleepDetections: SleepDetectionSummary[],
+  baseline: BaselineProfile,
+  referenceDate: Date,
+  timeZoneInput?: string,
+  // Optional precomputed series. When null/undefined, compute internally
+  // — keeps the function callable in isolation (tests, single-day use).
+  // Pipeline callers should pass a precomputed bundle from
+  // `precomputeMetricSeries(samples, sensorRecords)` so the loop over
+  // reference days reuses one shared computation.
+  precomputed?: PrecomputedMetricSeries,
+): DerivedMetricsBundle {
+  const referenceKey = calendarDayKey(referenceDate, timeZoneInput);
+  const { start: dayStart, end: dayEnd } = calendarDayBounds(
+    referenceKey,
+    timeZoneInput,
+  );
+
+  const series = precomputed ?? precomputeMetricSeries(samples, sensorRecords);
+  const { stress, spo2, skinTemp, hrvRmssd: hrvRmssdSeries } = series;
 
   const daySamples = samples.filter(
     (s) => s.timestamp >= dayStart && s.timestamp < dayEnd,
@@ -97,8 +127,6 @@ export function computeDerivedMetrics(
         d.validCoverage >= 0.35,
     ).length;
   }
-
-  const hrvRmssdSeries = rollingRmssd(samples);
 
   return {
     stressScores: stress,
