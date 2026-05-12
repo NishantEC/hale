@@ -253,6 +253,17 @@ export class PipelineService {
       };
     }
 
+    // Per-stage timing. mark(name) closes the current segment and tags
+    // its duration. Used both for the structured log emitted at the end
+    // of the run and as the runtime-budget alert input.
+    const stages: Record<string, number> = {};
+    let lastMark = Date.now();
+    const mark = (name: string) => {
+      const now = Date.now();
+      stages[name] = (stages[name] ?? 0) + (now - lastMark);
+      lastMark = now;
+    };
+
     // 1. Fetch raw data
     const [dbSignalSamples, dbSensorRecords, dbBaseline, dbSleepPlan, dbJournalEntries] =
       await Promise.all([
@@ -271,6 +282,7 @@ export class PipelineService {
           order: { timestamp: 'ASC' },
         }),
       ]);
+    mark('fetch');
 
     // 2. Convert DB records to interface types
     const persistedSignalSamples: SignalSample[] = dbSignalSamples.map((s) => ({
@@ -330,6 +342,7 @@ export class PipelineService {
     const sanitized = sanitize(signalSamples);
 
     const sleepDetections = SleepEventEngine.detect(sensorRecords, timeZone);
+    mark('sleep-detect');
 
     // Activity detection on non-sleep daytime periods
     let activityBouts = detectActivities(sensorRecords, sleepDetections, baseline);
@@ -344,6 +357,7 @@ export class PipelineService {
         timeZone,
       );
     }
+    mark('activity-detect');
 
     // Activity-detection delete+insert is deferred into the transaction
     // below so the prune/upsert work for activity, night features, sleep
@@ -368,6 +382,7 @@ export class PipelineService {
     );
 
     const sleepStages = classifySleepStages(allEpochFeatures, sleepDetections);
+    mark('sleep-stages');
 
     const featureByNightKey = new Map<number, import('../processing/interfaces.js').NightFeatureSet>();
     for (const detection of sleepDetections) {
@@ -461,6 +476,7 @@ export class PipelineService {
       sleepDetections,
     );
     const observedDayDates = this.collectReferenceDays(sensorRecords, [], [], timeZone);
+    mark('compute');
 
     // One transaction covers every persistent write in the pipeline:
     // detected activities (delete+insert), prune-stale of calendar-day
@@ -600,11 +616,28 @@ export class PipelineService {
       });
       await stateRepo.upsert(next, { conflictPaths: ['userId'] });
     });
+    mark('write');
 
-    this.logger.log(
+    // Structured stage breakdown + runtime budget check. The budget is
+    // intentionally generous (45s) — exceeding it means a regression
+    // worth investigating, not a transient slow run. PIPELINE_BUDGET_MS
+    // env var overrides it.
+    const totalMs = Date.now() - startedAt;
+    const budgetMs = Number(process.env.PIPELINE_BUDGET_MS ?? 45_000);
+    const breakdown = Object.entries(stages)
+      .map(([k, v]) => `${k}=${v}ms`)
+      .join(' ');
+    const summary =
       `Pipeline complete for user=${userId}: ` +
-        `detections=${sleepDetections.length}, stages=${sleepStages.length}, nightlyFeatures=${effectiveFeatures.length}`,
-    );
+      `detections=${sleepDetections.length} stages=${sleepStages.length} ` +
+      `features=${effectiveFeatures.length} total=${totalMs}ms ${breakdown}`;
+    if (totalMs > budgetMs) {
+      this.logger.warn(
+        `${summary} — exceeded PIPELINE_BUDGET_MS=${budgetMs}; possible regression`,
+      );
+    } else {
+      this.logger.log(summary);
+    }
 
     return {
       ok: true,

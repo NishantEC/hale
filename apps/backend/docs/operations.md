@@ -153,6 +153,47 @@ Wire them to a free monitor:
 **GCP-native**: Cloud Monitoring → Uptime Checks → "noop-readyz" pointing
 at the same URL. Free up to 1 check.
 
+## Storage / scale ceiling
+
+The current `raw_sensor_records` table is a vanilla Postgres table — no
+partitioning, no compression. A continuous-monitoring user generates
+~100–200 MB/year of raw rows. Backups are cheap at that size and 45-day
+range scans stay fast on the existing `(userId, timestamp)` index.
+
+When you outgrow this (somewhere north of 1–2 GB / multi-year data) the
+mechanical move is to **TimescaleDB hypertables** with day-chunks plus
+GORILLA compression on chunks older than 7 days. Typical compression
+ratio is ~10× for biometric numeric columns. That requires:
+
+1. Moving off Cloud SQL (which doesn't ship TimescaleDB). Options:
+   - Timescale Cloud (managed; ~$30/mo starter tier)
+   - Self-hosted Postgres + TimescaleDB extension on a VM
+   - AlloyDB for PostgreSQL (GCP) which has columnar engine in newer
+     versions but isn't directly equivalent
+2. `SELECT create_hypertable('raw_sensor_records', 'timestamp', chunk_time_interval => INTERVAL '1 day');`
+3. `SELECT add_compression_policy('raw_sensor_records', INTERVAL '7 days');`
+
+Not urgent at single-user scale. Revisit when storage costs visible or
+backups take more than a few minutes.
+
+## Pipeline runtime budget
+
+The pipeline emits a structured log on completion:
+
+```
+Pipeline complete for user=X: detections=2 stages=2 features=2 total=1240ms \
+  fetch=180ms sleep-detect=45ms activity-detect=210ms sleep-stages=80ms \
+  compute=120ms write=605ms
+```
+
+`PIPELINE_BUDGET_MS` (default 45,000) is the warn threshold. Runs that
+exceed it log at WARN with `— exceeded PIPELINE_BUDGET_MS=...; possible
+regression`. Hook this string into a log-based alert in Cloud Logging or
+ship it to Sentry as a breadcrumb.
+
+The incremental short-circuit (Sprint 3) means most runs return in
+<100ms; the budget primarily catches regressions on real recompute runs.
+
 ## Pool sizing
 
 Defaults are `DB_POOL_MAX=5` for the request pool and `AUTH_DB_POOL_MAX=2`

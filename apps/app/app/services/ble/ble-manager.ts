@@ -27,6 +27,7 @@ class WhoopBleManager {
   private _connectionState: ConnectionState = 'disconnected';
   private scanTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempt = 0;
   private manualDisconnect = false;
   private stateSubscription: Subscription | null = null;
   private pendingAutoConnect = false;
@@ -124,9 +125,19 @@ class WhoopBleManager {
     const preferredId = await AsyncStorage.getItem(PREFERRED_DEVICE_KEY);
     if (!preferredId || this.manualDisconnect) return;
 
+    // Exponential backoff with jitter: 1.5s → 3s → 6s → 12s → 24s,
+    // capped at 60s. Without this, a strap that's out of range
+    // re-tries every 1.5s forever, draining the phone's battery and
+    // hammering the BLE stack. The attempt counter resets in
+    // autoConnect() on every successful connection.
+    this.reconnectAttempt = Math.min(this.reconnectAttempt + 1, 6);
+    const base = 1_500 * 2 ** (this.reconnectAttempt - 1);
+    const capped = Math.min(60_000, base);
+    const jitter = capped * 0.3 * Math.random();
+    const delay = Math.floor(capped + jitter);
     this.reconnectTimeout = setTimeout(() => {
       this.autoConnect().catch(() => undefined);
-    }, 1500);
+    }, delay);
   }
 
   // --- Permissions ---
@@ -245,6 +256,9 @@ class WhoopBleManager {
 
     try {
       await this.connect(preferredId);
+      // Successful connection — reset backoff so the next disconnect
+      // starts retrying at the short interval again.
+      this.reconnectAttempt = 0;
       return true;
     } catch {
       this.pendingAutoConnect = true;
