@@ -1,7 +1,8 @@
 import { useMemo } from "react"
 
-import type { TrendsView } from "../api"
+import type { PipelineRunOptions, TrendsView } from "../api"
 import { Num, Pill, SectionHead } from "../components/primitives"
+import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { TrendChart } from "../components/TrendChart"
 import { formatNumber } from "../format"
 
@@ -35,10 +36,14 @@ export function TrendsTab({
   trends,
   rangeDays,
   onRangeChange,
+  onRunPipeline,
+  busy,
 }: {
   trends: TrendsView | null
   rangeDays: number
   onRangeChange: (days: number) => void
+  onRunPipeline: (opts: PipelineRunOptions) => void | Promise<void>
+  busy: boolean
 }) {
   const summaries = trends?.summaries
 
@@ -62,20 +67,36 @@ export function TrendsTab({
             {trends?.dataPoints ?? 0} nights in the last {rangeDays} days
           </p>
         </div>
-        <div className="flex gap-1.5 bg-surface-1 border border-border rounded-lg p-1">
-          {RANGE_OPTIONS.map((r) => (
-            <button
-              key={r.days}
-              onClick={() => onRangeChange(r.days)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                rangeDays === r.days
-                  ? "bg-surface-3 text-text-0"
-                  : "text-text-2 hover:text-text-1"
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1.5 bg-surface-1 border border-border rounded-lg p-1">
+            {RANGE_OPTIONS.map((r) => (
+              <button
+                key={r.days}
+                onClick={() => onRangeChange(r.days)}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                  rangeDays === r.days
+                    ? "bg-surface-3 text-text-0"
+                    : "text-text-2 hover:text-text-1"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <RunPipelineMenu
+            busy={busy}
+            variant="secondary"
+            label="Rerun"
+            onRun={onRunPipeline}
+            presets={[
+              {
+                kind: "lastDays",
+                days: rangeDays,
+                label: `Rerun last ${rangeDays} days`,
+              },
+              { kind: "full", label: "Rerun full (45d)" },
+            ]}
+          />
         </div>
       </div>
 

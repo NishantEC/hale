@@ -303,7 +303,34 @@ export type PipelineRunRow = {
   detections: number;
   sleepStages: number;
   features: number;
+  windowFrom: string | null;
+  windowTo: string | null;
+  forced: boolean;
 };
+
+export type PipelineRunOptions = {
+  // YYYY-MM-DD — single-day rerun (plus 1-day buffer on each side for
+  // sleep-detection context). Mutually exclusive with from/to.
+  day?: string;
+  // ISO timestamps or YYYY-MM-DD for an arbitrary window.
+  from?: string;
+  to?: string;
+  // Bypass the watermark short-circuit.
+  force?: boolean;
+};
+
+export async function triggerPipelineRun(
+  token: string,
+  opts: PipelineRunOptions = {},
+): Promise<unknown> {
+  const params = new URLSearchParams();
+  if (opts.day) params.set("day", opts.day);
+  if (opts.from) params.set("from", opts.from);
+  if (opts.to) params.set("to", opts.to);
+  if (opts.force) params.set("force", "true");
+  const qs = params.toString();
+  return apiPost(`/debug/pipeline/run${qs ? `?${qs}` : ""}`, token);
+}
 
 export type PipelineRunsHistory = {
   count: number;

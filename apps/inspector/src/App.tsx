@@ -9,6 +9,7 @@ import {
   type HomeView,
   type Overview,
   type PipelineResults,
+  type PipelineRunOptions,
   type PipelineRunsHistory,
   type PipelineState,
   type RawRecords,
@@ -18,8 +19,10 @@ import {
   type SleepView,
   type Telemetry,
   tokenStorage,
+  triggerPipelineRun,
   type TrendsView,
 } from "./api"
+import { RunPipelineMenu } from "./components/RunPipelineMenu"
 import { InsightsTab } from "./tabs/Insights"
 import { OverviewTab } from "./tabs/Overview"
 import { PipelineTab } from "./tabs/Pipeline"
@@ -300,15 +303,12 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
     }
   }, [live, tab, refreshTelemetry])
 
-  const runPipeline = async () => {
+  const runPipeline = async (opts: PipelineRunOptions = {}) => {
     if (!token) return
     setBusy(true)
     setErr(null)
     try {
-      await apiPost(
-        "/debug/pipeline/run?date=" + encodeURIComponent(date),
-        token,
-      )
+      await triggerPipelineRun(token, opts)
       await refresh()
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed")
@@ -392,13 +392,18 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
             >
               {busy ? "..." : "Refresh"}
             </button>
-            <button
-              onClick={() => void runPipeline()}
-              disabled={busy}
-              className="flex-1 bg-accent text-white font-medium rounded-lg py-2 text-sm cursor-pointer hover:bg-accent/85 transition-colors disabled:opacity-40"
-            >
-              Pipeline
-            </button>
+            <div className="flex-1">
+              <RunPipelineMenu
+                busy={busy}
+                onRun={runPipeline}
+                presets={[
+                  { kind: "full", label: "Run full (last 45d)" },
+                  { kind: "lastDays", days: 7, label: "Run last 7 days" },
+                  { kind: "lastDays", days: 30, label: "Run last 30 days" },
+                  { kind: "day", day: date, label: `Run ${date} only` },
+                ]}
+              />
+            </div>
           </div>
           <div className="flex gap-2">
             <button
@@ -441,6 +446,8 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
                 setTrendsDays(d)
                 localStorage.setItem("noop.trendsDays", String(d))
               }}
+              onRunPipeline={runPipeline}
+              busy={busy}
             />
           )}
           {tab === "insights" && (
@@ -452,7 +459,14 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
             />
           )}
           {tab === "sleep" && (
-            <SleepTab sleep={sleep} epochs={epochs} raw={raw} />
+            <SleepTab
+              sleep={sleep}
+              epochs={epochs}
+              raw={raw}
+              selectedDate={date}
+              onRunPipeline={runPipeline}
+              busy={busy}
+            />
           )}
           {tab === "raw" && <RawTab raw={raw} date={date} />}
           {tab === "pipeline" && (

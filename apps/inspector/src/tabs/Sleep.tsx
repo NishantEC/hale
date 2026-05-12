@@ -1,20 +1,57 @@
-import type { RawRecords, SleepNight } from "../api"
+import type { PipelineRunOptions, RawRecords, SleepNight } from "../api"
 import { DayTimeline } from "../components/DayTimeline"
 import { HYPNOGRAM_STAGES, Hypnogram } from "../components/Hypnogram"
 import { Num, Row, SectionHead } from "../components/primitives"
+import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { formatNumber, formatTimestamp } from "../format"
 
 export function SleepTab({
   sleep,
   epochs,
   raw,
+  selectedDate,
+  onRunPipeline,
+  busy,
 }: {
   sleep: SleepNight | null
   epochs: Array<{ timestamp: string; stage: string }>
   raw: RawRecords | null
+  selectedDate: string
+  onRunPipeline: (opts: PipelineRunOptions) => void | Promise<void>
+  busy: boolean
 }) {
+  // The selected night's calendar day, derived from the detection's
+  // nightDate when present so the rerun targets the right day even when
+  // the detection's night spans a calendar boundary.
+  const nightDay = sleep?.selectedNightDate
+    ? sleep.selectedNightDate.slice(0, 10)
+    : selectedDate
+
   return (
     <div className="space-y-10">
+      <div className="flex items-baseline justify-between">
+        <SectionHead>Selected night</SectionHead>
+        <RunPipelineMenu
+          busy={busy}
+          variant="secondary"
+          label="Rerun this night"
+          onRun={onRunPipeline}
+          presets={[
+            {
+              kind: "day",
+              day: nightDay,
+              label: `Rerun ${nightDay} only`,
+            },
+            {
+              kind: "lastDays",
+              days: 7,
+              label: "Rerun last 7 days",
+            },
+            { kind: "full", label: "Rerun full (45d)" },
+          ]}
+        />
+      </div>
+
       <div>
         <div className="grid grid-cols-4 gap-8">
           <Num

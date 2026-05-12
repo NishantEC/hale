@@ -230,10 +230,29 @@ export class PipelineService {
   }
 
   // -------------------------------------------------------------- runPipeline
-  async runPipeline(userId: string, timeZoneInput?: string) {
+  // `opts.from` / `opts.to` narrow the data window the pipeline operates
+  // on. Default is the trailing 45 days. Narrowing is honest end-to-end:
+  // the fetch, prune, and upsert phases all use the same bounds, so a
+  // single-day rerun only touches that day's derived rows. Baseline is
+  // recomputed from whatever night_features fall in the window — for
+  // narrow windows this means baseline drift; the inspector labels
+  // narrow runs so the user can tell at a glance.
+  //
+  // `opts.force` bypasses the watermark short-circuit. Use when you've
+  // changed processing code and want to re-derive even if no raw inputs
+  // have advanced.
+  async runPipeline(
+    userId: string,
+    timeZoneInput?: string,
+    opts: { from?: Date; to?: Date; force?: boolean } = {},
+  ) {
     const timeZone = resolveTimeZone(timeZoneInput);
-    const now = new Date();
-    const cutoff = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
+    const now = opts.to ?? new Date();
+    const cutoff =
+      opts.from ?? new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
+    const windowFromExplicit = opts.from ?? null;
+    const windowToExplicit = opts.to ?? null;
+    const forced = opts.force === true;
     const startedAt = Date.now();
 
     // 0. Incremental short-circuit: if neither raw_sensor_records nor
@@ -244,6 +263,7 @@ export class PipelineService {
     const currentInputMax = await this.maxInputUpdatedAt(userId, cutoff);
     const state = await this.pipelineStateRepo.findOne({ where: { userId } });
     if (
+      !forced &&
       currentInputMax != null &&
       state?.lastInputMaxUpdatedAt != null &&
       currentInputMax <= state.lastInputMaxUpdatedAt.getTime()
@@ -261,6 +281,9 @@ export class PipelineService {
           detections: 0,
           sleepStages: 0,
           features: 0,
+          windowFrom: windowFromExplicit,
+          windowTo: windowToExplicit,
+          forced,
         })
         .catch((err) =>
           this.logger.warn(
@@ -654,6 +677,9 @@ export class PipelineService {
         detections: sleepDetections.length,
         sleepStages: sleepStages.length,
         features: effectiveFeatures.length,
+        windowFrom: windowFromExplicit,
+        windowTo: windowToExplicit,
+        forced,
       })
       .catch((err) =>
         this.logger.warn(

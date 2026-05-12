@@ -86,6 +86,7 @@ export class DebugService {
       order: { startedAt: 'DESC' },
       take: Math.min(Math.max(limit, 1), 200),
     });
+    const toIso = (d: Date | null) => (d ? d.toISOString() : null);
     const stageMedians: Record<string, number> = {};
     const stageNames = new Set<string>();
     for (const row of rows) {
@@ -112,6 +113,9 @@ export class DebugService {
         detections: r.detections,
         sleepStages: r.sleepStages,
         features: r.features,
+        windowFrom: toIso(r.windowFrom),
+        windowTo: toIso(r.windowTo),
+        forced: r.forced,
       })),
     };
   }
@@ -510,9 +514,38 @@ export class DebugService {
     };
   }
 
-  async runPipeline(userId: string, dateInput?: string, timeZoneInput?: string) {
+  async runPipeline(
+    userId: string,
+    dateInput?: string,
+    timeZoneInput?: string,
+    opts: {
+      from?: string;
+      to?: string;
+      day?: string;
+      force?: boolean;
+    } = {},
+  ) {
     this.assertEnabled();
-    const runResult = await this.pipelineService.runPipeline(userId, timeZoneInput);
+    // Translate the on-the-wire query shape into the absolute window the
+    // pipeline expects. `day=YYYY-MM-DD` is a convenience that expands
+    // to the matching calendar day in the requested timezone (plus a 1-day
+    // buffer on each side so the sleep-detection windowing has context).
+    const timeZone = timeZoneInput;
+    let from: Date | undefined;
+    let to: Date | undefined;
+    if (opts.day) {
+      const { start, end } = calendarDayBounds(opts.day, timeZone);
+      from = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+      to = new Date(end.getTime() + 24 * 60 * 60 * 1000);
+    } else {
+      if (opts.from) from = new Date(opts.from);
+      if (opts.to) to = new Date(opts.to);
+    }
+    const runResult = await this.pipelineService.runPipeline(
+      userId,
+      timeZoneInput,
+      { from, to, force: opts.force },
+    );
     const overview = await this.getOverview(userId, dateInput, timeZoneInput);
     return { runResult, overview };
   }

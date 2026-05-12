@@ -12,6 +12,7 @@ import {
 
 import { SessionGuard } from '../auth/auth.guard.js';
 import { DebugDateQueryDto } from './dto/debug-date-query.dto.js';
+import { DebugPipelineRunDto } from './dto/debug-pipeline-run.dto.js';
 import { DebugRawRecordsQueryDto } from './dto/debug-raw-records-query.dto.js';
 import { DebugService } from './debug.service.js';
 
@@ -101,12 +102,18 @@ export class DebugController {
 
   @Post('pipeline/run')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-  async runPipeline(@Req() req: any, @Query() query: DebugDateQueryDto) {
+  async runPipeline(@Req() req: any, @Query() query: DebugPipelineRunDto) {
     try {
       return await this.debugService.runPipeline(
         req.user.userId,
         query.date,
         query.timeZone ?? query.tz,
+        {
+          from: query.from,
+          to: query.to,
+          day: query.day,
+          force: query.force,
+        },
       );
     } catch (e) {
       this.logger.error(`debug pipeline run failed: ${e.message}`, e.stack);

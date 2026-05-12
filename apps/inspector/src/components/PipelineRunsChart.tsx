@@ -10,9 +10,36 @@ import {
   YAxis,
 } from "recharts"
 
-import type { PipelineRunsHistory } from "../api"
+import type { PipelineRunRow, PipelineRunsHistory } from "../api"
+
+// Recharts' tooltip content props are awkward to type across versions —
+// the data we need is shaped consistently regardless.
+type TooltipPayloadEntry = {
+  dataKey?: string | number
+  value?: number
+  color?: string
+  payload?: BarRow
+}
+type ChartTooltipProps = {
+  active?: boolean
+  payload?: TooltipPayloadEntry[]
+}
 import { SectionHead, Pill } from "./primitives"
 import { formatDuration } from "../format"
+
+function describeWindow(run: PipelineRunRow): string {
+  if (!run.windowFrom && !run.windowTo) return "full window (45d)"
+  const from = run.windowFrom ? new Date(run.windowFrom) : null
+  const to = run.windowTo ? new Date(run.windowTo) : null
+  if (from && to) {
+    const spanMs = to.getTime() - from.getTime()
+    const days = Math.round(spanMs / 86_400_000)
+    const fmt = (d: Date) =>
+      d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    return `${fmt(from)} → ${fmt(to)} (${days}d)`
+  }
+  return "custom window"
+}
 
 // Stage-timing regression watch.
 // Renders the last N pipeline_runs as stacked bars (one stack per run,
@@ -40,6 +67,9 @@ type BarRow = {
   startedAt: string
   total: number
   skipped: boolean
+  forced: boolean
+  windowDescription: string
+  detections: number
   isOutlier: boolean
 } & Record<string, number | string | boolean>
 
@@ -89,6 +119,9 @@ export function PipelineRunsChart({
       startedAt: r.startedAt,
       total: r.durationMs,
       skipped: r.skipped,
+      forced: r.forced,
+      windowDescription: describeWindow(r),
+      detections: r.detections,
       isOutlier: !r.skipped && r.durationMs > outlierThreshold,
     }
     if (r.skipped) {
@@ -138,17 +171,8 @@ export function PipelineRunsChart({
               width={50}
             />
             <Tooltip
-              contentStyle={{
-                background: "var(--color-surface-2)",
-                border: "1px solid var(--color-border-strong)",
-                borderRadius: 12,
-                fontSize: 13,
-              }}
               cursor={{ fill: "rgba(255,255,255,0.04)" }}
-              formatter={(value, name) => [
-                formatDuration(Number(value)),
-                String(name) === "_skipped" ? "skipped" : String(name),
-              ]}
+              content={<RunTooltip />}
             />
             {medianTotal > 0 && (
               <ReferenceLine
@@ -214,6 +238,57 @@ export function PipelineRunsChart({
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// Custom tooltip — Recharts' default tooltip can't easily render the
+// window + forced badge, so we render the bar metadata ourselves.
+function RunTooltip(props: ChartTooltipProps) {
+  if (!props.active || !props.payload || props.payload.length === 0) return null
+  const row = props.payload[0].payload
+  if (!row) return null
+  const stageEntries = props.payload
+    .filter(
+      (p): p is TooltipPayloadEntry & { value: number; dataKey: string } =>
+        p.dataKey !== "_skipped" &&
+        typeof p.value === "number" &&
+        typeof p.dataKey === "string",
+    )
+    .map((p) => ({
+      name: p.dataKey,
+      value: p.value,
+      color: p.color ?? "#888",
+    }))
+  return (
+    <div className="bg-surface-2 border border-border-strong rounded-xl p-3 shadow-2xl min-w-[220px]">
+      <p className="text-text-0 text-sm font-semibold">{row.label}</p>
+      <p className="text-text-2 text-xs">
+        {row.skipped ? "skipped — no new input" : formatDuration(row.total)}
+        {row.forced && (
+          <>
+            {" "}
+            <span className="text-yellow">· forced</span>
+          </>
+        )}
+      </p>
+      <p className="text-text-2 text-xs mt-0.5">{row.windowDescription}</p>
+      {!row.skipped && stageEntries.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-border space-y-0.5">
+          {stageEntries.map((s) => (
+            <div key={s.name} className="flex items-center gap-2 text-xs">
+              <span
+                className="w-2 h-2 rounded-sm shrink-0"
+                style={{ backgroundColor: s.color }}
+              />
+              <span className="text-text-1 flex-1">{s.name}</span>
+              <span className="text-text-0 font-medium">
+                {formatDuration(s.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

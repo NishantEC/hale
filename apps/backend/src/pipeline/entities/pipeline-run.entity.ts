@@ -41,4 +41,19 @@ export class PipelineRun {
 
   @Column('integer', { default: 0 })
   features: number;
+
+  // The window this run targeted. Null on legacy rows pre-window
+  // support and on full 45-day runs (windowFrom = now-45d, windowTo =
+  // now is the implicit default and isn't persisted explicitly).
+  @Column('timestamptz', { nullable: true })
+  windowFrom: Date | null;
+
+  @Column('timestamptz', { nullable: true })
+  windowTo: Date | null;
+
+  // True when the run bypassed the watermark short-circuit (i.e. the
+  // user clicked "Force recompute"). Lets the inspector distinguish a
+  // genuine "had to recompute" run from a user-triggered re-run.
+  @Column('boolean', { default: false })
+  forced: boolean;
 }
