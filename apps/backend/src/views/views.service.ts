@@ -27,10 +27,17 @@ import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
 import { UpdateSleepPlanDto } from './dto/update-sleep-plan.dto.js';
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 import { deltaVsWeek } from './delta.js';
+import {
+  calendarDayBounds,
+  calendarDayKey,
+  resolveCalendarDate,
+  selectCalendarDayItem,
+} from '../common/calendar.js';
 
 type DashboardData = {
   selectedDate: Date;
   selectedKey: string;
+  timeZone: string;
   nightFeatures: NightFeature[];
   sleepDetections: SleepDetection[];
   sleepStages: SleepStage[];
@@ -66,54 +73,52 @@ export class ViewsService {
     private readonly activityDetectionRepo: Repository<ActivityDetection>,
   ) {}
 
-  async getHomeView(userId: string, selectedDateInput?: string) {
-    const data = await this.loadDashboardData(userId, selectedDateInput);
+  async getHomeView(userId: string, selectedDateInput?: string, timeZoneInput?: string) {
+    const data = await this.loadDashboardData(userId, selectedDateInput, timeZoneInput);
 
     // Fetch detected activities for the selected day
-    const dayStart = new Date(data.selectedDate);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const { start: dayStart, end: dayEnd } = calendarDayBounds(
+      data.selectedKey,
+      data.timeZone,
+    );
     const dayActivities = await this.activityDetectionRepo.find({
       where: { userId, startTime: Between(dayStart, dayEnd) },
       order: { startTime: 'ASC' },
     });
-    // Same Today→last-night shift as getSleepView: when the user opens
-    // Home on a day that has no own night yet, fall back to the latest
-    // and re-label the day so the header matches the data shown.
-    // requestedKey is preserved so the response selectedDate always echoes
-    // back the date the client asked for — prevents permanent shimmer on the
-    // app side when the mismatch would block the loading guard.
     const requestedKey = data.selectedKey;
-    const selectedDetection = this.findSleepByDayOrLatestForToday(
+    const selectedDetection = this.findSleepByDay(
       data.sleepDetections,
       'nightDate',
       data.selectedKey,
-      data.selectedDate,
+      data.timeZone,
     );
-    if (
-      selectedDetection &&
-      this.dayKey(selectedDetection.nightDate) !== data.selectedKey
-    ) {
-      data.selectedKey = this.dayKey(selectedDetection.nightDate);
-      data.selectedDate = new Date(selectedDetection.nightDate);
-    }
 
-    const selectedScore = this.findByDay(data.dailyScores, 'dayDate', data.selectedKey);
-    const selectedMetric = this.findByDay(data.dailyMetrics, 'dayDate', data.selectedKey);
-    const selectedFeature = this.findSleepByDayOrLatestForToday(
+    const selectedScore = this.findByDay(
+      data.dailyScores,
+      'dayDate',
+      data.selectedKey,
+      data.timeZone,
+    );
+    const selectedMetric = this.findByDay(
+      data.dailyMetrics,
+      'dayDate',
+      data.selectedKey,
+      data.timeZone,
+    );
+    const selectedFeature = this.findSleepByDay(
       data.nightFeatures,
       'nightDate',
       data.selectedKey,
-      data.selectedDate,
+      data.timeZone,
     );
-    const liveDateLabel = `${this.formatSelectedDateTitle(data.selectedDate)} · ${this.formatSelectedDateSubtitle(data.selectedDate)}`;
+    const liveDateLabel = `${this.formatSelectedDateTitle(data.selectedDate, data.timeZone)} · ${this.formatSelectedDateSubtitle(data.selectedDate, data.timeZone)}`;
     const baselineReady = (data.baselineProfile?.nightsUsed ?? 0) >= 5;
 
-    const selectedStage = this.findSleepByDayOrLatestForToday(
+    const selectedStage = this.findSleepByDay(
       data.sleepStages,
       'nightDate',
       data.selectedKey,
-      data.selectedDate,
+      data.timeZone,
     );
     const homeSleepScore =
       selectedDetection == null
@@ -173,17 +178,17 @@ export class ViewsService {
 
     return {
       selectedDate: requestedKey,
-      selectedDateTitle: this.formatSelectedDateTitle(data.selectedDate),
-      selectedDateSubtitle: this.formatSelectedDateSubtitle(data.selectedDate),
+      selectedDateTitle: this.formatSelectedDateTitle(data.selectedDate, data.timeZone),
+      selectedDateSubtitle: this.formatSelectedDateSubtitle(data.selectedDate, data.timeZone),
       topStrip: {
-        title: this.formatSelectedDateTitle(data.selectedDate),
-        subtitle: this.formatSelectedDateSubtitle(data.selectedDate),
+        title: this.formatSelectedDateTitle(data.selectedDate, data.timeZone),
+        subtitle: this.formatSelectedDateSubtitle(data.selectedDate, data.timeZone),
       },
       rings,
       cards: {
         recommendation: {
           title: topInsightTitle,
-          subtitle: this.formatSelectedDateSubtitle(data.selectedDate),
+          subtitle: this.formatSelectedDateSubtitle(data.selectedDate, data.timeZone),
           footer: 'Health monitor',
         },
         stress: {
@@ -270,7 +275,11 @@ export class ViewsService {
       },
       confidence: {
         confidence: selectedScore?.confidence ?? 'Low',
-        pipelineStatus: this.buildPipelineStatus(data.dailyScores, data.selectedKey),
+        pipelineStatus: this.buildPipelineStatus(
+          data.dailyScores,
+          data.selectedKey,
+          data.timeZone,
+        ),
         sourceBlend: selectedFeature?.sourceBlend ?? 'No data',
         storageMode: 'Local-only storage',
         persistenceHealth: data.dailyScores.length > 0 ? 'Healthy' : 'Unavailable',
@@ -311,43 +320,40 @@ export class ViewsService {
     };
   }
 
-  async getSleepView(userId: string, selectedDateInput?: string) {
-    const data = await this.loadDashboardData(userId, selectedDateInput);
+  async getSleepView(userId: string, selectedDateInput?: string, timeZoneInput?: string) {
+    const data = await this.loadDashboardData(userId, selectedDateInput, timeZoneInput);
 
-    // Find tonight's detection first so we can shift the selected day
-    // when the user requests Today and we fall back to the latest night.
-    // Without this shift, the screen header says "Today" while the hypnogram
-    // shows yesterday's data — confusing.
-    // requestedKey preserved so selectedDate in the response always echoes
-    // back what the client asked for.
     const requestedKey = data.selectedKey;
-    let selectedDetection = this.findSleepByDayOrLatestForToday(
+    const selectedDetection = this.findSleepByDay(
       data.sleepDetections,
       'nightDate',
       data.selectedKey,
-      data.selectedDate,
+      data.timeZone,
     );
-    if (
-      selectedDetection &&
-      this.dayKey(selectedDetection.nightDate) !== data.selectedKey
-    ) {
-      data.selectedKey = this.dayKey(selectedDetection.nightDate);
-      data.selectedDate = new Date(selectedDetection.nightDate);
-    }
 
-    const selectedScore = this.findByDay(data.dailyScores, 'dayDate', data.selectedKey);
-    const selectedMetric = this.findByDay(data.dailyMetrics, 'dayDate', data.selectedKey);
-    const selectedStage = this.findSleepByDayOrLatestForToday(
+    const selectedScore = this.findByDay(
+      data.dailyScores,
+      'dayDate',
+      data.selectedKey,
+      data.timeZone,
+    );
+    const selectedMetric = this.findByDay(
+      data.dailyMetrics,
+      'dayDate',
+      data.selectedKey,
+      data.timeZone,
+    );
+    const selectedStage = this.findSleepByDay(
       data.sleepStages,
       'nightDate',
       data.selectedKey,
-      data.selectedDate,
+      data.timeZone,
     );
-    const selectedFeature = this.findSleepByDayOrLatestForToday(
+    const selectedFeature = this.findSleepByDay(
       data.nightFeatures,
       'nightDate',
       data.selectedKey,
-      data.selectedDate,
+      data.timeZone,
     );
 
     const detectionInterfaces = data.sleepDetections.map((d) => this.toDetectionSummary(d));
@@ -408,12 +414,14 @@ export class ViewsService {
         const matchingStage = this.findByDay(
           data.sleepStages,
           'nightDate',
-          this.dayKey(detection.nightDate),
+          this.dayKey(detection.nightDate, data.timeZone),
+          data.timeZone,
         );
         const matchingFeature = this.findByDay(
           data.nightFeatures,
           'nightDate',
-          this.dayKey(detection.nightDate),
+          this.dayKey(detection.nightDate, data.timeZone),
+          data.timeZone,
         );
         const score = computeSleepScoreForNight(
           detection.durationHours,
@@ -456,20 +464,20 @@ export class ViewsService {
       .filter(Boolean);
 
     const priorScoreValues = data.dailyScores
-      .filter((s) => this.dayKey(s.dayDate) !== data.selectedKey)
+      .filter((s) => this.dayKey(s.dayDate, data.timeZone) !== data.selectedKey)
       .slice(-7)
       .map((s) => s.dailyBalance);
 
     const priorFeatures = data.nightFeatures
-      .filter((f) => this.dayKey(f.nightDate) !== data.selectedKey)
+      .filter((f) => this.dayKey(f.nightDate, data.timeZone) !== data.selectedKey)
       .slice(-7);
 
     const priorMetrics = data.dailyMetrics
-      .filter((m) => this.dayKey(m.dayDate) !== data.selectedKey)
+      .filter((m) => this.dayKey(m.dayDate, data.timeZone) !== data.selectedKey)
       .slice(-7);
 
     const priorDetections = data.sleepDetections
-      .filter((d) => this.dayKey(d.nightDate) !== data.selectedKey)
+      .filter((d) => this.dayKey(d.nightDate, data.timeZone) !== data.selectedKey)
       .slice(-7);
 
     const score = {
@@ -501,8 +509,8 @@ export class ViewsService {
 
     return {
       selectedDate: requestedKey,
-      selectedDateTitle: this.formatSelectedDateTitle(data.selectedDate),
-      selectedDateSubtitle: this.formatSelectedDateSubtitle(data.selectedDate),
+      selectedDateTitle: this.formatSelectedDateTitle(data.selectedDate, data.timeZone),
+      selectedDateSubtitle: this.formatSelectedDateSubtitle(data.selectedDate, data.timeZone),
       emptyState: {
         isEmpty: selectedDetectionSummary == null,
         title: 'No sleep data yet',
@@ -514,11 +522,11 @@ export class ViewsService {
         bedtime:
           selectedDetectionSummary == null
             ? '--'
-            : this.formatTimeOnly(selectedDetectionSummary.bedtime),
+            : this.formatTimeOnly(selectedDetectionSummary.bedtime, data.timeZone),
         wakeTime:
           selectedDetectionSummary == null
             ? '--'
-            : this.formatTimeOnly(selectedDetectionSummary.wakeTime),
+            : this.formatTimeOnly(selectedDetectionSummary.wakeTime, data.timeZone),
         duration:
           selectedDurationHours == null
             ? '--'
@@ -613,7 +621,11 @@ export class ViewsService {
       },
       confidence: {
         confidence: selectedScore?.confidence ?? 'Low',
-        pipelineStatus: this.buildPipelineStatus(data.dailyScores, data.selectedKey),
+        pipelineStatus: this.buildPipelineStatus(
+          data.dailyScores,
+          data.selectedKey,
+          data.timeZone,
+        ),
         sourceBlend: selectedFeature?.sourceBlend ?? 'No data',
         storageMode: 'Local-only storage',
         persistenceHealth: data.dailyScores.length > 0 ? 'Healthy' : 'Unavailable',
@@ -755,9 +767,12 @@ export class ViewsService {
   private async loadDashboardData(
     userId: string,
     selectedDateInput?: string,
+    timeZoneInput?: string,
   ): Promise<DashboardData> {
-    const selectedDate = this.resolveSelectedDate(selectedDateInput);
-    const selectedKey = this.dayKey(selectedDate);
+    const { selectedDate, selectedKey, timeZone } = resolveCalendarDate(
+      selectedDateInput,
+      timeZoneInput,
+    );
     const cutoff = new Date(selectedDate.getTime() - 45 * 24 * 60 * 60 * 1000);
 
     const [
@@ -801,6 +816,7 @@ export class ViewsService {
     return {
       selectedDate,
       selectedKey,
+      timeZone,
       nightFeatures,
       sleepDetections,
       sleepStages,
@@ -812,85 +828,57 @@ export class ViewsService {
     };
   }
 
-  private resolveSelectedDate(dateInput?: string) {
-    if (dateInput && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
-      const [year, month, day] = dateInput.split('-').map(Number);
-      return new Date(year, month - 1, day, 12, 0, 0, 0);
-    }
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+  private resolveSelectedDate(dateInput?: string, timeZone?: string) {
+    return resolveCalendarDate(dateInput, timeZone).selectedDate;
   }
 
-  private dayKey(date: Date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+  private dayKey(date: Date, timeZone?: string) {
+    return calendarDayKey(date, timeZone);
   }
 
   private findByDay<T extends Record<string, any>>(
     items: T[],
     key: keyof T,
     selectedKey: string,
+    timeZone?: string,
   ): T | null {
-    return items.find((item) => this.dayKey(item[key] as Date) === selectedKey) ?? null;
+    return selectCalendarDayItem(items, key, selectedKey, timeZone);
   }
 
-  private findSleepByDayOrLatestForToday<T extends Record<string, any>>(
+  private findSleepByDay<T extends Record<string, any>>(
     items: T[],
     key: keyof T,
     selectedKey: string,
-    selectedDate: Date,
+    timeZone?: string,
   ): T | null {
-    const exact = this.findByDay(items, key, selectedKey);
-    if (exact) return exact;
-
-    if (this.isToday(selectedDate)) {
-      // For today, fall back to the most recent night
-      return items.length > 0 ? items[items.length - 1] : null;
-    }
-
-    // For past dates, find the closest night within ±1 day
-    // (handles timezone drift where nightDate lands on an adjacent day)
-    const selectedMs = selectedDate.getTime();
-    const ONE_DAY = 24 * 60 * 60 * 1000;
-    let closest: T | null = null;
-    let closestDist = Infinity;
-    for (const item of items) {
-      const itemMs = (item[key] as Date).getTime();
-      const dist = Math.abs(itemMs - selectedMs);
-      if (dist <= ONE_DAY && dist < closestDist) {
-        closestDist = dist;
-        closest = item;
-      }
-    }
-    return closest;
+    return this.findByDay(items, key, selectedKey, timeZone);
   }
 
-  private formatSelectedDateTitle(date: Date) {
+  private formatSelectedDateTitle(date: Date, timeZone?: string) {
     const now = new Date();
-    const todayKey = this.dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0));
-    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0, 0);
-    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12, 0, 0, 0);
-    const key = this.dayKey(date);
+    const todayKey = this.dayKey(now, timeZone);
+    const yesterdayKey = this.dayKey(new Date(now.getTime() - 24 * 60 * 60 * 1000), timeZone);
+    const tomorrowKey = this.dayKey(new Date(now.getTime() + 24 * 60 * 60 * 1000), timeZone);
+    const key = this.dayKey(date, timeZone);
     if (key === todayKey) return 'Today';
-    if (key === this.dayKey(yesterday)) return 'Yesterday';
-    if (key === this.dayKey(tomorrow)) return 'Tomorrow';
+    if (key === yesterdayKey) return 'Yesterday';
+    if (key === tomorrowKey) return 'Tomorrow';
     return new Intl.DateTimeFormat('en-US', {
+      timeZone,
       weekday: 'long',
       month: 'short',
       day: 'numeric',
     }).format(date);
   }
 
-  private isToday(date: Date) {
+  private isToday(date: Date, timeZone?: string) {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
-    return this.dayKey(date) === this.dayKey(today);
+    return this.dayKey(date, timeZone) === this.dayKey(now, timeZone);
   }
 
-  private formatSelectedDateSubtitle(date: Date) {
+  private formatSelectedDateSubtitle(date: Date, timeZone?: string) {
     return new Intl.DateTimeFormat('en-US', {
+      timeZone,
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -955,9 +943,11 @@ export class ViewsService {
     return `Daily Balance is ${direction} by ${Math.abs(delta)} points over this window.`;
   }
 
-  private buildPipelineStatus(scores: DailyScore[], selectedKey: string) {
+  private buildPipelineStatus(scores: DailyScore[], selectedKey: string, timeZone?: string) {
     if (scores.length === 0) return 'Waiting for first sync';
-    const hasSelected = scores.some((score) => this.dayKey(score.dayDate) === selectedKey);
+    const hasSelected = scores.some(
+      (score) => this.dayKey(score.dayDate, timeZone) === selectedKey,
+    );
     return hasSelected ? 'Selected day is derived from stored pipeline results.' : 'Latest pipeline results are available.';
   }
 
@@ -1002,8 +992,9 @@ export class ViewsService {
     return `${Math.floor(minutes / 60)}:${String(Math.round(minutes % 60)).padStart(2, '0')}`;
   }
 
-  private formatTimeOnly(date: Date) {
+  private formatTimeOnly(date: Date, timeZone?: string) {
     return new Intl.DateTimeFormat('en-US', {
+      timeZone,
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,

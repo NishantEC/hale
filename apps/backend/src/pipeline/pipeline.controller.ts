@@ -10,6 +10,7 @@ import {
   HttpStatus,
   UsePipes,
   ValidationPipe,
+  Query,
 } from '@nestjs/common';
 import { SessionGuard } from '../auth/auth.guard.js';
 import { PipelineService } from './pipeline.service.js';
@@ -29,6 +30,7 @@ export class PipelineController {
       return await this.pipelineService.ingest(req.user.userId, dto);
     } catch (e) {
       this.logger.error(`ingest failed: ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(`Ingest failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
@@ -42,16 +44,22 @@ export class PipelineController {
       return await this.pipelineService.ingestTable(req.user.userId, dto);
     } catch (e) {
       this.logger.error(`ingest-table failed (table=${dto?.tableName}): ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(`Ingest-table failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Post('run')
-  async run(@Request() req) {
+  async run(
+    @Request() req,
+    @Query('timeZone') timeZone?: string,
+    @Query('tz') tz?: string,
+  ) {
     try {
-      return await this.pipelineService.runPipeline(req.user.userId);
+      return await this.pipelineService.runPipeline(req.user.userId, timeZone ?? tz);
     } catch (e) {
       this.logger.error(`pipeline run failed: ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(`Pipeline run failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
@@ -62,6 +70,7 @@ export class PipelineController {
       return await this.pipelineService.getResults(req.user.userId);
     } catch (e) {
       this.logger.error(`results fetch failed: ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(`Results failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }

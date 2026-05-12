@@ -24,21 +24,33 @@ export class ViewsController {
   constructor(private readonly viewsService: ViewsService) {}
 
   @Get('home')
-  async home(@Req() req: any, @Query('date') date?: string) {
+  async home(
+    @Req() req: any,
+    @Query('date') date?: string,
+    @Query('timeZone') timeZone?: string,
+    @Query('tz') tz?: string,
+  ) {
     try {
-      return await this.viewsService.getHomeView(req.user.userId, date);
+      return await this.viewsService.getHomeView(req.user.userId, date, timeZone ?? tz);
     } catch (e) {
       this.logger.error(`home view failed: ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(`Home view failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
   @Get('sleep')
-  async sleep(@Req() req: any, @Query('date') date?: string) {
+  async sleep(
+    @Req() req: any,
+    @Query('date') date?: string,
+    @Query('timeZone') timeZone?: string,
+    @Query('tz') tz?: string,
+  ) {
     try {
-      return await this.viewsService.getSleepView(req.user.userId, date);
+      return await this.viewsService.getSleepView(req.user.userId, date, timeZone ?? tz);
     } catch (e) {
       this.logger.error(`sleep view failed: ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(`Sleep view failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
@@ -50,6 +62,7 @@ export class ViewsController {
       return await this.viewsService.getTrendsView(req.user.userId, n);
     } catch (e) {
       this.logger.error(`trends view failed: ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(`Trends view failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
@@ -61,6 +74,7 @@ export class ViewsController {
       return await this.viewsService.updateSleepPlan(req.user.userId, dto);
     } catch (e) {
       this.logger.error(`sleep plan update failed: ${e.message}`, e.stack);
+      if (e instanceof HttpException) throw e;
       throw new HttpException(
         `Sleep plan update failed: ${e.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,

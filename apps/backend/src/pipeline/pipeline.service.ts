@@ -38,6 +38,12 @@ import { computeDerivedMetrics } from '../processing/derived-metrics.js';
 import { computeSleepScoreForNight } from '../processing/sleep-score.js';
 import { computeTypicalRanges } from '../processing/typical-ranges.js';
 import { journalSleepCorrelations } from '../processing/journal-correlations.js';
+import {
+  calendarDayBounds,
+  calendarDayKey,
+  calendarDayStart,
+  resolveTimeZone,
+} from '../common/calendar.js';
 
 import type {
   SignalSample,
@@ -213,7 +219,8 @@ export class PipelineService {
   }
 
   // -------------------------------------------------------------- runPipeline
-  async runPipeline(userId: string) {
+  async runPipeline(userId: string, timeZoneInput?: string) {
+    const timeZone = resolveTimeZone(timeZoneInput);
     const now = new Date();
     const cutoff = new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);
 
@@ -293,7 +300,7 @@ export class PipelineService {
         : this.deriveSignalSamplesFromSensorRecords(sensorRecords);
     const sanitized = sanitize(signalSamples);
 
-    const sleepDetections = SleepEventEngine.detect(sensorRecords);
+    const sleepDetections = SleepEventEngine.detect(sensorRecords, timeZone);
 
     // Activity detection on non-sleep daytime periods
     let activityBouts = detectActivities(sensorRecords, sleepDetections, baseline);
@@ -305,6 +312,7 @@ export class PipelineService {
         activityBouts,
         sensorRecords,
         baseline,
+        timeZone,
       );
     }
 
@@ -378,7 +386,7 @@ export class PipelineService {
 
       const baseFeature = buildNightFeatureSet(
         sanitized,
-        this.startOfDay(detection.nightDate),
+        this.startOfDay(detection.nightDate, timeZone),
         baseline,
         {
           bedtime: detection.bedtime,
@@ -391,7 +399,10 @@ export class PipelineService {
         },
       );
       const effectiveFeature = effectiveSleepFeatureSet(baseFeature, detection);
-      featureByNightKey.set(this.dayKey(effectiveFeature.nightDate), effectiveFeature);
+      featureByNightKey.set(
+        this.dayKey(effectiveFeature.nightDate, timeZone),
+        effectiveFeature,
+      );
     }
 
     const effectiveFeatures = [...featureByNightKey.values()].sort(
@@ -400,7 +411,7 @@ export class PipelineService {
     const recomputedBaseline = recomputeBaselineProfile(effectiveFeatures);
 
     const stageByNightKey = new Map(
-      sleepStages.map((stage) => [this.dayKey(stage.nightDate), stage] as const),
+      sleepStages.map((stage) => [this.dayKey(stage.nightDate, timeZone), stage] as const),
     );
 
     const dailyScores = effectiveFeatures.map((feature) =>
@@ -409,7 +420,7 @@ export class PipelineService {
 
     const sleepScoreByNightKey = new Map<number, number | null>();
     for (const detection of sleepDetections) {
-      const nightKey = this.dayKey(detection.nightDate);
+      const nightKey = this.dayKey(detection.nightDate, timeZone);
       const feature = featureByNightKey.get(nightKey) ?? null;
       const stage = stageByNightKey.get(nightKey) ?? null;
       sleepScoreByNightKey.set(
@@ -429,6 +440,7 @@ export class PipelineService {
       sensorRecords,
       sleepDetections,
       effectiveFeatures,
+      timeZone,
     ).map((dayDate) => ({
       dayDate,
       metrics: computeDerivedMetrics(
@@ -438,6 +450,7 @@ export class PipelineService {
         sleepDetections,
         recomputedBaseline,
         dayDate,
+        timeZone,
       ),
     }));
 
@@ -447,34 +460,84 @@ export class PipelineService {
       sleepStages,
       sleepDetections,
     );
+    const observedDayDates = this.collectReferenceDays(sensorRecords, [], [], timeZone);
 
-    for (const feature of effectiveFeatures) {
-      await this.upsertNightFeature(
+    await Promise.all([
+      this.pruneStaleCalendarDayRows(
+        this.nightFeatureRepo,
         userId,
-        feature,
-        this.startOfDay(feature.nightDate),
-      );
-    }
-
-    for (const detection of sleepDetections) {
-      await this.upsertSleepDetection(userId, detection);
-    }
-
-    for (const stage of sleepStages) {
-      await this.upsertSleepStage(userId, stage);
-    }
-
-    for (const score of dailyScores) {
-      await this.upsertDailyScore(
+        'nightDate',
+        observedDayDates,
+        effectiveFeatures.map((feature) => feature.nightDate),
+        timeZone,
+      ),
+      this.pruneStaleCalendarDayRows(
+        this.sleepDetectionRepo,
         userId,
-        score,
-        sleepScoreByNightKey.get(this.dayKey(score.dayDate)) ?? null,
-      );
-    }
+        'nightDate',
+        observedDayDates,
+        sleepDetections.map((detection) => detection.nightDate),
+        timeZone,
+      ),
+      this.pruneStaleCalendarDayRows(
+        this.sleepStageRepo,
+        userId,
+        'nightDate',
+        observedDayDates,
+        sleepStages.map((stage) => stage.nightDate),
+        timeZone,
+      ),
+      this.pruneStaleCalendarDayRows(
+        this.dailyScoreRepo,
+        userId,
+        'dayDate',
+        observedDayDates,
+        dailyScores.map((score) => score.dayDate),
+        timeZone,
+      ),
+    ]);
 
-    for (const entry of derivedMetricsByDay) {
-      await this.upsertDailyMetric(userId, entry.metrics, entry.dayDate);
-    }
+    // Parallelize within each repo. Pipeline guarantees each input array has
+    // at most one entry per calendar day, so two concurrent upserts never
+    // target the same row. The pool size still serializes effective
+    // concurrency to the configured `DB_POOL_MAX`.
+    await Promise.all(
+      effectiveFeatures.map((feature) =>
+        this.upsertNightFeature(
+          userId,
+          feature,
+          this.startOfDay(feature.nightDate, timeZone),
+          timeZone,
+        ),
+      ),
+    );
+
+    await Promise.all(
+      sleepDetections.map((detection) =>
+        this.upsertSleepDetection(userId, detection, timeZone),
+      ),
+    );
+
+    await Promise.all(
+      sleepStages.map((stage) => this.upsertSleepStage(userId, stage, timeZone)),
+    );
+
+    await Promise.all(
+      dailyScores.map((score) =>
+        this.upsertDailyScore(
+          userId,
+          score,
+          sleepScoreByNightKey.get(this.dayKey(score.dayDate, timeZone)) ?? null,
+          timeZone,
+        ),
+      ),
+    );
+
+    await Promise.all(
+      derivedMetricsByDay.map((entry) =>
+        this.upsertDailyMetric(userId, entry.metrics, entry.dayDate, timeZone),
+      ),
+    );
 
     await this.upsertBaseline(userId, recomputedBaseline);
 
@@ -494,7 +557,10 @@ export class PipelineService {
         sleepScore:
           sleepDetections.length > 0
             ? sleepScoreByNightKey.get(
-                this.dayKey(sleepDetections[sleepDetections.length - 1].nightDate),
+                this.dayKey(
+                  sleepDetections[sleepDetections.length - 1].nightDate,
+                  timeZone,
+                ),
               ) ?? null
             : null,
         typicalRanges: typicalRanges != null ? 1 : 0,
@@ -605,17 +671,75 @@ export class PipelineService {
 
   // --------------------------------------------------------- private helpers
 
+  private async findOneByCalendarDay<T extends { id: string }>(
+    repo: Repository<any>,
+    userId: string,
+    column: 'nightDate' | 'dayDate',
+    date: Date,
+    timeZone: string,
+  ): Promise<T | null> {
+    const { start, end } = calendarDayBounds(calendarDayKey(date, timeZone), timeZone);
+    const rows = await repo
+      .createQueryBuilder('entity')
+      .where('entity."userId" = :userId', { userId })
+      .andWhere(`entity."${column}" >= :start`, { start })
+      .andWhere(`entity."${column}" < :end`, { end })
+      .orderBy('entity."updatedAt"', 'DESC')
+      .getMany();
+
+    const [existing, ...duplicates] = rows;
+    if (duplicates.length > 0) {
+      this.logger.warn(
+        `findOneByCalendarDay self-heal: deleted ${duplicates.length} duplicate ${column}=${calendarDayKey(date, timeZone)} rows for user=${userId}`,
+      );
+      await repo.delete(duplicates.map((row) => row.id) as any);
+    }
+    return existing ?? null;
+  }
+
+  private async pruneStaleCalendarDayRows(
+    repo: Repository<any>,
+    userId: string,
+    column: 'nightDate' | 'dayDate',
+    candidateDates: Date[],
+    keptDates: Date[],
+    timeZone: string,
+  ) {
+    const keptKeys = new Set(keptDates.map((date) => calendarDayKey(date, timeZone)));
+    const candidateKeys = [
+      ...new Set(candidateDates.map((date) => calendarDayKey(date, timeZone))),
+    ];
+
+    for (const candidateKey of candidateKeys) {
+      if (keptKeys.has(candidateKey)) continue;
+      const { start, end } = calendarDayBounds(candidateKey, timeZone);
+      await repo
+        .createQueryBuilder()
+        .delete()
+        .where('"userId" = :userId', { userId })
+        .andWhere(`"${column}" >= :start`, { start })
+        .andWhere(`"${column}" < :end`, { end })
+        .execute();
+    }
+  }
+
   private async upsertNightFeature(
     userId: string,
     features: import('../processing/interfaces.js').NightFeatureSet,
     nightDate: Date,
+    timeZone: string,
   ) {
-    const existing = await this.nightFeatureRepo.findOne({
-      where: { userId, nightDate },
-    });
+    const existing = await this.findOneByCalendarDay(
+      this.nightFeatureRepo,
+      userId,
+      'nightDate',
+      nightDate,
+      timeZone,
+    );
 
     if (existing) {
       Object.assign(existing, {
+        nightDate,
         restingHeartRate: features.restingHeartRate,
         rmssd: features.rmssd,
         sdnn: features.sdnn,
@@ -652,11 +776,16 @@ export class PipelineService {
   private async upsertSleepDetection(
     userId: string,
     detection: import('../processing/interfaces.js').SleepDetectionSummary,
+    timeZone: string,
   ) {
     const nightDate = detection.nightDate;
-    const existing = await this.sleepDetectionRepo.findOne({
-      where: { userId, nightDate },
-    });
+    const existing = await this.findOneByCalendarDay(
+      this.sleepDetectionRepo,
+      userId,
+      'nightDate',
+      nightDate,
+      timeZone,
+    );
 
     const data = {
       bedtime: detection.bedtime,
@@ -670,7 +799,7 @@ export class PipelineService {
     };
 
     if (existing) {
-      Object.assign(existing, data);
+      Object.assign(existing, { nightDate, ...data });
       await this.sleepDetectionRepo.save(existing);
     } else {
       const entity = this.sleepDetectionRepo.create({ userId, nightDate, ...data });
@@ -681,11 +810,16 @@ export class PipelineService {
   private async upsertSleepStage(
     userId: string,
     stage: import('../processing/interfaces.js').SleepStageSummary,
+    timeZone: string,
   ) {
     const nightDate = stage.nightDate;
-    const existing = await this.sleepStageRepo.findOne({
-      where: { userId, nightDate },
-    });
+    const existing = await this.findOneByCalendarDay(
+      this.sleepStageRepo,
+      userId,
+      'nightDate',
+      nightDate,
+      timeZone,
+    );
 
     const data = {
       remMinutes: stage.remMinutes,
@@ -700,7 +834,7 @@ export class PipelineService {
     };
 
     if (existing) {
-      Object.assign(existing, data);
+      Object.assign(existing, { nightDate, ...data });
       await this.sleepStageRepo.save(existing);
     } else {
       const entity = this.sleepStageRepo.create({ userId, nightDate, ...data });
@@ -712,11 +846,16 @@ export class PipelineService {
     userId: string,
     score: import('../processing/interfaces.js').DailyWellnessScore,
     sleepScore: number | null,
+    timeZone: string,
   ) {
     const dayDate = score.dayDate;
-    const existing = await this.dailyScoreRepo.findOne({
-      where: { userId, dayDate },
-    });
+    const existing = await this.findOneByCalendarDay(
+      this.dailyScoreRepo,
+      userId,
+      'dayDate',
+      dayDate,
+      timeZone,
+    );
 
     const data = {
       dailyBalance: score.dailyBalance,
@@ -728,7 +867,7 @@ export class PipelineService {
     };
 
     if (existing) {
-      Object.assign(existing, data);
+      Object.assign(existing, { dayDate, ...data });
       await this.dailyScoreRepo.save(existing);
     } else {
       const entity = this.dailyScoreRepo.create({ userId, dayDate, ...data });
@@ -740,10 +879,15 @@ export class PipelineService {
     userId: string,
     metrics: import('../processing/interfaces.js').DerivedMetricsBundle,
     dayDate: Date,
+    timeZone: string,
   ) {
-    const existing = await this.dailyMetricRepo.findOne({
-      where: { userId, dayDate },
-    });
+    const existing = await this.findOneByCalendarDay(
+      this.dailyMetricRepo,
+      userId,
+      'dayDate',
+      dayDate,
+      timeZone,
+    );
 
     const data = {
       stressAverage: metrics.stressAverage,
@@ -766,7 +910,7 @@ export class PipelineService {
     };
 
     if (existing) {
-      Object.assign(existing, data);
+      Object.assign(existing, { dayDate, ...data });
       await this.dailyMetricRepo.save(existing);
     } else {
       const entity = this.dailyMetricRepo.create({ userId, dayDate, ...data } as any);
@@ -821,17 +965,18 @@ export class PipelineService {
     sensorRecords: HistoricalSensorRecord[],
     sleepDetections: import('../processing/interfaces.js').SleepDetectionSummary[],
     nightFeatures: import('../processing/interfaces.js').NightFeatureSet[],
+    timeZone: string,
   ) {
     const keys = new Set<number>();
 
     for (const record of sensorRecords) {
-      keys.add(this.dayKey(record.timestamp));
+      keys.add(this.dayKey(record.timestamp, timeZone));
     }
     for (const detection of sleepDetections) {
-      keys.add(this.dayKey(detection.nightDate));
+      keys.add(this.dayKey(detection.nightDate, timeZone));
     }
     for (const feature of nightFeatures) {
-      keys.add(this.dayKey(feature.nightDate));
+      keys.add(this.dayKey(feature.nightDate, timeZone));
     }
 
     return [...keys]
@@ -839,14 +984,12 @@ export class PipelineService {
       .map((key) => new Date(key));
   }
 
-  private startOfDay(date: Date) {
-    const value = new Date(date);
-    value.setHours(0, 0, 0, 0);
-    return value;
+  private startOfDay(date: Date, timeZone: string) {
+    return calendarDayStart(date, timeZone);
   }
 
-  private dayKey(date: Date) {
-    return this.startOfDay(date).getTime();
+  private dayKey(date: Date, timeZone: string) {
+    return this.startOfDay(date, timeZone).getTime();
   }
 
   /**
@@ -866,6 +1009,7 @@ export class PipelineService {
     bouts: ActivityBout[],
     sensorRecords: HistoricalSensorRecord[],
     baseline: BaselineProfileInterface,
+    timeZone: string,
   ): Promise<ActivityBout[]> {
     if (bouts.length === 0) return bouts;
 
@@ -873,10 +1017,10 @@ export class PipelineService {
     const maxEnd = bouts[bouts.length - 1].endTime;
 
     // Span (with some buffer) for HealthKit lookups
-    const dayStart = this.startOfDay(minStart);
-    const dayEnd = new Date(maxEnd);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    dayEnd.setHours(0, 0, 0, 0);
+    const dayStart = this.startOfDay(minStart, timeZone);
+    const dayEnd = calendarDayBounds(calendarDayKey(maxEnd, timeZone), timeZone).end;
+    const startDateKey = calendarDayKey(dayStart, timeZone);
+    const endDateKey = calendarDayKey(dayEnd, timeZone);
 
     // Pull workouts in window
     const workouts = await this.healthkitWorkoutRepo
@@ -889,12 +1033,12 @@ export class PipelineService {
     // Pull daily summaries in window
     const summaries = await this.healthkitSummaryRepo
       .createQueryBuilder('s')
-      .where('s."userId" = :userId', { userId })
-      .andWhere('s."dayDate" >= :start', { start: dayStart.toISOString().slice(0, 10) })
-      .andWhere(
-        's."dayDate" < :end',
-        { end: dayEnd.toISOString().slice(0, 10) },
-      )
+          .where('s."userId" = :userId', { userId })
+          .andWhere('s."dayDate" >= :start', { start: startDateKey })
+          .andWhere(
+            's."dayDate" < :end',
+            { end: endDateKey },
+          )
       .getMany();
 
     const flightsByDay = new Map<string, number | null>();
@@ -1068,27 +1212,27 @@ async function upsertRawSensorRows(
       signalQuality: r.signalQuality,
     }));
     await repo
-      .createQueryBuilder()
+      .createQueryBuilder('existing_raw_sensor_records')
       .insert()
       .values(values as any)
       .onConflict(`("userId", timestamp) DO UPDATE SET
-        "heartRate"        = CASE WHEN EXCLUDED."heartRate" > 0 THEN EXCLUDED."heartRate" ELSE raw_sensor_records."heartRate" END,
-        "rrAverageMs"      = COALESCE(EXCLUDED."rrAverageMs",      raw_sensor_records."rrAverageMs"),
-        "spo2Red"          = COALESCE(EXCLUDED."spo2Red",          raw_sensor_records."spo2Red"),
-        "spo2IR"           = COALESCE(EXCLUDED."spo2IR",           raw_sensor_records."spo2IR"),
-        "skinTempRaw"      = COALESCE(EXCLUDED."skinTempRaw",      raw_sensor_records."skinTempRaw"),
-        "gravityMagnitude" = COALESCE(EXCLUDED."gravityMagnitude", raw_sensor_records."gravityMagnitude"),
-        "gravityX"         = COALESCE(EXCLUDED."gravityX",         raw_sensor_records."gravityX"),
-        "gravityY"         = COALESCE(EXCLUDED."gravityY",         raw_sensor_records."gravityY"),
-        "gravityZ"         = COALESCE(EXCLUDED."gravityZ",         raw_sensor_records."gravityZ"),
-        "respRateRaw"      = COALESCE(EXCLUDED."respRateRaw",      raw_sensor_records."respRateRaw"),
-        "skinContact"      = COALESCE(EXCLUDED."skinContact",      raw_sensor_records."skinContact"),
-        "ppgGreen"         = COALESCE(EXCLUDED."ppgGreen",         raw_sensor_records."ppgGreen"),
-        "ppgRedIr"         = COALESCE(EXCLUDED."ppgRedIr",         raw_sensor_records."ppgRedIr"),
-        "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     raw_sensor_records."ambientLight"),
-        "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        raw_sensor_records."ledDrive1"),
-        "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        raw_sensor_records."ledDrive2"),
-        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    raw_sensor_records."signalQuality")
+        "heartRate"        = CASE WHEN EXCLUDED."heartRate" > 0 THEN EXCLUDED."heartRate" ELSE "existing_raw_sensor_records"."heartRate" END,
+        "rrAverageMs"      = COALESCE(EXCLUDED."rrAverageMs",      "existing_raw_sensor_records"."rrAverageMs"),
+        "spo2Red"          = COALESCE(EXCLUDED."spo2Red",          "existing_raw_sensor_records"."spo2Red"),
+        "spo2IR"           = COALESCE(EXCLUDED."spo2IR",           "existing_raw_sensor_records"."spo2IR"),
+        "skinTempRaw"      = COALESCE(EXCLUDED."skinTempRaw",      "existing_raw_sensor_records"."skinTempRaw"),
+        "gravityMagnitude" = COALESCE(EXCLUDED."gravityMagnitude", "existing_raw_sensor_records"."gravityMagnitude"),
+        "gravityX"         = COALESCE(EXCLUDED."gravityX",         "existing_raw_sensor_records"."gravityX"),
+        "gravityY"         = COALESCE(EXCLUDED."gravityY",         "existing_raw_sensor_records"."gravityY"),
+        "gravityZ"         = COALESCE(EXCLUDED."gravityZ",         "existing_raw_sensor_records"."gravityZ"),
+        "respRateRaw"      = COALESCE(EXCLUDED."respRateRaw",      "existing_raw_sensor_records"."respRateRaw"),
+        "skinContact"      = COALESCE(EXCLUDED."skinContact",      "existing_raw_sensor_records"."skinContact"),
+        "ppgGreen"         = COALESCE(EXCLUDED."ppgGreen",         "existing_raw_sensor_records"."ppgGreen"),
+        "ppgRedIr"         = COALESCE(EXCLUDED."ppgRedIr",         "existing_raw_sensor_records"."ppgRedIr"),
+        "ambientLight"     = COALESCE(EXCLUDED."ambientLight",     "existing_raw_sensor_records"."ambientLight"),
+        "ledDrive1"        = COALESCE(EXCLUDED."ledDrive1",        "existing_raw_sensor_records"."ledDrive1"),
+        "ledDrive2"        = COALESCE(EXCLUDED."ledDrive2",        "existing_raw_sensor_records"."ledDrive2"),
+        "signalQuality"    = COALESCE(EXCLUDED."signalQuality",    "existing_raw_sensor_records"."signalQuality")
       `)
       .execute();
     total += slice.length;

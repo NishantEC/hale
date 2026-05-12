@@ -1,5 +1,6 @@
 import { HistoricalSensorRecord, SleepDetectionSummary } from './interfaces';
-import { median, clamp, dayKey, standardDeviation } from './utils';
+import { median, clamp, standardDeviation } from './utils';
+import { calendarDayStart, clockMinutesInTimeZone } from '../common/calendar.js';
 
 interface TempPeriod {
   isSleep: boolean;
@@ -17,8 +18,15 @@ interface NightGroup {
   validCoverage: number;
 }
 
+const HISTORICAL_GAP_BREAK_SECONDS = 20 * 60;
+const SHORT_FLIP_MERGE_SECONDS = 15 * 60;
+const MIN_SLEEP_PERIOD_MS = 60 * 60 * 1000;
+
 export class SleepEventEngine {
-  static detect(records: HistoricalSensorRecord[]): SleepDetectionSummary[] {
+  static detect(
+    records: HistoricalSensorRecord[],
+    timeZone?: string,
+  ): SleepDetectionSummary[] {
     const sorted = [...records].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
     );
@@ -49,24 +57,29 @@ export class SleepEventEngine {
 
     const periods = mergePeriods(
       buildPeriods(gravityRecords, isSleepFlags),
-      20 * 60,
-      15 * 60,
+      HISTORICAL_GAP_BREAK_SECONDS,
+      SHORT_FLIP_MERGE_SECONDS,
     );
     const longSleeps = periods.filter(
       (p) =>
         p.isSleep &&
-        p.end.getTime() - p.start.getTime() >= 60 * 60 * 1000,
+        p.end.getTime() - p.start.getTime() >= MIN_SLEEP_PERIOD_MS,
     );
     if (longSleeps.length === 0) return [];
 
-    const groups = groupSleepsByNight(longSleeps, gravityRecords, intervalSeconds);
+    const groups = groupSleepsByNight(
+      longSleeps,
+      gravityRecords,
+      intervalSeconds,
+      timeZone,
+    );
     if (groups.length === 0) return [];
 
     const sortedGroups = [...groups].sort(
       (a, b) => a.nightDate.getTime() - b.nightDate.getTime(),
     );
     return sortedGroups.map((group, index) => {
-      const regularity = regularityScore(index, sortedGroups);
+      const regularity = regularityScore(index, sortedGroups, timeZone);
       const confidence = clamp(
         group.validCoverage * 0.7 + group.continuity * 0.3,
         0,
@@ -153,7 +166,7 @@ function buildPeriods(
       !endOfData &&
       records[idx].timestamp.getTime() -
         records[idx - 1].timestamp.getTime() >
-        20 * 60 * 1000;
+        HISTORICAL_GAP_BREAK_SECONDS * 1000;
     if (endOfData || classChange || gapBreak) {
       periods.push({
         isSleep: sleepFlags[runStart],
@@ -224,20 +237,19 @@ function mergePeriods(
   return merged;
 }
 
-function startOfDay(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
+function startOfDay(date: Date, timeZone?: string): Date {
+  return calendarDayStart(date, timeZone);
 }
 
 function groupSleepsByNight(
   sleepPeriods: TempPeriod[],
   records: HistoricalSensorRecord[],
   intervalSeconds: number,
+  timeZone?: string,
 ): NightGroup[] {
   const grouped = new Map<number, TempPeriod[]>();
   for (const period of sleepPeriods) {
-    const day = startOfDay(period.end);
+    const day = startOfDay(period.end, timeZone);
     const key = Math.floor(day.getTime() / 1000);
     const existing = grouped.get(key);
     if (existing) {
@@ -277,7 +289,7 @@ function groupSleepsByNight(
       intervalSeconds,
     );
     results.push({
-      nightDate: startOfDay(last.end),
+      nightDate: startOfDay(last.end, timeZone),
       bedtime: first.start,
       wakeTime: last.end,
       durationHours,
@@ -313,20 +325,17 @@ function estimateCoverage(
 function regularityScore(
   index: number,
   groups: NightGroup[],
+  timeZone?: string,
 ): number {
   const start = Math.max(0, index - 6);
   const recent = groups.slice(start, index + 1);
   if (recent.length < 3) return 0.65;
-  const bedMinutes = recent.map((g) => minutesOfDay(g.bedtime));
-  const wakeMinutes = recent.map((g) => minutesOfDay(g.wakeTime));
+  const bedMinutes = recent.map((g) => clockMinutesInTimeZone(g.bedtime, timeZone));
+  const wakeMinutes = recent.map((g) => clockMinutesInTimeZone(g.wakeTime, timeZone));
   const bedStd = standardDeviation(bedMinutes);
   const wakeStd = standardDeviation(wakeMinutes);
   const penalty = Math.min(1.0, (bedStd + wakeStd) / 180.0);
   return Math.max(0, 1 - penalty);
-}
-
-function minutesOfDay(date: Date): number {
-  return date.getHours() * 60 + date.getMinutes();
 }
 
 function medianIntervalSeconds(

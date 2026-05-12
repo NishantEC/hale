@@ -68,4 +68,35 @@ describe('computeDerivedMetrics', () => {
     expect(metrics.detectedSleepNights).toBe(4);
     expect(metrics.sleepConsistencyScore).not.toBeNull();
   });
+
+  it('uses the requested timezone when selecting samples for a local day', () => {
+    const baseline: BaselineProfile = {
+      restingHeartRate: 55,
+      rmssd: 50,
+      sdnn: 35,
+      nightsUsed: 7,
+      isWarmedUp: true,
+      maxHeartRate: 190,
+    };
+    const samples: SignalSample[] = Array.from({ length: 12 }, (_, index) => ({
+      timestamp: new Date(Date.UTC(2026, 4, 11, 3, index, 0, 0)),
+      source: 'strap-history',
+      heartRate: 90 + index,
+      ibiMs: null,
+      motionScore: null,
+      qualityScore: 1,
+    }));
+
+    const metrics = computeDerivedMetrics(
+      samples,
+      [],
+      [],
+      [],
+      baseline,
+      new Date('2026-05-10T07:00:00.000Z'),
+      'America/Los_Angeles',
+    );
+
+    expect(metrics.strainScore).not.toBeNull();
+  });
 });

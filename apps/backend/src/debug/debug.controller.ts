@@ -26,7 +26,11 @@ export class DebugController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async getOverview(@Req() req: any, @Query() query: DebugDateQueryDto) {
     try {
-      return await this.debugService.getOverview(req.user.userId, query.date);
+      return await this.debugService.getOverview(
+        req.user.userId,
+        query.date,
+        query.timeZone ?? query.tz,
+      );
     } catch (e) {
       this.logger.error(`overview failed: ${e.message}`, e.stack);
       throw e;
@@ -40,6 +44,7 @@ export class DebugController {
       return await this.debugService.getRawRecords(
         req.user.userId,
         query.date,
+        query.timeZone ?? query.tz,
         query.limit ?? 200,
       );
     } catch (e) {
@@ -52,7 +57,11 @@ export class DebugController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async getSleepNight(@Req() req: any, @Query() query: DebugDateQueryDto) {
     try {
-      return await this.debugService.getSleepNight(req.user.userId, query.date);
+      return await this.debugService.getSleepNight(
+        req.user.userId,
+        query.date,
+        query.timeZone ?? query.tz,
+      );
     } catch (e) {
       this.logger.error(`sleep-night failed: ${e.message}`, e.stack);
       throw e;
@@ -73,7 +82,11 @@ export class DebugController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async runPipeline(@Req() req: any, @Query() query: DebugDateQueryDto) {
     try {
-      return await this.debugService.runPipeline(req.user.userId, query.date);
+      return await this.debugService.runPipeline(
+        req.user.userId,
+        query.date,
+        query.timeZone ?? query.tz,
+      );
     } catch (e) {
       this.logger.error(`debug pipeline run failed: ${e.message}`, e.stack);
       throw e;
@@ -84,7 +97,11 @@ export class DebugController {
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async recomputeViews(@Req() req: any, @Query() query: DebugDateQueryDto) {
     try {
-      return await this.debugService.recomputeViews(req.user.userId, query.date);
+      return await this.debugService.recomputeViews(
+        req.user.userId,
+        query.date,
+        query.timeZone ?? query.tz,
+      );
     } catch (e) {
       this.logger.error(`views recompute failed: ${e.message}`, e.stack);
       throw e;

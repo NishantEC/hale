@@ -1,4 +1,5 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { postgresPoolOptions } from './postgres-pool.js';
 
 export function databaseConfig(): TypeOrmModuleOptions {
   // When deployed on Cloud Run with a Cloud SQL attachment, the platform
@@ -26,5 +27,6 @@ export function databaseConfig(): TypeOrmModuleOptions {
     // via DB_SYNCHRONIZE=true — never in production.
     synchronize: process.env.DB_SYNCHRONIZE === 'true',
     migrationsRun: false,
+    extra: postgresPoolOptions(),
   };
 }

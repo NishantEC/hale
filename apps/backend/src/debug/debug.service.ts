@@ -16,6 +16,12 @@ import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
 import { RealtimeSample } from '../telemetry/entities/realtime-sample.entity.js';
 import { ConsoleLog } from '../telemetry/entities/console-log.entity.js';
 import { ViewsService } from '../views/views.service.js';
+import {
+  calendarDayBounds,
+  calendarDayKey,
+  resolveCalendarDate,
+  selectCalendarDayItem,
+} from '../common/calendar.js';
 
 type SelectionMode =
   | 'exactMatch'
@@ -68,13 +74,15 @@ export class DebugService {
     }
   }
 
-  async getOverview(userId: string, dateInput?: string) {
+  async getOverview(userId: string, dateInput?: string, timeZoneInput?: string) {
     this.assertEnabled();
 
-    const selectedDate = this.resolveSelectedDate(dateInput);
-    const selectedKey = this.dayKey(selectedDate);
+    const { selectedDate, selectedKey, timeZone } = resolveCalendarDate(
+      dateInput,
+      timeZoneInput,
+    );
     const cutoff = new Date(selectedDate.getTime() - 45 * 24 * 60 * 60 * 1000);
-    const { start, end } = this.localDayBounds(selectedDate);
+    const { start, end } = calendarDayBounds(selectedKey, timeZone);
 
     const [
       rawRecordCount,
@@ -118,27 +126,30 @@ export class DebugService {
         order: { nightDate: 'ASC' },
       }),
       this.sleepPlanRepo.findOne({ where: { userId } }),
-      this.viewsService.getHomeView(userId, selectedKey),
-      this.viewsService.getSleepView(userId, selectedKey),
+      this.viewsService.getHomeView(userId, selectedKey, timeZone),
+      this.viewsService.getSleepView(userId, selectedKey, timeZone),
     ]);
 
-    const detectionSelection = this.selectByDayOrLatestForToday(
+    const detectionSelection = this.selectByDay(
       recentDetections,
       'nightDate',
       selectedKey,
       selectedDate,
+      timeZone,
     );
-    const stageSelection = this.selectByDayOrLatestForToday(
+    const stageSelection = this.selectByDay(
       recentStages,
       'nightDate',
       selectedKey,
       selectedDate,
+      timeZone,
     );
-    const featureSelection = this.selectByDayOrLatestForToday(
+    const featureSelection = this.selectByDay(
       recentFeatures,
       'nightDate',
       selectedKey,
       selectedDate,
+      timeZone,
     );
 
     const selectionMode = this.pickSelectionMode(
@@ -157,9 +168,11 @@ export class DebugService {
 
     return {
       selectedDate: selectedKey,
-      selectedDateTitle: this.formatSelectedDateTitle(selectedDate),
-      selectedDateSubtitle: this.formatSelectedDateSubtitle(selectedDate),
-      selectedNightDate: selectedNightDate ? this.dayKey(selectedNightDate) : null,
+      selectedDateTitle: this.formatSelectedDateTitle(selectedDate, timeZone),
+      selectedDateSubtitle: this.formatSelectedDateSubtitle(selectedDate, timeZone),
+      selectedNightDate: selectedNightDate
+        ? this.dayKey(selectedNightDate, timeZone)
+        : null,
       selectionMode,
       selectionReason: this.selectionReason(selectionMode),
       counts: {
@@ -201,18 +214,22 @@ export class DebugService {
     };
   }
 
-  async getRawRecords(userId: string, dateInput?: string, limit = 200) {
+  async getRawRecords(
+    userId: string,
+    dateInput?: string,
+    timeZoneInput?: string,
+    limit = 200,
+  ) {
     this.assertEnabled();
-    const selectedDate = this.resolveSelectedDate(dateInput);
-    const selectedKey = this.dayKey(selectedDate);
-    const { start, end } = this.localDayBounds(selectedDate);
+    const { selectedKey, timeZone } = resolveCalendarDate(dateInput, timeZoneInput);
+    const { start, end } = calendarDayBounds(selectedKey, timeZone);
     const rows = await this.rawSensorRepo
       .createQueryBuilder('raw')
       .where('raw."userId" = :userId', { userId })
       .andWhere('raw.timestamp >= :start', { start })
       .andWhere('raw.timestamp < :end', { end })
       .orderBy('raw.timestamp', 'DESC')
-      .limit(Math.min(Math.max(limit, 1), 50000))
+      .limit(Math.min(Math.max(limit, 1), 5000))
       .getMany();
 
     return {
@@ -238,10 +255,12 @@ export class DebugService {
     };
   }
 
-  async getSleepNight(userId: string, dateInput?: string) {
+  async getSleepNight(userId: string, dateInput?: string, timeZoneInput?: string) {
     this.assertEnabled();
-    const selectedDate = this.resolveSelectedDate(dateInput);
-    const selectedKey = this.dayKey(selectedDate);
+    const { selectedDate, selectedKey, timeZone } = resolveCalendarDate(
+      dateInput,
+      timeZoneInput,
+    );
     const cutoff = new Date(selectedDate.getTime() - 45 * 24 * 60 * 60 * 1000);
 
     const [detections, stages, features] = await Promise.all([
@@ -259,23 +278,26 @@ export class DebugService {
       }),
     ]);
 
-    const detectionSelection = this.selectByDayOrLatestForToday(
+    const detectionSelection = this.selectByDay(
       detections,
       'nightDate',
       selectedKey,
       selectedDate,
+      timeZone,
     );
-    const stageSelection = this.selectByDayOrLatestForToday(
+    const stageSelection = this.selectByDay(
       stages,
       'nightDate',
       selectedKey,
       selectedDate,
+      timeZone,
     );
-    const featureSelection = this.selectByDayOrLatestForToday(
+    const featureSelection = this.selectByDay(
       features,
       'nightDate',
       selectedKey,
       selectedDate,
+      timeZone,
     );
 
     const detection = detectionSelection.item;
@@ -375,67 +397,51 @@ export class DebugService {
     };
   }
 
-  async runPipeline(userId: string, dateInput?: string) {
+  async runPipeline(userId: string, dateInput?: string, timeZoneInput?: string) {
     this.assertEnabled();
-    const runResult = await this.pipelineService.runPipeline(userId);
-    const overview = await this.getOverview(userId, dateInput);
+    const runResult = await this.pipelineService.runPipeline(userId, timeZoneInput);
+    const overview = await this.getOverview(userId, dateInput, timeZoneInput);
     return { runResult, overview };
   }
 
-  async recomputeViews(userId: string, dateInput?: string) {
+  async recomputeViews(userId: string, dateInput?: string, timeZoneInput?: string) {
     this.assertEnabled();
-    const selectedDate = this.dayKey(this.resolveSelectedDate(dateInput));
+    const { selectedKey, timeZone } = resolveCalendarDate(dateInput, timeZoneInput);
     const [homeView, sleepView, overview] = await Promise.all([
-      this.viewsService.getHomeView(userId, selectedDate),
-      this.viewsService.getSleepView(userId, selectedDate),
-      this.getOverview(userId, selectedDate),
+      this.viewsService.getHomeView(userId, selectedKey, timeZone),
+      this.viewsService.getSleepView(userId, selectedKey, timeZone),
+      this.getOverview(userId, selectedKey, timeZone),
     ]);
 
-    return { selectedDate, homeView, sleepView, overview };
+    return { selectedDate: selectedKey, homeView, sleepView, overview };
   }
 
-  private resolveSelectedDate(dateInput?: string) {
-    if (dateInput && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
-      const [year, month, day] = dateInput.split('-').map(Number);
-      return new Date(year, month - 1, day, 12, 0, 0, 0);
-    }
+  private resolveSelectedDate(dateInput?: string, timeZone?: string) {
+    return resolveCalendarDate(dateInput, timeZone).selectedDate;
+  }
+
+  private dayKey(date: Date, timeZone?: string) {
+    return calendarDayKey(date, timeZone);
+  }
+
+  private localDayBounds(date: Date, timeZone?: string) {
+    return calendarDayBounds(this.dayKey(date, timeZone), timeZone);
+  }
+
+  private isToday(date: Date, timeZone?: string) {
     const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
+    return this.dayKey(date, timeZone) === this.dayKey(now, timeZone);
   }
 
-  private dayKey(date: Date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private localDayBounds(date: Date) {
-    const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 1);
-    return { start, end };
-  }
-
-  private isToday(date: Date) {
-    const now = new Date();
-    return this.dayKey(date) === this.dayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0));
-  }
-
-  private selectByDayOrLatestForToday<T extends Record<string, any>>(
+  private selectByDay<T extends Record<string, any>>(
     items: T[],
     key: keyof T,
     selectedKey: string,
     selectedDate: Date,
+    timeZone?: string,
   ): SelectionResult<T> {
-    const exact = items.find((item) => this.dayKey(item[key] as Date) === selectedKey) ?? null;
+    const exact = selectCalendarDayItem(items, key, selectedKey, timeZone);
     if (exact) return { item: exact, mode: 'exactMatch' };
-    if (this.isToday(selectedDate) && items.length > 0) {
-      return {
-        item: items[items.length - 1],
-        mode: 'fallbackToLatestCompletedNight',
-      };
-    }
     return { item: null, mode: 'noNightAvailable' };
   }
 
@@ -461,24 +467,26 @@ export class DebugService {
     }
   }
 
-  private formatSelectedDateTitle(date: Date) {
+  private formatSelectedDateTitle(date: Date, timeZone?: string) {
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0, 0);
-    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12, 0, 0, 0);
-    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 12, 0, 0, 0);
-    const key = this.dayKey(date);
-    if (key === this.dayKey(today)) return 'Today';
-    if (key === this.dayKey(yesterday)) return 'Yesterday';
-    if (key === this.dayKey(tomorrow)) return 'Tomorrow';
+    const todayKey = this.dayKey(now, timeZone);
+    const yesterdayKey = this.dayKey(new Date(now.getTime() - 24 * 60 * 60 * 1000), timeZone);
+    const tomorrowKey = this.dayKey(new Date(now.getTime() + 24 * 60 * 60 * 1000), timeZone);
+    const key = this.dayKey(date, timeZone);
+    if (key === todayKey) return 'Today';
+    if (key === yesterdayKey) return 'Yesterday';
+    if (key === tomorrowKey) return 'Tomorrow';
     return new Intl.DateTimeFormat('en-US', {
+      timeZone,
       weekday: 'long',
       month: 'short',
       day: 'numeric',
     }).format(date);
   }
 
-  private formatSelectedDateSubtitle(date: Date) {
+  private formatSelectedDateSubtitle(date: Date, timeZone?: string) {
     return new Intl.DateTimeFormat('en-US', {
+      timeZone,
       month: 'short',
       day: 'numeric',
       year: 'numeric',

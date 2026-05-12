@@ -11,6 +11,7 @@ import { detectDesaturationEvents } from './spo2-events';
 import { computeRecoveryIndex } from './recovery-index';
 import { computeTrainingLoadRatio } from './training-load';
 import { estimateCoreTemperature } from './core-temperature';
+import { addDaysToDateKey, calendarDayBounds, calendarDayKey } from '../common/calendar';
 
 interface SensorSample {
   timestamp: Date;
@@ -33,10 +34,13 @@ export function computeDerivedMetrics(
   sleepDetections: SleepDetectionSummary[],
   baseline: BaselineProfile,
   referenceDate: Date,
+  timeZoneInput?: string,
 ): DerivedMetricsBundle {
-  const dayStart = new Date(referenceDate);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+  const referenceKey = calendarDayKey(referenceDate, timeZoneInput);
+  const { start: dayStart, end: dayEnd } = calendarDayBounds(
+    referenceKey,
+    timeZoneInput,
+  );
 
   const stress = stressPoints(samples);
 
@@ -63,10 +67,16 @@ export function computeDerivedMetrics(
   const spo2Avg = averageInDay(spo2, dayStart, dayEnd);
   const skinTempAvg = averageInDay(skinTemp, dayStart, dayEnd);
 
-  const baselineStart = new Date(dayStart.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const baselineStart = calendarDayBounds(
+    addDaysToDateKey(referenceKey, -7),
+    timeZoneInput,
+  ).start;
   const skinTempBaseline = averageInRange(skinTemp, baselineStart, dayStart);
 
-  const recentStart = new Date(dayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
+  const recentStart = calendarDayBounds(
+    addDaysToDateKey(referenceKey, -6),
+    timeZoneInput,
+  ).start;
   const sleepConsistency =
     sleepConsistencyScore(sleepDetections, referenceDate) ??
     sleepConsistencyScoreFromNightFeatures(nightFeatures, referenceDate);

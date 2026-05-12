@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { config } from 'dotenv';
 import { resolve } from 'path';
 import { Pool } from 'pg';
+import { postgresPoolOptions } from '../config/postgres-pool.js';
 
 config({ path: resolve(process.cwd(), '.env') });
 
@@ -9,6 +10,10 @@ const instanceConnectionName = process.env.INSTANCE_CONNECTION_NAME;
 const dbUser = process.env.DB_USER ?? 'noop';
 const dbPassword = process.env.DB_PASSWORD ?? 'noop_dev';
 const dbName = process.env.DB_NAME ?? 'noop';
+const authPoolOptions = postgresPoolOptions({
+  maxEnv: 'AUTH_DB_POOL_MAX',
+  defaultMax: 2,
+});
 
 const pgPool = instanceConnectionName
   ? new Pool({
@@ -16,9 +21,11 @@ const pgPool = instanceConnectionName
       user: dbUser,
       password: dbPassword,
       database: dbName,
+      ...authPoolOptions,
     })
   : new Pool({
       connectionString: `postgresql://${dbUser}:${dbPassword}@${process.env.DB_HOST ?? 'localhost'}:${process.env.DB_PORT ?? '5434'}/${dbName}`,
+      ...authPoolOptions,
     });
 
 const extraTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? '')

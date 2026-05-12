@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
 export class DebugRawRecordsQueryDto {
   @IsOptional()
@@ -7,9 +7,17 @@ export class DebugRawRecordsQueryDto {
   date?: string;
 
   @IsOptional()
+  @IsString()
+  timeZone?: string;
+
+  @IsOptional()
+  @IsString()
+  tz?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50000)
+  @Max(5000)
   limit?: number;
 }
