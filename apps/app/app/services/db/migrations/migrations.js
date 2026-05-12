@@ -34,6 +34,13 @@ const journal = {
       tag: "0002_outbound_queue_dedupe",
       breakpoints: true,
     },
+    {
+      idx: 3,
+      version: "6",
+      when: 1779820800000,
+      tag: "0003_drain_lock_and_backoff",
+      breakpoints: true,
+    },
   ],
 }
 
@@ -597,11 +604,24 @@ WHERE \`id\` NOT IN (
 CREATE UNIQUE INDEX IF NOT EXISTS \`outbound_queue_table_row_unique\`
 ON \`outbound_queue\` (\`table_name\`, \`row_id\`);`
 
+const m0003 = `CREATE TABLE IF NOT EXISTS \`drain_lock\` (
+	\`name\` text PRIMARY KEY NOT NULL,
+	\`acquired_at\` integer NOT NULL,
+	\`expires_at\` integer NOT NULL,
+	\`holder\` text NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE \`outbound_queue\` ADD COLUMN \`next_attempt_at\` integer NOT NULL DEFAULT 0;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS \`outbound_queue_claim_idx\`
+ON \`outbound_queue\` (\`attempts\`, \`next_attempt_at\`, \`created_at\`);`
+
 module.exports = {
   journal,
   migrations: {
     m0000,
     m0001,
     m0002,
+    m0003,
   },
 }

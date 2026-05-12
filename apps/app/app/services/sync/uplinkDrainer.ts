@@ -1,23 +1,70 @@
 import type { NoopDatabase } from "../db"
+import { isTransientApiError } from "../api/noopClient"
+import {
+  acquireDrainLock,
+  releaseDrainLock,
+} from "../db/repositories/drainLock"
 import {
   claimOutboundBatch,
   markOutboundSynced,
-  recordOutboundFailure,
+  oldestPendingAt,
   queueDepth,
+  recordOutboundFailure,
 } from "../db/repositories/outboundQueue"
 import {
-  markRawSensorRecordsSynced,
   backfillUnsyncedRawSensorRecords,
+  markRawSensorRecordsSynced,
 } from "../db/repositories/rawSensorRecord"
+import { recordDrainOutcome } from "./syncTelemetry"
 
 export interface DrainOptions {
   post: (tableName: string, payloads: unknown[]) => Promise<unknown>
   batchSize: number
+  // Cheap top-up of unsynced raw rows into the outbound queue at the
+  // start of each drain. Defaults to a small limit so the regular drain
+  // path isn't dominated by recovery work; ForceUpload uses a larger
+  // limit to flush long offline periods.
+  backfillLimit?: number
 }
 
-export async function drainOnce(db: NoopDatabase, opts: DrainOptions): Promise<void> {
+const DEFAULT_BACKFILL_LIMIT = 100
+
+export interface DrainOutcome {
+  attempted: number
+  succeeded: number
+  failed: number
+  durationMs: number
+  error: string | null
+}
+
+export async function drainOnce(
+  db: NoopDatabase,
+  opts: DrainOptions,
+): Promise<DrainOutcome> {
+  const started = Date.now()
+  const outcome: DrainOutcome = {
+    attempted: 0,
+    succeeded: 0,
+    failed: 0,
+    durationMs: 0,
+    error: null,
+  }
+
+  // Cheap backfill so rows that landed without an outbound entry (older
+  // builds, recovery from partial writes) don't require Force Upload to
+  // ship. Bounded so the regular drain isn't dominated by recovery work.
+  try {
+    await backfillUnsyncedRawSensorRecords(db, opts.backfillLimit ?? DEFAULT_BACKFILL_LIMIT)
+  } catch (err) {
+    console.warn("[drainOnce] backfill failed", err)
+  }
+
   const batch = await claimOutboundBatch(db, opts.batchSize)
-  if (batch.length === 0) return
+  if (batch.length === 0) {
+    outcome.durationMs = Date.now() - started
+    return outcome
+  }
+  outcome.attempted = batch.length
 
   // Group by tableName so each POST carries a single-table bulk payload.
   const groups = new Map<string, typeof batch>()
@@ -35,9 +82,6 @@ export async function drainOnce(db: NoopDatabase, opts: DrainOptions): Promise<v
         db,
         rows.map((r) => r.id),
       )
-      // Mirror the queue's "synced" state onto the originating table
-      // for tables that track _syncedAt locally. Keeps the backfill
-      // helper from re-enqueueing rows that already shipped.
       if (tableName === "raw_sensor_records") {
         await markRawSensorRecordsSynced(
           db,
@@ -45,12 +89,22 @@ export async function drainOnce(db: NoopDatabase, opts: DrainOptions): Promise<v
           Date.now(),
         )
       }
+      outcome.succeeded += rows.length
     } catch (err: any) {
+      const transient = isTransientApiError(err)
+      const errorMessage = err?.message ?? "unknown error"
       for (const r of rows) {
-        await recordOutboundFailure(db, r.id, err?.message ?? "unknown error")
+        await recordOutboundFailure(db, r.id, errorMessage, {
+          kind: transient ? "transient" : "permanent",
+        })
       }
+      outcome.failed += rows.length
+      if (!outcome.error) outcome.error = errorMessage
     }
   }
+
+  outcome.durationMs = Date.now() - started
+  return outcome
 }
 
 export interface DrainLoopOptions {
@@ -58,30 +112,90 @@ export interface DrainLoopOptions {
   batchSize?: number
   backfillLimit?: number
   maxMs?: number
+  // Identifier surfaced in the drain_lock row so debug tools can see
+  // which JS context is currently draining ("foreground" / "background").
+  holder?: string
+}
+
+export interface DrainLoopOutcome {
+  drained: number
+  failed: number
+  durationMs: number
+  oldestPendingAt: number | null
+  skipped: "locked" | null
+  error: string | null
 }
 
 export async function drainLoop(
   db: NoopDatabase,
   opts: DrainLoopOptions,
-): Promise<{ drained: number }> {
-  const { post, batchSize = 200, backfillLimit = 200, maxMs } = opts
-  const deadline = maxMs != null ? Date.now() + maxMs : Infinity
+): Promise<DrainLoopOutcome> {
+  const { post, batchSize = 200, backfillLimit = 200, maxMs, holder = "foreground" } = opts
+  const started = Date.now()
+  const deadline = maxMs != null ? started + maxMs : Infinity
 
-  // Backfill unsynced raw sensor records into the outbound queue before draining.
+  // Take a SQLite-backed lock so the foreground interval and the Expo
+  // background task can't double-claim the same rows. TTL is intentionally
+  // longer than the drain we expect — if the holder crashes mid-drain,
+  // the lock expires and the next caller can reclaim.
+  const lock = await acquireDrainLock(db, holder, { ttlMs: 90_000 })
+  if (!lock) {
+    const outcome: DrainLoopOutcome = {
+      drained: 0,
+      failed: 0,
+      durationMs: 0,
+      oldestPendingAt: await oldestPendingAt(db),
+      skipped: "locked",
+      error: null,
+    }
+    recordDrainOutcome({
+      at: started,
+      durationMs: 0,
+      drained: 0,
+      failed: 0,
+      error: null,
+      oldestPendingAt: outcome.oldestPendingAt,
+      skipped: "locked",
+      holder,
+    })
+    return outcome
+  }
+
+  let drained = 0
+  let failed = 0
+  let firstError: string | null = null
   try {
-    await backfillUnsyncedRawSensorRecords(db, backfillLimit)
-  } catch (err) {
-    console.warn("[drainLoop] backfill failed", err)
+    while (Date.now() < deadline) {
+      const before = await queueDepth(db)
+      if (before === 0) break
+      const outcome = await drainOnce(db, { post, batchSize, backfillLimit })
+      drained += outcome.succeeded
+      failed += outcome.failed
+      if (!firstError && outcome.error) firstError = outcome.error
+      const after = await queueDepth(db)
+      if (after >= before) break
+    }
+  } finally {
+    await releaseDrainLock(db, holder)
   }
 
-  let totalDrained = 0
-  while (Date.now() < deadline) {
-    const before = await queueDepth(db)
-    if (before === 0) break
-    await drainOnce(db, { post, batchSize })
-    const after = await queueDepth(db)
-    totalDrained += Math.max(0, before - after)
-    if (after >= before) break
+  const finalOutcome: DrainLoopOutcome = {
+    drained,
+    failed,
+    durationMs: Date.now() - started,
+    oldestPendingAt: await oldestPendingAt(db),
+    skipped: null,
+    error: firstError,
   }
-  return { drained: totalDrained }
+  recordDrainOutcome({
+    at: started,
+    durationMs: finalOutcome.durationMs,
+    drained,
+    failed,
+    error: firstError,
+    oldestPendingAt: finalOutcome.oldestPendingAt,
+    skipped: null,
+    holder,
+  })
+  return finalOutcome
 }

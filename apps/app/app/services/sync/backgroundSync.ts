@@ -21,6 +21,7 @@ export async function runBackgroundDrain(maxMs = 25_000): Promise<{
       apiPost("/pipeline/ingest-table", { tableName, rows: payloads }),
     batchSize: 200,
     maxMs,
+    holder: "background",
   })
   return { ok: true, drained }
 }

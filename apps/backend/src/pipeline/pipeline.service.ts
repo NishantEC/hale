@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThanOrEqual } from 'typeorm';
+import { EntityManager, Repository, MoreThanOrEqual } from 'typeorm';
 
 import { SleepDetection } from '../sleep/entities/sleep-detection.entity.js';
 import { SleepStage } from '../sleep/entities/sleep-stage.entity.js';
@@ -90,21 +90,16 @@ export class PipelineService {
     let signalCount = 0;
     let sensorCount = 0;
 
-    // Signal samples — delete old for user, then bulk insert
+    // Signal samples — delete old for user, then bulk insert. Wrapped in a
+    // transaction so concurrent readers (e.g. an overlapping /pipeline/run
+    // call mid-ingest) never observe the post-delete-pre-insert empty
+    // window. A crash between delete and insert would otherwise leave us
+    // with no samples for that range until the next ingest reposts the
+    // batch.
     if (dto.signalSamples && dto.signalSamples.length > 0) {
       const timestamps = dto.signalSamples.map((s) => new Date(s.timestamp));
       const minTs = new Date(Math.min(...timestamps.map((t) => t.getTime())));
       const maxTs = new Date(Math.max(...timestamps.map((t) => t.getTime())));
-
-      // Delete existing in the date range (much faster than IN with thousands of timestamps)
-      await this.signalSampleRepo
-        .createQueryBuilder()
-        .delete()
-        .where('"userId" = :userId', { userId })
-        .andWhere('timestamp >= :minTs', { minTs })
-        .andWhere('timestamp <= :maxTs', { maxTs })
-        .execute();
-
       const entities = dto.signalSamples.map((s) => {
         const entity = new SignalSampleEntity();
         entity.userId = userId;
@@ -116,7 +111,17 @@ export class PipelineService {
         entity.qualityScore = s.qualityScore;
         return entity;
       });
-      await this.signalSampleRepo.save(entities, { chunk: 500 });
+      await this.signalSampleRepo.manager.transaction(async (manager) => {
+        await manager
+          .createQueryBuilder()
+          .delete()
+          .from(SignalSampleEntity)
+          .where('"userId" = :userId', { userId })
+          .andWhere('timestamp >= :minTs', { minTs })
+          .andWhere('timestamp <= :maxTs', { maxTs })
+          .execute();
+        await manager.save(SignalSampleEntity, entities, { chunk: 500 });
+      });
       signalCount = entities.length;
     }
 
@@ -316,41 +321,12 @@ export class PipelineService {
       );
     }
 
-    if (activityBouts.length > 0) {
-      // Delete existing detected activities for this user's data range, then insert new
-      const boutStart = activityBouts[0].startTime;
-      const boutEnd = activityBouts[activityBouts.length - 1].endTime;
-      await this.activityDetectionRepo
-        .createQueryBuilder()
-        .delete()
-        .where('"userId" = :userId', { userId })
-        .andWhere('"source" = :source', { source: 'detected' })
-        .andWhere('"startTime" >= :start', { start: boutStart })
-        .andWhere('"startTime" <= :end', { end: boutEnd })
-        .execute();
-
-      const entities = activityBouts.map((bout) => {
-        const entity = new ActivityDetection();
-        entity.userId = userId;
-        entity.startTime = bout.startTime;
-        entity.endTime = bout.endTime;
-        entity.durationMinutes = bout.durationMinutes;
-        entity.activityType = bout.activityType;
-        entity.intensity = bout.intensity;
-        entity.confidence = bout.confidence;
-        entity.heartRateAvg = bout.heartRateAvg;
-        entity.heartRateMax = bout.heartRateMax;
-        entity.strainScore = bout.strainScore;
-        entity.cadenceHz = bout.cadenceHz as any;
-        entity.flightsCount = (bout.flightsCount ?? null) as any;
-        entity.elevationGainMeters = (bout.elevationGainMeters ?? null) as any;
-        entity.distanceMeters = (bout.distanceMeters ?? null) as any;
-        entity.externalSource = (bout.externalSource ?? null) as any;
-        entity.source = 'detected';
-        return entity;
-      });
-      await this.activityDetectionRepo.save(entities, { chunk: 200 });
-    }
+    // Activity-detection delete+insert is deferred into the transaction
+    // below so the prune/upsert work for activity, night features, sleep
+    // detections/stages, daily scores/metrics, and the baseline either all
+    // land together or none do. Without this, a crash between the delete
+    // and the insert would leave the user with detected activities missing
+    // for that range until the next pipeline run.
 
     // Extract epoch features and classify sleep stages
     const nightMedianHR =
@@ -462,84 +438,131 @@ export class PipelineService {
     );
     const observedDayDates = this.collectReferenceDays(sensorRecords, [], [], timeZone);
 
-    await Promise.all([
-      this.pruneStaleCalendarDayRows(
-        this.nightFeatureRepo,
+    // One transaction covers every persistent write in the pipeline:
+    // detected activities (delete+insert), prune-stale of calendar-day
+    // tables, the five per-day upserts, and the baseline. Either every
+    // computed slice of this run lands, or none does — no half-applied
+    // state on a crash. The transaction uses a single connection so the
+    // per-table loops run sequentially rather than via Promise.all; with
+    // one connection in play, Promise.all wouldn't have produced real
+    // parallelism anyway.
+    await this.nightFeatureRepo.manager.transaction(async (manager) => {
+      const activityRepo = manager.getRepository(ActivityDetection);
+      const nightFeatureRepo = manager.getRepository(NightFeature);
+      const sleepDetectionRepo = manager.getRepository(SleepDetection);
+      const sleepStageRepo = manager.getRepository(SleepStage);
+      const dailyScoreRepo = manager.getRepository(DailyScore);
+      const dailyMetricRepo = manager.getRepository(DailyMetric);
+      const baselineRepo = manager.getRepository(BaselineProfile);
+
+      if (activityBouts.length > 0) {
+        const boutStart = activityBouts[0].startTime;
+        const boutEnd = activityBouts[activityBouts.length - 1].endTime;
+        await activityRepo
+          .createQueryBuilder()
+          .delete()
+          .where('"userId" = :userId', { userId })
+          .andWhere('"source" = :source', { source: 'detected' })
+          .andWhere('"startTime" >= :start', { start: boutStart })
+          .andWhere('"startTime" <= :end', { end: boutEnd })
+          .execute();
+
+        const entities = activityBouts.map((bout) => {
+          const entity = new ActivityDetection();
+          entity.userId = userId;
+          entity.startTime = bout.startTime;
+          entity.endTime = bout.endTime;
+          entity.durationMinutes = bout.durationMinutes;
+          entity.activityType = bout.activityType;
+          entity.intensity = bout.intensity;
+          entity.confidence = bout.confidence;
+          entity.heartRateAvg = bout.heartRateAvg;
+          entity.heartRateMax = bout.heartRateMax;
+          entity.strainScore = bout.strainScore;
+          entity.cadenceHz = bout.cadenceHz as any;
+          entity.flightsCount = (bout.flightsCount ?? null) as any;
+          entity.elevationGainMeters = (bout.elevationGainMeters ?? null) as any;
+          entity.distanceMeters = (bout.distanceMeters ?? null) as any;
+          entity.externalSource = (bout.externalSource ?? null) as any;
+          entity.source = 'detected';
+          return entity;
+        });
+        await activityRepo.save(entities, { chunk: 200 });
+      }
+
+      await this.pruneStaleCalendarDayRows(
+        nightFeatureRepo,
         userId,
         'nightDate',
         observedDayDates,
         effectiveFeatures.map((feature) => feature.nightDate),
         timeZone,
-      ),
-      this.pruneStaleCalendarDayRows(
-        this.sleepDetectionRepo,
+      );
+      await this.pruneStaleCalendarDayRows(
+        sleepDetectionRepo,
         userId,
         'nightDate',
         observedDayDates,
         sleepDetections.map((detection) => detection.nightDate),
         timeZone,
-      ),
-      this.pruneStaleCalendarDayRows(
-        this.sleepStageRepo,
+      );
+      await this.pruneStaleCalendarDayRows(
+        sleepStageRepo,
         userId,
         'nightDate',
         observedDayDates,
         sleepStages.map((stage) => stage.nightDate),
         timeZone,
-      ),
-      this.pruneStaleCalendarDayRows(
-        this.dailyScoreRepo,
+      );
+      await this.pruneStaleCalendarDayRows(
+        dailyScoreRepo,
         userId,
         'dayDate',
         observedDayDates,
         dailyScores.map((score) => score.dayDate),
         timeZone,
-      ),
-    ]);
+      );
 
-    // Parallelize within each repo. Pipeline guarantees each input array has
-    // at most one entry per calendar day, so two concurrent upserts never
-    // target the same row. The pool size still serializes effective
-    // concurrency to the configured `DB_POOL_MAX`.
-    await Promise.all(
-      effectiveFeatures.map((feature) =>
-        this.upsertNightFeature(
+      for (const feature of effectiveFeatures) {
+        await this.upsertNightFeature(
+          nightFeatureRepo,
           userId,
           feature,
           this.startOfDay(feature.nightDate, timeZone),
           timeZone,
-        ),
-      ),
-    );
+        );
+      }
 
-    await Promise.all(
-      sleepDetections.map((detection) =>
-        this.upsertSleepDetection(userId, detection, timeZone),
-      ),
-    );
+      for (const detection of sleepDetections) {
+        await this.upsertSleepDetection(sleepDetectionRepo, userId, detection, timeZone);
+      }
 
-    await Promise.all(
-      sleepStages.map((stage) => this.upsertSleepStage(userId, stage, timeZone)),
-    );
+      for (const stage of sleepStages) {
+        await this.upsertSleepStage(sleepStageRepo, userId, stage, timeZone);
+      }
 
-    await Promise.all(
-      dailyScores.map((score) =>
-        this.upsertDailyScore(
+      for (const score of dailyScores) {
+        await this.upsertDailyScore(
+          dailyScoreRepo,
           userId,
           score,
           sleepScoreByNightKey.get(this.dayKey(score.dayDate, timeZone)) ?? null,
           timeZone,
-        ),
-      ),
-    );
+        );
+      }
 
-    await Promise.all(
-      derivedMetricsByDay.map((entry) =>
-        this.upsertDailyMetric(userId, entry.metrics, entry.dayDate, timeZone),
-      ),
-    );
+      for (const entry of derivedMetricsByDay) {
+        await this.upsertDailyMetric(
+          dailyMetricRepo,
+          userId,
+          entry.metrics,
+          entry.dayDate,
+          timeZone,
+        );
+      }
 
-    await this.upsertBaseline(userId, recomputedBaseline);
+      await this.upsertBaseline(baselineRepo, userId, recomputedBaseline);
+    });
 
     this.logger.log(
       `Pipeline complete for user=${userId}: ` +
@@ -724,13 +747,14 @@ export class PipelineService {
   }
 
   private async upsertNightFeature(
+    repo: Repository<NightFeature>,
     userId: string,
     features: import('../processing/interfaces.js').NightFeatureSet,
     nightDate: Date,
     timeZone: string,
   ) {
     const existing = await this.findOneByCalendarDay(
-      this.nightFeatureRepo,
+      repo,
       userId,
       'nightDate',
       nightDate,
@@ -752,9 +776,9 @@ export class PipelineService {
         sleepEstimateHours: features.sleepEstimateHours,
         sourceBlend: features.sourceBlend,
       });
-      await this.nightFeatureRepo.save(existing);
+      await repo.save(existing);
     } else {
-      const entity = this.nightFeatureRepo.create({
+      const entity = repo.create({
         userId,
         nightDate,
         restingHeartRate: features.restingHeartRate,
@@ -769,18 +793,19 @@ export class PipelineService {
         sleepEstimateHours: features.sleepEstimateHours,
         sourceBlend: features.sourceBlend,
       });
-      await this.nightFeatureRepo.save(entity);
+      await repo.save(entity);
     }
   }
 
   private async upsertSleepDetection(
+    repo: Repository<SleepDetection>,
     userId: string,
     detection: import('../processing/interfaces.js').SleepDetectionSummary,
     timeZone: string,
   ) {
     const nightDate = detection.nightDate;
     const existing = await this.findOneByCalendarDay(
-      this.sleepDetectionRepo,
+      repo,
       userId,
       'nightDate',
       nightDate,
@@ -800,21 +825,22 @@ export class PipelineService {
 
     if (existing) {
       Object.assign(existing, { nightDate, ...data });
-      await this.sleepDetectionRepo.save(existing);
+      await repo.save(existing);
     } else {
-      const entity = this.sleepDetectionRepo.create({ userId, nightDate, ...data });
-      await this.sleepDetectionRepo.save(entity);
+      const entity = repo.create({ userId, nightDate, ...data });
+      await repo.save(entity);
     }
   }
 
   private async upsertSleepStage(
+    repo: Repository<SleepStage>,
     userId: string,
     stage: import('../processing/interfaces.js').SleepStageSummary,
     timeZone: string,
   ) {
     const nightDate = stage.nightDate;
     const existing = await this.findOneByCalendarDay(
-      this.sleepStageRepo,
+      repo,
       userId,
       'nightDate',
       nightDate,
@@ -835,14 +861,15 @@ export class PipelineService {
 
     if (existing) {
       Object.assign(existing, { nightDate, ...data });
-      await this.sleepStageRepo.save(existing);
+      await repo.save(existing);
     } else {
-      const entity = this.sleepStageRepo.create({ userId, nightDate, ...data });
-      await this.sleepStageRepo.save(entity);
+      const entity = repo.create({ userId, nightDate, ...data });
+      await repo.save(entity);
     }
   }
 
   private async upsertDailyScore(
+    repo: Repository<DailyScore>,
     userId: string,
     score: import('../processing/interfaces.js').DailyWellnessScore,
     sleepScore: number | null,
@@ -850,7 +877,7 @@ export class PipelineService {
   ) {
     const dayDate = score.dayDate;
     const existing = await this.findOneByCalendarDay(
-      this.dailyScoreRepo,
+      repo,
       userId,
       'dayDate',
       dayDate,
@@ -868,21 +895,22 @@ export class PipelineService {
 
     if (existing) {
       Object.assign(existing, { dayDate, ...data });
-      await this.dailyScoreRepo.save(existing);
+      await repo.save(existing);
     } else {
-      const entity = this.dailyScoreRepo.create({ userId, dayDate, ...data });
-      await this.dailyScoreRepo.save(entity);
+      const entity = repo.create({ userId, dayDate, ...data });
+      await repo.save(entity);
     }
   }
 
   private async upsertDailyMetric(
+    repo: Repository<DailyMetric>,
     userId: string,
     metrics: import('../processing/interfaces.js').DerivedMetricsBundle,
     dayDate: Date,
     timeZone: string,
   ) {
     const existing = await this.findOneByCalendarDay(
-      this.dailyMetricRepo,
+      repo,
       userId,
       'dayDate',
       dayDate,
@@ -911,27 +939,28 @@ export class PipelineService {
 
     if (existing) {
       Object.assign(existing, { dayDate, ...data });
-      await this.dailyMetricRepo.save(existing);
+      await repo.save(existing);
     } else {
-      const entity = this.dailyMetricRepo.create({ userId, dayDate, ...data } as any);
-      await this.dailyMetricRepo.save(entity);
+      const entity = repo.create({ userId, dayDate, ...data } as any);
+      await repo.save(entity);
     }
   }
 
   private async upsertBaseline(
+    repo: Repository<BaselineProfile>,
     userId: string,
     baseline: BaselineProfileInterface,
   ) {
-    const existing = await this.baselineRepo.findOne({ where: { userId } });
+    const existing = await repo.findOne({ where: { userId } });
     if (existing) {
       existing.restingHeartRate = baseline.restingHeartRate;
       existing.rmssd = baseline.rmssd;
       existing.sdnn = baseline.sdnn;
       existing.nightsUsed = baseline.nightsUsed;
       existing.maxHeartRate = baseline.maxHeartRate ?? existing.maxHeartRate;
-      await this.baselineRepo.save(existing);
+      await repo.save(existing);
     } else {
-      const entity = this.baselineRepo.create({
+      const entity = repo.create({
         userId,
         restingHeartRate: baseline.restingHeartRate,
         rmssd: baseline.rmssd,
@@ -939,7 +968,7 @@ export class PipelineService {
         nightsUsed: baseline.nightsUsed,
         ...(baseline.maxHeartRate != null ? { maxHeartRate: baseline.maxHeartRate } : {}),
       });
-      await this.baselineRepo.save(entity);
+      await repo.save(entity);
     }
   }
 

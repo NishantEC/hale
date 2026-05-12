@@ -3,7 +3,6 @@ import {
   insertRawSensorRecord,
   RawSensorRecordInput,
 } from "../db/repositories/rawSensorRecord"
-import { enqueueOutbound } from "../db/repositories/outboundQueue"
 import { peekActiveUserId } from "../db/session"
 import type { HistoricalRecord } from "../ble/packet-types"
 
@@ -64,12 +63,10 @@ export async function ingestBleRecord(
   record: RawSensorRecordInput,
 ): Promise<void> {
   if (!peekActiveUserId()) return
+  // insertRawSensorRecord internally enqueues the outbound row inside the
+  // same SQLite transaction, so a crash between the two writes can't leave
+  // a row visible without an upload entry.
   await insertRawSensorRecord(db, record)
-  await enqueueOutbound(db, {
-    tableName: "raw_sensor_records",
-    rowId: record.id,
-    payload: record,
-  })
 }
 
 export async function ingestBleRecords(

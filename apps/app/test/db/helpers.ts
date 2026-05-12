@@ -14,11 +14,24 @@ export function makeTestDb() {
   sqlite.pragma("journal_mode = WAL")
   sqlite.pragma("foreign_keys = ON")
   applyGeneratedSchema(sqlite)
-  return drizzle(sqlite, { schema })
+  const db = drizzle(sqlite, { schema })
+  // better-sqlite3's `.transaction` is synchronous and rejects async
+  // callbacks; expo-sqlite (production) accepts them. Production code
+  // uses `await db.transaction(async (tx) => { ... })`. Shim the test
+  // driver to run the callback directly so that atomicity-aware
+  // production code is exercisable in unit tests. Atomicity itself
+  // isn't asserted at this layer — these tests aren't crash-path tests.
+  ;(db as any).transaction = async (callback: (tx: typeof db) => Promise<any>) =>
+    callback(db)
+  return db
 }
 
 function applyGeneratedSchema(sqlite: Database.Database) {
-  const sqlPath = path.resolve(
+  // Apply every migration in order so tests run against the latest schema
+  // (matches what `runMigrations` does on a real device). 0001 is the
+  // idempotent repair migration and is intentionally idempotent over
+  // 0000.
+  const migrationsDir = path.resolve(
     __dirname,
     "..",
     "..",
@@ -26,13 +39,17 @@ function applyGeneratedSchema(sqlite: Database.Database) {
     "services",
     "db",
     "migrations",
-    "0000_init.sql",
   )
-  const source = fs.readFileSync(sqlPath, "utf8")
-  // drizzle-kit emits statements separated by --> statement-breakpoint
-  const statements = source
-    .split(/-->\s*statement-breakpoint/g)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0)
-  for (const stmt of statements) sqlite.exec(stmt)
+  const files = fs
+    .readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+  for (const file of files) {
+    const source = fs.readFileSync(path.join(migrationsDir, file), "utf8")
+    const statements = source
+      .split(/-->\s*statement-breakpoint/g)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    for (const stmt of statements) sqlite.exec(stmt)
+  }
 }

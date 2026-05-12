@@ -3,12 +3,14 @@ import { ActivityIndicator, Alert, ScrollView, TextStyle, TouchableOpacity, View
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import { LocalDbDiagnostics } from "@/components/LocalDbDiagnostics"
+import { OutboundQueueInspector } from "@/components/OutboundQueueInspector"
 import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { openDatabase } from "@/services/db"
 import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
 import { runForceUpload } from "@/services/sync/forceUpload"
+import { recordPipelineRun } from "@/services/sync/syncTelemetry"
 import {
   apiPost,
   DebugOverview,
@@ -144,9 +146,10 @@ export const DebugInspectorScreen: FC = () => {
   const handleRunPipeline = useCallback(async () => {
     setIsLoading(true)
     setError(null)
-
+    const started = Date.now()
     try {
       const result = await runDebugPipeline(selectedDate)
+      recordPipelineRun(started, Date.now() - started)
       setBanner(
         `Pipeline reran. Detections ${result.runResult.computed.sleepDetections ?? 0}, stages ${result.runResult.computed.sleepStages ?? 0}.`,
       )
@@ -172,6 +175,7 @@ export const DebugInspectorScreen: FC = () => {
       </View>
 
       <LocalDbDiagnostics />
+      <OutboundQueueInspector />
 
       {error ? (
         <View style={themed($errorBanner)}>

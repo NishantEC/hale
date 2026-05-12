@@ -37,7 +37,7 @@ import { useNavigationPersistence } from "./navigators/navigationUtilities"
 import { apiGet, apiPost } from "./services/api/noopClient"
 import { openDatabase, runMigrations, wipeDatabase } from "./services/db"
 import { SyncService } from "./services/sync/SyncService"
-import { drainOnce } from "./services/sync/uplinkDrainer"
+import { drainLoop } from "./services/sync/uplinkDrainer"
 import { pullDownlink } from "./services/sync/downlinkPuller"
 import { refreshAllViews } from "./services/sync/refreshAllViews"
 import { sweepRetention } from "./services/sync/retentionSweeper"
@@ -128,12 +128,15 @@ export function App() {
     if (!isDbReady) return
     const db = openDatabase()
     const svc = new SyncService({
-      drainFn: () =>
-        drainOnce(db, {
+      drainFn: async () => {
+        await drainLoop(db, {
           post: (tableName, payloads) =>
             apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
           batchSize: 200,
-        }),
+          maxMs: 25_000,
+          holder: "foreground",
+        })
+      },
       pullFn: async () => {
         await pullDownlink(db, {
           apiGet: async (path) => apiGet(path),

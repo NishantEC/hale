@@ -451,13 +451,13 @@ async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQ
         data?.message ||
         data?.error ||
         `Request failed: ${res.status} ${res.statusText}`;
-      throw new Error(message);
+      throw new ApiError(res.status, message);
     }
 
     return data;
   } catch (error: any) {
     if (error?.name === 'AbortError') {
-      throw new Error(timeoutMessage);
+      throw new ApiError(0, timeoutMessage);
     }
     throw error;
   } finally {
@@ -467,6 +467,32 @@ async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQ
 
 export function isAuthenticated() {
   return sessionToken !== null;
+}
+
+// Thrown for any non-2xx response or transport-level failure (network
+// down, timeout). `status` is the HTTP status code; 0 indicates a
+// timeout or local-side abort with no response. Callers (notably the
+// outbound drainer) inspect `status` to decide whether a retry makes
+// sense — see `isTransientApiError`.
+export class ApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+// 0 → network error / timeout (transient).
+// 5xx → server error (transient).
+// 408 Request Timeout, 429 Too Many Requests, 425 Too Early → transient even
+// though they are 4xx by spec.
+// All other 4xx → permanent: malformed request, auth failure, schema
+// rejection. Retrying won't help.
+export function isTransientApiError(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return true; // unknown shape — assume transient
+  if (err.status === 0) return true;
+  if (err.status >= 500) return true;
+  if (err.status === 408 || err.status === 425 || err.status === 429) return true;
+  return false;
 }
 
 export class AuthError extends Error {

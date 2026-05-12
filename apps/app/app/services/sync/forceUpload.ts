@@ -1,4 +1,5 @@
 import type { NoopDatabase } from "../db"
+import { isTransientApiError } from "../api/noopClient"
 import {
   claimOutboundBatch,
   listDeadLetters,
@@ -117,8 +118,11 @@ export async function runForceUpload(
         const errorMessage = err?.message ?? String(err)
         if (!firstError) firstError = errorMessage
         batchHadError = true
+        const kind: "transient" | "permanent" = isTransientApiError(err)
+          ? "transient"
+          : "permanent"
         for (const row of rows) {
-          await deps.recordOutboundFailure(db, row.id, errorMessage)
+          await deps.recordOutboundFailure(db, row.id, errorMessage, { kind })
         }
       }
     }

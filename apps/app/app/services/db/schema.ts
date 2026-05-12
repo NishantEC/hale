@@ -245,6 +245,10 @@ export const outboundQueue = sqliteTable("outbound_queue", {
   lastAttemptAt: integer("last_attempt_at"),
   lastError: text("last_error"),
   createdAt: integer("created_at").notNull(),
+  // Earliest wall-clock instant (ms) at which this row is eligible for
+  // another claim. Set by the retry path to implement exponential
+  // backoff. Defaults to 0 so freshly-enqueued rows ship immediately.
+  nextAttemptAt: integer("next_attempt_at").notNull().default(0),
 })
 
 export const syncState = sqliteTable("sync_state", {
@@ -256,4 +260,16 @@ export const syncState = sqliteTable("sync_state", {
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
+})
+
+// Single-row table that serializes uplink drains across JS contexts.
+// Foreground (SyncService interval, refresh on foreground) and background
+// (Expo TaskManager catchup) can both fire a drain. Without a shared lock
+// they would double-claim and double-POST the same outbound queue rows.
+export const drainLock = sqliteTable("drain_lock", {
+  // Always 'uplink'. Single-row table.
+  name: text("name").primaryKey(),
+  acquiredAt: integer("acquired_at").notNull(),
+  expiresAt: integer("expires_at").notNull(),
+  holder: text("holder").notNull(),
 })

@@ -1,16 +1,12 @@
 import { wipeDatabaseForLogout } from "../../app/services/db/wipe"
-import * as dbModule from "../../app/services/db"
 import { setActiveUserId, peekActiveUserId } from "../../app/services/db/session"
 
-jest.mock("../../app/services/db", () => ({
-  wipeDatabase: jest.fn().mockResolvedValue(undefined),
-}))
-
 describe("wipeDatabaseForLogout", () => {
-  it("calls wipeDatabase and clears active user", async () => {
+  it("clears the active user session without wiping the local database", async () => {
+    // Local SQLite data is preserved across logout so it's available
+    // immediately on next login without a re-sync. See wipe.ts.
     setActiveUserId("u")
     await wipeDatabaseForLogout()
-    expect(dbModule.wipeDatabase).toHaveBeenCalled()
     expect(peekActiveUserId()).toBeNull()
   })
 })
