@@ -80,22 +80,21 @@ manual state. Fix it now — production runs the same sequence.
 
 ## Backups
 
-Cloud SQL has native automated backups. Enable them once via
-`scripts/setup-cloud-sql-backups.sh`:
+**Current state (verified 2026-05-13):** Cloud SQL automated backups
+already enabled — daily 03:00 UTC, 14-day retention, PITR off. Storage
+cost ≈ $0.10/month at single-user data volume.
 
+Verify any time:
 ```sh
-PROJECT_ID=flashckard \
-CLOUDSQL_INSTANCE=noop-db \
-./apps/backend/scripts/setup-cloud-sql-backups.sh
-```
-
-This sets daily backups at 03:00 UTC retained 14 days, plus point-in-time
-recovery with 7 days of transaction log retention.
-
-Verify:
-```sh
+gcloud sql instances describe noop-db --project=flashckard \
+  --format="value(settings.backupConfiguration.enabled,settings.backupConfiguration.startTime,settings.backupConfiguration.backupRetentionSettings.retainedBackups)"
 gcloud sql backups list --instance=noop-db --project=flashckard
 ```
+
+`setup-cloud-sql-backups.sh` is idempotent — re-run any time to confirm
+the configuration matches the desired state (currently 14-day retention
++ PITR; edit the script to lower retention or skip PITR if you want to
+cut backup storage cost further).
 
 For an ad-hoc dump (e.g. before a risky migration or for off-site copy):
 
@@ -140,18 +139,59 @@ Two endpoints exposed by `src/liveness/liveness.controller.ts`:
 - `GET /livez` — process is up. No DB. Fast.
 - `GET /readyz` — process up AND DB round-trips. Returns `dbLatencyMs`.
 
-Wire them to a free monitor:
+**Active monitor: GitHub Actions cron** (`.github/workflows/uptime.yml`).
+Pings `/readyz` every 10 minutes. GitHub emails the repo owner on
+workflow failure — zero-signup, zero-cost alerting. Run history is
+visible under the Actions tab. Costs ~60 free GitHub Actions minutes per
+month (well inside the 2,000-min free tier on private repos).
 
-**Healthchecks.io** (recommended for single-user — free, no auth, easy):
-1. Create a check at https://healthchecks.io.
-2. Set the check type to "Make HTTP request"; URL =
-   `https://api.noop.enform.co/readyz`; method GET; expected 200.
-3. Configure email/webhook on failure.
+If you outgrow this:
+- **Healthchecks.io** — free 20 checks, supports email + webhook +
+  Slack. Point a check at `https://api.noop.enform.co/readyz`.
+- **GCP Cloud Monitoring → Uptime Checks** — free for first 3 checks.
+- **Better Stack / UptimeRobot** — equivalent free tiers.
 
-**Better Stack / UptimeRobot** are equivalent free tiers.
+## Cost picture (single-user)
 
-**GCP-native**: Cloud Monitoring → Uptime Checks → "noop-readyz" pointing
-at the same URL. Free up to 1 check.
+As of 2026-05-13, approximate monthly spend on GCP:
+
+| Component | Spec | ~Cost |
+|---|---|---|
+| Cloud SQL `noop-db` | `db-f1-micro`, ALWAYS on, 10 GB SSD | $8 |
+| Cloud Run `noop-backend` | 1 CPU / 1 Gi, `min-instances=0` | <$1 (scales to zero between requests) |
+| Cloud SQL backups | 14 days × ~100 MB/day | $0.10 |
+| Cloud Storage (backup bucket, if used) | negligible | <$0.05 |
+| Cloud Build / Artifact Registry | per-deploy | <$0.50 |
+| **Total** | | **~$10/month** |
+
+The dominant fixed cost is the `db-f1-micro` Cloud SQL instance running
+24/7. Cloud SQL has no "scale to zero" option — even an idle instance
+bills around the clock.
+
+**If you want to get this closer to $0:**
+
+- **Neon** (https://neon.tech) — free tier: 0.5 GB storage, scales to
+  zero between queries, daily backups included. Postgres 15-compatible.
+  Drop-in for the Cloud SQL TypeORM datasource.
+- **Supabase** (https://supabase.com) — free tier: 500 MB Postgres,
+  daily backups, generous bandwidth. Also drop-in.
+- **Render** managed Postgres — free tier limited to 90 days then
+  deleted; not great for a single-user app you want to keep running.
+
+To migrate:
+1. `pg_dump` from Cloud SQL (use `scripts/backup-db.sh`).
+2. Create the target DB on Neon/Supabase. Restore with `psql`.
+3. Update Cloud Run env vars `DB_HOST`, `DB_PORT`, `DB_USER`,
+   `DB_PASSWORD`, `DB_NAME` to point at the new instance. Remove
+   `INSTANCE_CONNECTION_NAME` and the `--set-cloudsql-instances` flag in
+   `.github/workflows/deploy-backend.yml`.
+4. Delete the Cloud SQL instance.
+
+Single-user data volume (probably <500 MB) fits comfortably in both free
+tiers. The tradeoff: Neon free-tier scales-to-zero means the first query
+after idle (likely from your /readyz cron) has a ~1s cold start. Backups
+on these free tiers are daily snapshots only, no PITR — for
+single-user life-data, daily snapshots are usually enough.
 
 ## Storage / scale ceiling
 

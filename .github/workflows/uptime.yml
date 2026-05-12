@@ -1,0 +1,48 @@
+name: Uptime check
+
+# Pings the backend /readyz endpoint on a schedule. GitHub emails the
+# repo owner whenever a workflow run fails — that's our free uptime
+# alert. No third-party signup required.
+#
+# /readyz returns 200 only when the process is up AND a SELECT 1 against
+# Postgres succeeds, so this catches both "Cloud Run cold start failed"
+# and "Cloud SQL is unreachable".
+#
+# Cost: free GitHub Actions minutes. Every 10 min × ~12 sec/run ×
+# 30 days ≈ 60 minutes/month, well inside the 2,000-min free tier
+# even on a private repo.
+
+on:
+  schedule:
+    # Every 10 minutes. GitHub guarantees "no later than" — actual fire
+    # times slip under load; that's fine for our use case.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /readyz
+        env:
+          ENDPOINT: https://api.noop.enform.co/readyz
+        run: |
+          set -euo pipefail
+          # Single retry — flaky DNS or transient cold-start latency
+          # shouldn't page. A real outage will fail twice.
+          for attempt in 1 2; do
+            HTTP_CODE=$(curl -sS -o /tmp/body -w "%{http_code}" --max-time 30 "$ENDPOINT" || true)
+            BODY=$(cat /tmp/body || true)
+            echo "Attempt $attempt: status=$HTTP_CODE body=$BODY"
+            if [ "$HTTP_CODE" = "200" ] && echo "$BODY" | grep -q '"ok":true'; then
+              echo "::notice title=Uptime OK::status=$HTTP_CODE body=$BODY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error title=Uptime FAILED::endpoint=$ENDPOINT status=$HTTP_CODE body=$BODY"
+          exit 1
