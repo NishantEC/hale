@@ -17,23 +17,43 @@ import {
   type SleepView,
   type Telemetry,
   tokenStorage,
+  type TrendsView,
 } from "./api"
+import { InsightsTab } from "./tabs/Insights"
 import { OverviewTab } from "./tabs/Overview"
 import { PipelineTab } from "./tabs/Pipeline"
 import { RawTab } from "./tabs/Raw"
 import { SleepTab } from "./tabs/Sleep"
 import { TelemetryTab } from "./tabs/Telemetry"
+import { TrendsTab } from "./tabs/Trends"
 import { relativeTime } from "./format"
 
 // ── Tabs ─────────────────────────────────────────────────────
 
-type Tab = "overview" | "sleep" | "raw" | "pipeline" | "telemetry"
+type Tab =
+  | "overview"
+  | "trends"
+  | "insights"
+  | "sleep"
+  | "raw"
+  | "pipeline"
+  | "telemetry"
 
 const TAB_DEFS: { id: Tab; label: string; icon: ReactNode }[] = [
   {
     id: "overview",
     label: "Overview",
     icon: <Icon path="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25a2.25 2.25 0 0 1-2.25-2.25v-2.25Z" />,
+  },
+  {
+    id: "trends",
+    label: "Trends",
+    icon: <Icon path="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" />,
+  },
+  {
+    id: "insights",
+    label: "Insights",
+    icon: <Icon path="M12 18v-5.25m0 0a6.01 6.01 0 0 0 1.5-.189m-1.5.189a6.01 6.01 0 0 1-1.5-.189m3.75 7.478a12.06 12.06 0 0 1-4.5 0m3.75 2.383a14.406 14.406 0 0 1-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 1 0-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" />,
   },
   {
     id: "sleep",
@@ -177,6 +197,10 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
   const [homeView, setHomeView] = useState<HomeView | null>(null)
   const [sleepView, setSleepView] = useState<SleepView | null>(null)
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null)
+  const [trends, setTrends] = useState<TrendsView | null>(null)
+  const [trendsDays, setTrendsDays] = useState<number>(
+    () => Number(localStorage.getItem("noop.trendsDays")) || 30,
+  )
   const [live, setLive] = useState(false)
   const liveTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -200,6 +224,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
         homeRes,
         sleepViewRes,
         telRes,
+        trendsRes,
       ] = await Promise.all([
         apiGet<Overview>(`/debug/overview?date=${d}`, token),
         apiGet<RawRecords>(`/debug/raw-records?date=${d}&limit=200`, token),
@@ -209,6 +234,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
         apiGet<HomeView>(`/views/home?date=${d}`, token),
         apiGet<SleepView>(`/views/sleep?date=${d}`, token),
         apiGet<Telemetry>("/debug/telemetry?limit=200", token).catch(() => null),
+        apiGet<TrendsView>(`/views/trends?days=${trendsDays}`, token).catch(() => null),
       ])
       setOverview(ovRes)
       setRaw(rawRes)
@@ -218,13 +244,14 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
       setHomeView(homeRes)
       setSleepView(sleepViewRes)
       setTelemetry(telRes)
+      setTrends(trendsRes)
       setLastRefreshedAt(new Date().toISOString())
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed")
     } finally {
       setBusy(false)
     }
-  }, [date, token])
+  }, [date, token, trendsDays])
 
   const refreshTelemetry = useCallback(async () => {
     if (!token) return
@@ -394,6 +421,24 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
               overview={overview}
               homeView={homeView}
               sleepView={sleepView}
+            />
+          )}
+          {tab === "trends" && (
+            <TrendsTab
+              trends={trends}
+              rangeDays={trendsDays}
+              onRangeChange={(d) => {
+                setTrendsDays(d)
+                localStorage.setItem("noop.trendsDays", String(d))
+              }}
+            />
+          )}
+          {tab === "insights" && (
+            <InsightsTab
+              sleep={sleep}
+              baseline={results?.results.baselineProfile ?? null}
+              trends={trends}
+              journalCorrelations={results?.results.journalCorrelations ?? []}
             />
           )}
           {tab === "sleep" && <SleepTab sleep={sleep} epochs={epochs} />}

@@ -199,6 +199,22 @@ export type SleepNight = {
   epochTimeline: Array<{ timestamp: string; stage: string }>;
 };
 
+export type BaselineProfileRow = {
+  restingHeartRate: number;
+  rmssd: number;
+  sdnn: number;
+  nightsUsed: number;
+  maxHeartRate: number | null;
+};
+
+export type JournalCorrelation = {
+  factorTag: string;
+  avgDeepDelta: number;
+  avgRemDelta: number;
+  avgDurationDelta: number;
+  sampleCount: number;
+};
+
 export type PipelineResults = {
   rawRecordCount: number;
   earliestRawTimestamp: string | null;
@@ -209,10 +225,10 @@ export type PipelineResults = {
     sleepStages: unknown[];
     dailyScores: unknown[];
     dailyMetrics: unknown[];
-    baselineProfile: unknown | null;
+    baselineProfile: BaselineProfileRow | null;
     sleepPlan: unknown | null;
     typicalRanges: unknown | null;
-    journalCorrelations: unknown[];
+    journalCorrelations: JournalCorrelation[];
   };
 };
 
@@ -275,6 +291,28 @@ export type Telemetry = {
       capturedAt: string;
       receivedAt: string;
     }>;
+  };
+};
+
+export type TrendPoint = { timestamp: string; value: number };
+
+export type TrendsView = {
+  days: number;
+  dataPoints: number;
+  hrvTrend: TrendPoint[];
+  restingHrTrend: TrendPoint[];
+  sleepDurationTrend: TrendPoint[];
+  recoveryTrend: TrendPoint[];
+  trainingLoadTrend: TrendPoint[];
+  consistencyTrend: TrendPoint[];
+  strainTrend: TrendPoint[];
+  stressTrend: TrendPoint[];
+  respiratoryRateTrend: TrendPoint[];
+  spo2Trend: TrendPoint[];
+  summaries: {
+    hrv: { current: number | null; weekAgo: number | null; trend: "improving" | "declining" | "stable" | null };
+    restingHr: { current: number | null; weekAgo: number | null; trend: "improving" | "declining" | "stable" | null };
+    sleepDuration: { avgHours: number | null; nights: number };
   };
 };
 
