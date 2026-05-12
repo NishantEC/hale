@@ -15,6 +15,7 @@ import { DebugModule } from './debug/debug.module.js';
 import { TelemetryModule } from './telemetry/telemetry.module.js';
 import { ActivityModule } from './activity/activity.module.js';
 import { HealthModule } from './health/health.module.js';
+import { LivenessModule } from './liveness/liveness.module.js';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { HealthModule } from './health/health.module.js';
     ActivityModule,
     ViewsModule,
     HealthModule,
+    LivenessModule,
     DebugModule,
   ],
 })

@@ -17,6 +17,13 @@ if (__DEV__) {
   require("./devtools/ReactotronConfig.ts")
 }
 import "./utils/gestureHandler"
+import { initSentry } from "./services/observability/sentry"
+
+// Init Sentry as early as possible so its instrumentation patches the
+// runtime before app code starts. No-op when EXPO_PUBLIC_SENTRY_DSN is
+// unset (local dev), and degrades gracefully when @sentry/react-native
+// isn't installed yet (see services/observability/sentry.ts).
+initSentry()
 
 import { useEffect, useState } from "react"
 import { Alert, AppState } from "react-native"
