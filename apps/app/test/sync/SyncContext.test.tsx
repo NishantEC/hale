@@ -129,4 +129,56 @@ describe("SyncContext", () => {
       renderer?.unmount()
     })
   })
+
+  it("releases the draining flag in `finally` so subsequent drains can run after a thrown one", async () => {
+    // First scheduled drain throws; second should still run, proving the
+    // flag was reset in `finally`.
+    mockDrainLoop.mockReset()
+    mockDrainLoop
+      .mockRejectedValueOnce(new Error("first drain failed"))
+      .mockResolvedValue({ drained: 0 })
+
+    function Probe() {
+      useSyncContext()
+      return null
+    }
+
+    let renderer: TestRenderer.ReactTestRenderer | null = null
+
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <SyncProvider isDbReady>
+          <Probe />
+        </SyncProvider>,
+      )
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      resolveNetworkState?.({ isInternetReachable: true })
+      await Promise.resolve()
+    })
+
+    // First interval fires and rejects.
+    await act(async () => {
+      jest.advanceTimersByTime(15_000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockDrainLoop).toHaveBeenCalledTimes(1)
+
+    // Second interval fires — if the flag had latched, this would be a no-op.
+    await act(async () => {
+      jest.advanceTimersByTime(15_000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mockDrainLoop).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      renderer?.unmount()
+    })
+  })
 })

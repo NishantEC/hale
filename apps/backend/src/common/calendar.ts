@@ -138,7 +138,13 @@ function dayMidpoint(dateKey: string, timeZone: string): number {
 }
 
 function parseDateKey(dateKey: string): [number, number, number] {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) {
+    throw new RangeError(`Invalid calendar date key: "${dateKey}" (expected YYYY-MM-DD)`);
+  }
   const [year, month, day] = dateKey.split('-').map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31) {
+    throw new RangeError(`Invalid calendar date key: "${dateKey}"`);
+  }
   return [year, month, day];
 }
 

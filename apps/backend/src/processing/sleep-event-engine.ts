@@ -1,6 +1,6 @@
 import { HistoricalSensorRecord, SleepDetectionSummary } from './interfaces';
 import { median, clamp, standardDeviation } from './utils';
-import { calendarDayStart, clockMinutesInTimeZone } from '../common/calendar.js';
+import { calendarDayStart, clockMinutesInTimeZone } from '../common/calendar';
 
 interface TempPeriod {
   isSleep: boolean;
