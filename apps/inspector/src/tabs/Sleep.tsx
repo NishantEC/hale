@@ -1,4 +1,5 @@
-import type { SleepNight } from "../api"
+import type { RawRecords, SleepNight } from "../api"
+import { DayTimeline } from "../components/DayTimeline"
 import { HYPNOGRAM_STAGES, Hypnogram } from "../components/Hypnogram"
 import { Num, Row, SectionHead } from "../components/primitives"
 import { formatNumber, formatTimestamp } from "../format"
@@ -6,9 +7,11 @@ import { formatNumber, formatTimestamp } from "../format"
 export function SleepTab({
   sleep,
   epochs,
+  raw,
 }: {
   sleep: SleepNight | null
   epochs: Array<{ timestamp: string; stage: string }>
+  raw: RawRecords | null
 }) {
   return (
     <div className="space-y-10">
@@ -39,6 +42,8 @@ export function SleepTab({
           />
         </div>
       </div>
+
+      <DayTimeline raw={raw} sleep={sleep} />
 
       <div>
         <SectionHead>Hypnogram</SectionHead>

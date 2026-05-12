@@ -9,6 +9,7 @@ import {
   type HomeView,
   type Overview,
   type PipelineResults,
+  type PipelineRunsHistory,
   type PipelineState,
   type RawRecords,
   signIn,
@@ -194,6 +195,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
   const [sleep, setSleep] = useState<SleepNight | null>(null)
   const [results, setResults] = useState<PipelineResults | null>(null)
   const [state, setState] = useState<PipelineState | null>(null)
+  const [runs, setRuns] = useState<PipelineRunsHistory | null>(null)
   const [homeView, setHomeView] = useState<HomeView | null>(null)
   const [sleepView, setSleepView] = useState<SleepView | null>(null)
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null)
@@ -221,16 +223,23 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
         sleepRes,
         resultsRes,
         stateRes,
+        runsRes,
         homeRes,
         sleepViewRes,
         telRes,
         trendsRes,
       ] = await Promise.all([
         apiGet<Overview>(`/debug/overview?date=${d}`, token),
-        apiGet<RawRecords>(`/debug/raw-records?date=${d}&limit=200`, token),
+        // Bumped from 200 → 5000 so the Sleep tab's day-timeline chart
+        // has enough samples to draw a real HR curve over the day.
+        // Backend caps at 5000 (apps/backend/src/debug/debug.service.ts).
+        apiGet<RawRecords>(`/debug/raw-records?date=${d}&limit=5000`, token),
         apiGet<SleepNight>(`/debug/sleep-night?date=${d}`, token),
         apiGet<PipelineResults>("/debug/pipeline-results", token),
         apiGet<PipelineState>("/debug/pipeline-state", token).catch(() => null),
+        apiGet<PipelineRunsHistory>("/debug/pipeline-runs?limit=30", token).catch(
+          () => null,
+        ),
         apiGet<HomeView>(`/views/home?date=${d}`, token),
         apiGet<SleepView>(`/views/sleep?date=${d}`, token),
         apiGet<Telemetry>("/debug/telemetry?limit=200", token).catch(() => null),
@@ -241,6 +250,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
       setSleep(sleepRes)
       setResults(resultsRes)
       setState(stateRes)
+      setRuns(runsRes)
       setHomeView(homeRes)
       setSleepView(sleepViewRes)
       setTelemetry(telRes)
@@ -441,10 +451,12 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
               journalCorrelations={results?.results.journalCorrelations ?? []}
             />
           )}
-          {tab === "sleep" && <SleepTab sleep={sleep} epochs={epochs} />}
+          {tab === "sleep" && (
+            <SleepTab sleep={sleep} epochs={epochs} raw={raw} />
+          )}
           {tab === "raw" && <RawTab raw={raw} date={date} />}
           {tab === "pipeline" && (
-            <PipelineTab state={state} results={results} />
+            <PipelineTab state={state} results={results} runs={runs} />
           )}
           {tab === "telemetry" && (
             <TelemetryTab

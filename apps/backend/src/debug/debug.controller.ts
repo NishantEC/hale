@@ -88,6 +88,17 @@ export class DebugController {
     }
   }
 
+  @Get('pipeline-runs')
+  async getPipelineRuns(@Req() req: any, @Query('limit') limit?: string) {
+    try {
+      const n = limit ? Math.min(Math.max(parseInt(limit, 10) || 30, 1), 200) : 30;
+      return await this.debugService.getPipelineRuns(req.user.userId, n);
+    } catch (e) {
+      this.logger.error(`pipeline-runs failed: ${e.message}`, e.stack);
+      throw e;
+    }
+  }
+
   @Post('pipeline/run')
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async runPipeline(@Req() req: any, @Query() query: DebugDateQueryDto) {

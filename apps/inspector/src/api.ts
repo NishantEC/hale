@@ -294,6 +294,23 @@ export type Telemetry = {
   };
 };
 
+export type PipelineRunRow = {
+  id: string;
+  startedAt: string;
+  durationMs: number;
+  skipped: boolean;
+  stages: Record<string, number> | null;
+  detections: number;
+  sleepStages: number;
+  features: number;
+};
+
+export type PipelineRunsHistory = {
+  count: number;
+  stageMedians: Record<string, number>;
+  runs: PipelineRunRow[];
+};
+
 export type TrendPoint = { timestamp: string; value: number };
 
 export type TrendsView = {

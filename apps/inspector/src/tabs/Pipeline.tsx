@@ -1,4 +1,5 @@
-import type { PipelineResults, PipelineState } from "../api"
+import type { PipelineResults, PipelineRunsHistory, PipelineState } from "../api"
+import { PipelineRunsChart } from "../components/PipelineRunsChart"
 import { Num, Pill, Row, SectionHead } from "../components/primitives"
 import { formatDuration, formatTimestamp, relativeTime } from "../format"
 
@@ -14,13 +15,16 @@ import { formatDuration, formatTimestamp, relativeTime } from "../format"
 export function PipelineTab({
   state,
   results,
+  runs,
 }: {
   state: PipelineState | null
   results: PipelineResults | null
+  runs: PipelineRunsHistory | null
 }) {
   return (
     <div className="space-y-12">
       <PipelineStateBlock state={state} />
+      <PipelineRunsChart history={runs} />
       <PipelineResultsBlock results={results} />
     </div>
   )

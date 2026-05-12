@@ -13,6 +13,7 @@ import { JournalEntry } from '../journal/journal-entry.entity.js';
 import { SleepPlan } from '../plans/sleep-plan.entity.js';
 import { RawSensorRecord } from './entities/raw-sensor-record.entity.js';
 import { PipelineState } from './entities/pipeline-state.entity.js';
+import { PipelineRun } from './entities/pipeline-run.entity.js';
 
 import { IngestDto } from './dto/ingest.dto.js';
 import { IngestTableDto } from './dto/ingest-table.dto.js';
@@ -86,6 +87,8 @@ export class PipelineService {
     private healthkitWorkoutRepo: Repository<HealthkitWorkout>,
     @InjectRepository(PipelineState)
     private pipelineStateRepo: Repository<PipelineState>,
+    @InjectRepository(PipelineRun)
+    private pipelineRunRepo: Repository<PipelineRun>,
   ) {}
 
   // ------------------------------------------------------------------ ingest
@@ -245,6 +248,25 @@ export class PipelineService {
       state?.lastInputMaxUpdatedAt != null &&
       currentInputMax <= state.lastInputMaxUpdatedAt.getTime()
     ) {
+      // Record the skipped run so the inspector shows steady cadence
+      // rather than gaps. Fire-and-forget: a failure here must not
+      // mask a successful pipeline short-circuit.
+      this.pipelineRunRepo
+        .save({
+          userId,
+          startedAt: new Date(startedAt),
+          durationMs: Date.now() - startedAt,
+          skipped: true,
+          stages: null,
+          detections: 0,
+          sleepStages: 0,
+          features: 0,
+        })
+        .catch((err) =>
+          this.logger.warn(
+            `pipeline_runs skipped-row insert failed: ${err?.message}`,
+          ),
+        );
       return {
         ok: true,
         skipped: 'no-new-input' as const,
@@ -618,11 +640,31 @@ export class PipelineService {
     });
     mark('write');
 
+    // Append-only history row for the inspector's regression watch.
+    // Separate from pipeline_state so we can chart drift over time
+    // without committing every run inside the main transaction.
+    const totalMs = Date.now() - startedAt;
+    this.pipelineRunRepo
+      .save({
+        userId,
+        startedAt: new Date(startedAt),
+        durationMs: totalMs,
+        skipped: false,
+        stages: { ...stages },
+        detections: sleepDetections.length,
+        sleepStages: sleepStages.length,
+        features: effectiveFeatures.length,
+      })
+      .catch((err) =>
+        this.logger.warn(
+          `pipeline_runs history insert failed: ${err?.message}`,
+        ),
+      );
+
     // Structured stage breakdown + runtime budget check. The budget is
     // intentionally generous (45s) — exceeding it means a regression
     // worth investigating, not a transient slow run. PIPELINE_BUDGET_MS
     // env var overrides it.
-    const totalMs = Date.now() - startedAt;
     const budgetMs = Number(process.env.PIPELINE_BUDGET_MS ?? 45_000);
     const breakdown = Object.entries(stages)
       .map(([k, v]) => `${k}=${v}ms`)

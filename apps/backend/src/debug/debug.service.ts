@@ -16,6 +16,7 @@ import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
 import { RealtimeSample } from '../telemetry/entities/realtime-sample.entity.js';
 import { ConsoleLog } from '../telemetry/entities/console-log.entity.js';
 import { PipelineState } from '../pipeline/entities/pipeline-state.entity.js';
+import { PipelineRun } from '../pipeline/entities/pipeline-run.entity.js';
 import { ViewsService } from '../views/views.service.js';
 import {
   calendarDayBounds,
@@ -69,7 +70,51 @@ export class DebugService {
     private readonly consoleLogRepo: Repository<ConsoleLog>,
     @InjectRepository(PipelineState)
     private readonly pipelineStateRepo: Repository<PipelineState>,
+    @InjectRepository(PipelineRun)
+    private readonly pipelineRunRepo: Repository<PipelineRun>,
   ) {}
+
+  // Recent pipeline runs for the regression-watch view. Returns the
+  // most recent `limit` runs (default 30) ordered newest-first plus a
+  // simple drift signal: per-stage median over this window so the
+  // inspector can highlight individual runs that exceed (e.g.) 2× the
+  // median for any stage.
+  async getPipelineRuns(userId: string, limit = 30) {
+    this.assertEnabled();
+    const rows = await this.pipelineRunRepo.find({
+      where: { userId },
+      order: { startedAt: 'DESC' },
+      take: Math.min(Math.max(limit, 1), 200),
+    });
+    const stageMedians: Record<string, number> = {};
+    const stageNames = new Set<string>();
+    for (const row of rows) {
+      if (!row.stages) continue;
+      for (const name of Object.keys(row.stages)) stageNames.add(name);
+    }
+    for (const name of stageNames) {
+      const values = rows
+        .map((r) => r.stages?.[name])
+        .filter((v): v is number => typeof v === 'number')
+        .sort((a, b) => a - b);
+      if (values.length === 0) continue;
+      stageMedians[name] = values[Math.floor(values.length / 2)];
+    }
+    return {
+      count: rows.length,
+      stageMedians,
+      runs: rows.map((r) => ({
+        id: r.id,
+        startedAt: r.startedAt.toISOString(),
+        durationMs: r.durationMs,
+        skipped: r.skipped,
+        stages: r.stages,
+        detections: r.detections,
+        sleepStages: r.sleepStages,
+        features: r.features,
+      })),
+    };
+  }
 
   // Snapshot of pipeline state + the data-freshness inputs that drive
   // the incremental short-circuit. Powers the inspector's Pipeline tab.

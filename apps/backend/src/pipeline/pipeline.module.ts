@@ -4,6 +4,7 @@ import { PipelineController } from './pipeline.controller.js';
 import { PipelineService } from './pipeline.service.js';
 import { RawSensorRecord } from './entities/raw-sensor-record.entity.js';
 import { PipelineState } from './entities/pipeline-state.entity.js';
+import { PipelineRun } from './entities/pipeline-run.entity.js';
 
 import { SleepDetection } from '../sleep/entities/sleep-detection.entity.js';
 import { SleepStage } from '../sleep/entities/sleep-stage.entity.js';
@@ -35,6 +36,7 @@ import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.
       HealthkitDailySummary,
       HealthkitWorkout,
       PipelineState,
+      PipelineRun,
     ]),
   ],
   controllers: [PipelineController],

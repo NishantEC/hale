@@ -57,6 +57,7 @@ describe('PipelineService raw_sensor_records ingest', () => {
       {} as any, // healthkitSummary
       {} as any, // healthkitWorkout
       {} as any, // pipelineState
+      {} as any, // pipelineRun
     );
 
     await service.ingest('user-1', {
@@ -110,6 +111,7 @@ describe('PipelineService derived cleanup', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
 
     await (service as any).pruneStaleCalendarDayRows(
@@ -144,7 +146,7 @@ describe('PipelineService derived cleanup', () => {
     const service = new PipelineService(
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
-      {} as any, {} as any,
+      {} as any, {} as any, {} as any,
     );
 
     await (service as any).pruneStaleCalendarDayRows(
@@ -164,7 +166,7 @@ describe('PipelineService derived cleanup', () => {
     const service = new PipelineService(
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
-      {} as any, {} as any,
+      {} as any, {} as any, {} as any,
     );
 
     // Two timestamps that fall on the same calendar day in the target TZ.
@@ -206,7 +208,7 @@ describe('PipelineService.findOneByCalendarDay merge invariant', () => {
     const service = new PipelineService(
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
-      {} as any, {} as any,
+      {} as any, {} as any, {} as any,
     );
 
     const result = await (service as any).findOneByCalendarDay(
@@ -238,7 +240,7 @@ describe('PipelineService.findOneByCalendarDay merge invariant', () => {
     const service = new PipelineService(
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
-      {} as any, {} as any,
+      {} as any, {} as any, {} as any,
     );
 
     const result = await (service as any).findOneByCalendarDay(
