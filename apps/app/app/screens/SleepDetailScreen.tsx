@@ -1,5 +1,5 @@
 import { FC, useRef, useEffect } from "react"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import {
   RefreshControl,
   TextStyle,
@@ -190,7 +190,7 @@ export const SleepDetailScreen: FC = () => {
 
   const alarmRightAction = (
     <TouchableOpacity onPress={onPressAlarm} hitSlop={12} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-      <Ionicons name="alarm-outline" size={18} color={colors.text} />
+      <PhosphorIcon name="alarm-outline" size={18} color={colors.text} />
       <Text text={alarmLabel} size="xs" style={{ color: colors.text }} />
     </TouchableOpacity>
   )

@@ -1,7 +1,7 @@
 import { FC, ReactNode } from "react"
 import { Platform, StyleSheet, TouchableOpacity, View, ViewStyle } from "react-native"
 import { BlurView } from "expo-blur"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import { router } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Animated, {
@@ -60,7 +60,7 @@ export const ScreenHeader: FC<ScreenHeaderProps> = ({
 
   const left = leftAction ?? (showBackButton ? (
     <TouchableOpacity onPress={handleBack} hitSlop={12}>
-      <Ionicons name="chevron-back" size={24} color={colors.text} />
+      <PhosphorIcon name="chevron-back" size={24} color={colors.text} />
     </TouchableOpacity>
   ) : null)
 

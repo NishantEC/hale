@@ -30,6 +30,9 @@ export class DailyScore {
   @Column('text', { default: '' })
   detail: string;
 
+  @Column('int', { nullable: true })
+  sleepScore: number | null;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }

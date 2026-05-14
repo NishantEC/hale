@@ -1064,7 +1064,8 @@ export class PipelineService {
       sleepReserveHours: score.sleepReserveHours,
       confidence: score.confidence,
       recommendation: score.recommendation,
-      detail: score.detail + (sleepScore != null ? `, Sleep score ${sleepScore}` : ''),
+      detail: score.detail,
+      sleepScore,
     };
 
     if (existing) {

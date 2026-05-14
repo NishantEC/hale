@@ -1,7 +1,7 @@
 import { FC, useCallback, useEffect, useState } from "react"
 import { RefreshControl, TextStyle, View, ViewStyle, useWindowDimensions } from "react-native"
 import { Chart, Host } from "@expo/ui/swift-ui"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -22,7 +22,7 @@ const TREND_CARDS: Array<{
   dataKey: keyof TrendsViewModel
   color: string
   unit: string
-  icon: keyof typeof Ionicons.glyphMap
+  icon: PhosphorIconName
   invertTrend?: boolean // true if lower = better (e.g. resting HR)
 }> = [
   {
@@ -214,7 +214,7 @@ export const TrendsScreen: FC = () => {
         return (
           <GlassCard key={card.id} style={themed($card)}>
             <View style={themed($cardHeader)}>
-              <Ionicons name={card.icon} size={18} color={card.color} />
+              <PhosphorIcon name={card.icon} size={18} color={card.color} />
               <View style={{ flex: 1 }}>
                 <Text text={card.title} size="xs" weight="semiBold" style={$cardTitle(colors)} />
                 <Text text={card.subtitle} size="xxs" style={$cardSubtitle(colors)} />
@@ -297,7 +297,7 @@ function SummaryPill({
         <Text text={value} size="lg" weight="bold" style={{ color: colors.text }} />
         <Text text={unit} size="xxs" style={{ color: colors.textDim }} />
       </View>
-      {trendIcon && <Ionicons name={trendIcon as any} size={14} color={trendColor} />}
+      {trendIcon && <PhosphorIcon name={trendIcon as any} size={14} color={trendColor} />}
     </View>
   )
 }

@@ -1,6 +1,6 @@
 import { TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
 import Animated, { FadeInRight, FadeOutLeft } from "react-native-reanimated"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 export type DateSwitcherProps = {
@@ -15,7 +15,7 @@ export function DateSwitcher({ title, onPrevious, onNext }: DateSwitcherProps) {
   return (
     <View style={themed($dateSwitcher)}>
       <TouchableOpacity style={themed($switcherButton)} onPress={onPrevious}>
-        <Ionicons name="chevron-back" size={20} color={colors.text} />
+        <PhosphorIcon name="chevron-back" size={20} color={colors.text} />
       </TouchableOpacity>
       <Animated.Text
         key={title}
@@ -26,7 +26,7 @@ export function DateSwitcher({ title, onPrevious, onNext }: DateSwitcherProps) {
         {title}
       </Animated.Text>
       <TouchableOpacity style={themed($switcherButton)} onPress={onNext}>
-        <Ionicons name="chevron-forward" size={20} color={colors.text} />
+        <PhosphorIcon name="chevron-forward" size={20} color={colors.text} />
       </TouchableOpacity>
     </View>
   )

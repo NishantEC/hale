@@ -5,6 +5,8 @@ export { crc8, crc32, encodeFrame, decodeFrame, base64ToUint8Array, uint8ArrayTo
 export { PacketAssembler } from './packet-assembler';
 export { CommandService } from './command-service';
 export { parseHistoricalRecord, parseHistoricalBatch, parseHistoricalPacket } from './history-parser';
+export { parseIMUPacket } from './imu-parser';
+export type { IMUSample } from './imu-parser';
 export { bleManager } from './ble-manager';
 export { HistoryDownloader } from './history-downloader';
 export {
@@ -14,5 +16,13 @@ export {
   createEventForwarder,
   createRealtimeForwarder,
   createConsoleLogForwarder,
+  createCommandResponseForwarder,
+  createImuForwarder,
 } from './telemetry-forwarder';
-export type { DeviceEventPayload, RealtimeSamplePayload, ConsoleLogPayload } from './telemetry-forwarder';
+export type {
+  DeviceEventPayload,
+  RealtimeSamplePayload,
+  ConsoleLogPayload,
+  CommandResponsePayload,
+  ImuRecordPayload,
+} from './telemetry-forwarder';

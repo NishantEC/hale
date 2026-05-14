@@ -108,6 +108,11 @@ export interface HomeViewModel {
     dateLabel: string;
   };
   activities: {
+    hrv: string;
+    hrvMs: number | null;
+    restingHr: string;
+    baselineRhr: number | null;
+    odiPerHour: number | null;
     stress: string;
     spo2: string;
     skinTemp: string;
@@ -184,6 +189,7 @@ export interface SleepViewModel {
     samples: SeriesPoint[];
   };
   sleepScoreTrend: SeriesPoint[];
+  hrvTrend: SeriesPoint[];
   score: {
     value: number | null;
     label: string;

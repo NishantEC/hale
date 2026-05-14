@@ -4,9 +4,13 @@ import { Repository } from 'typeorm';
 import { DeviceEvent } from './entities/device-event.entity.js';
 import { RealtimeSample } from './entities/realtime-sample.entity.js';
 import { ConsoleLog } from './entities/console-log.entity.js';
+import { CommandResponse } from './entities/command-response.entity.js';
+import { ImuRecord } from '../pipeline/entities/imu-record.entity.js';
 import { IngestEventsDto } from './dto/ingest-events.dto.js';
 import { IngestRealtimeDto } from './dto/ingest-realtime.dto.js';
 import { IngestConsoleLogsDto } from './dto/ingest-console-logs.dto.js';
+import { IngestCommandResponsesDto } from './dto/ingest-command-responses.dto.js';
+import { IngestImuRecordsDto } from './dto/ingest-imu-records.dto.js';
 import { parseConsoleLogMetadata } from './console-log-parser.js';
 
 @Injectable()
@@ -18,6 +22,10 @@ export class TelemetryService {
     private sampleRepo: Repository<RealtimeSample>,
     @InjectRepository(ConsoleLog)
     private consoleLogRepo: Repository<ConsoleLog>,
+    @InjectRepository(CommandResponse)
+    private commandResponseRepo: Repository<CommandResponse>,
+    @InjectRepository(ImuRecord)
+    private imuRecordRepo: Repository<ImuRecord>,
   ) {}
 
   async ingestEvents(userId: string, dto: IngestEventsDto): Promise<{ count: number }> {
@@ -49,6 +57,49 @@ export class TelemetryService {
       }),
     );
     const saved = await this.sampleRepo.save(entities);
+    return { count: saved.length };
+  }
+
+  async ingestImuRecords(userId: string, dto: IngestImuRecordsDto): Promise<{ count: number }> {
+    if (dto.records.length === 0) return { count: 0 };
+    const entities = dto.records.map((r) =>
+      this.imuRecordRepo.create({
+        userId,
+        timestamp: new Date(r.timestamp),
+        accelX: r.accelX,
+        accelY: r.accelY,
+        accelZ: r.accelZ,
+        gyroX: r.gyroX,
+        gyroY: r.gyroY,
+        gyroZ: r.gyroZ,
+        source: r.source ?? 'realtime',
+      }),
+    );
+    // IMU is high-frequency (~52 Hz × 100 samples/packet ≈ 5,200 rows/packet).
+    // Chunk inserts to keep parameter counts under Postgres's limit.
+    const CHUNK = 500;
+    let saved = 0;
+    for (let i = 0; i < entities.length; i += CHUNK) {
+      const batch = entities.slice(i, i + CHUNK);
+      await this.imuRecordRepo.save(batch);
+      saved += batch.length;
+    }
+    return { count: saved };
+  }
+
+  async ingestCommandResponses(userId: string, dto: IngestCommandResponsesDto): Promise<{ count: number }> {
+    const entities = dto.responses.map((r) =>
+      this.commandResponseRepo.create({
+        userId,
+        deviceId: r.deviceId,
+        command: r.command,
+        commandName: r.commandName,
+        sequence: r.sequence,
+        rawPayload: r.rawPayload ? Buffer.from(r.rawPayload, 'base64') : null,
+        capturedAt: new Date(r.capturedAt),
+      }),
+    );
+    const saved = await this.commandResponseRepo.save(entities);
     return { count: saved.length };
   }
 

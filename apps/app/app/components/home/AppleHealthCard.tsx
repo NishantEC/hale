@@ -1,13 +1,13 @@
 import { FC } from "react"
 import { Platform, Pressable, View, ViewStyle } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
 
 import { Text } from "@/components/Text"
 import { useHealthKit } from "@/context/HealthKitContext"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 type StatProps = {
-  icon: keyof typeof Ionicons.glyphMap
+  icon: PhosphorIconName
   label: string
   value: string
   tint: string
@@ -17,7 +17,7 @@ const StatChip: FC<StatProps> = ({ icon, label, value, tint }) => {
   const colors = LOCAL_THEME.colors
   return (
     <View style={$chip}>
-      <Ionicons name={icon} size={16} color={tint} />
+      <PhosphorIcon name={icon} size={16} color={tint} />
       <View style={$chipText}>
         <Text
           text={label.toUpperCase()}
@@ -94,7 +94,7 @@ export const AppleHealthCard: FC = () => {
         ]}
       >
         <View style={$header}>
-          <Ionicons name="heart" size={18} color={colors.statusRed} />
+          <PhosphorIcon name="heart" size={18} color={colors.statusRed} />
           <Text
             text="APPLE HEALTH"
             style={{
@@ -129,7 +129,7 @@ export const AppleHealthCard: FC = () => {
   return (
     <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
       <View style={$header}>
-        <Ionicons name="heart" size={18} color={colors.statusRed} />
+        <PhosphorIcon name="heart" size={18} color={colors.statusRed} />
         <Text
           text="APPLE HEALTH"
           style={{

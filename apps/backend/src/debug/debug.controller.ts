@@ -147,6 +147,17 @@ export class DebugController {
     }
   }
 
+  @Get('battery-history')
+  async getBatteryHistory(@Req() req: any, @Query('hours') hours?: string) {
+    try {
+      const h = hours ? Math.min(Math.max(parseInt(hours, 10) || 24, 1), 720) : 24;
+      return await this.debugService.getBatteryHistory(req.user.userId, h);
+    } catch (e) {
+      this.logger.error(`battery-history failed: ${e.message}`, e.stack);
+      throw e;
+    }
+  }
+
   @Post('seed')
   async seedDemoData(@Req() req: any, @Query('nights') nights?: string) {
     try {

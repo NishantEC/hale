@@ -65,12 +65,9 @@ export const HrvDetailScreen: FC = () => {
     return m?.value ?? "--"
   }
 
-  // Prefer the sleep view's HRV (RMSSD) — it's the authoritative nightly
-  // measurement; fall back to homeView.activities.recoveryIndex.
-  const hrvValueRaw =
-    lookupSleepMetric("HRV (RMSSD)") !== "--"
-      ? lookupSleepMetric("HRV (RMSSD)")
-      : homeView?.activities.recoveryIndex ?? "--"
+  // Sleep view's "HRV (RMSSD)" metric is the authoritative nightly RMSSD.
+  // No fallback — we don't surface a faux HRV from the recovery composite.
+  const hrvValueRaw = lookupSleepMetric("HRV (RMSSD)")
   const hrvNumeric = parseFloat(hrvValueRaw)
   const validHrv = Number.isFinite(hrvNumeric)
   const hrvDelta = sleepView?.vitalsDelta?.hrv ?? null
@@ -82,13 +79,11 @@ export const HrvDetailScreen: FC = () => {
     return { label: "Low", tint: "#f87171" }
   })()
 
-  // HRV trend: synthesize from sleepView.sleepScoreTrend timestamps + the
-  // current night's HRV value (a flat line until per-night HRV trend exists).
-  // When richer trend data is exposed, swap in here.
+  // Real per-night HRV (RMSSD) trend from sleepView.hrvTrend.
   const hrvTrendPoints =
-    sleepView?.sleepScoreTrend?.map((p) => ({
+    sleepView?.hrvTrend?.map((p) => ({
       date: p.timestamp.slice(0, 10),
-      value: validHrv ? hrvNumeric : 0,
+      value: p.value,
     })) ?? []
 
   // RHR trend reuses the recovery (general health) trend as a stand-in.
@@ -138,9 +133,9 @@ export const HrvDetailScreen: FC = () => {
             />
             <InlineLineChart
               points={
-                sleepView?.sleepScoreTrend?.map((p) => ({
+                sleepView?.hrvTrend?.map((p) => ({
                   timestamp: p.timestamp,
-                  value: validHrv ? hrvNumeric : 0,
+                  value: p.value,
                 })) ?? []
               }
               width={chartWidth - 28}

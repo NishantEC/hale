@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  noop · app icon · tinted variant
+  1024×1024 master. The "N" is an outlined path from SF NS Italic at
+  weight 500; renders identically without a font lookup.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" fill="#09090b"/>
+  <path d="M433.7969 416.7578L369.5391 720L309.1094 720L393.0547 325.4297L449.3828 325.4297L588.8359 628.6719L590.2031 628.6719L654.4609 325.4297L714.8906 325.4297L630.9453 720L574.3438 720L435.1641 416.7578" fill="#ffffff"/>
+</svg>

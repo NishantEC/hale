@@ -222,6 +222,17 @@ export class ViewsService {
         dateLabel: liveDateLabel,
       },
       activities: {
+        hrv:
+          selectedFeature?.rmssd != null
+            ? `${Math.round(selectedFeature.rmssd)}`
+            : '--',
+        hrvMs: selectedFeature?.rmssd ?? null,
+        restingHr:
+          selectedFeature?.restingHeartRate != null
+            ? `${Math.round(selectedFeature.restingHeartRate)}`
+            : '--',
+        baselineRhr: data.baselineProfile?.restingHeartRate ?? null,
+        odiPerHour: selectedMetric?.odiPerHour ?? null,
         stress:
           selectedMetric?.stressAverage != null
             ? this.formatDecimal(selectedMetric.stressAverage, 2)
@@ -241,10 +252,6 @@ export class ViewsService {
         skinTempDelta:
           selectedMetric?.skinTempDeltaCelsius != null
             ? `${selectedMetric.skinTempDeltaCelsius >= 0 ? '+' : ''}${selectedMetric.skinTempDeltaCelsius.toFixed(2)}C`
-            : '--',
-        recoveryIndex:
-          selectedMetric?.recoveryIndex != null
-            ? `${Math.round(selectedMetric.recoveryIndex)}`
             : '--',
         trainingLoad:
           selectedMetric?.trainingLoadRatio != null
@@ -577,6 +584,10 @@ export class ViewsService {
         })),
       },
       sleepScoreTrend,
+      hrvTrend: data.nightFeatures
+        .slice(-7)
+        .filter((f) => f.rmssd != null && f.rmssd > 0)
+        .map((f) => ({ timestamp: f.nightDate.toISOString(), value: f.rmssd })),
       metrics: this.buildSleepMetrics(
         selectedScore,
         selectedMetric,

@@ -1,9 +1,9 @@
 import { BleManager as RNBleManager, Device, Subscription, State } from 'react-native-ble-plx';
-import { Platform, PermissionsAndroid } from 'react-native';
+import { AppState, AppStateStatus, Platform, PermissionsAndroid } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   WHOOP_SERVICE_UUID, CMD_TO_STRAP_UUID, CMD_FROM_STRAP_UUID,
-  EVENTS_FROM_STRAP_UUID, DATA_FROM_STRAP_UUID,
+  EVENTS_FROM_STRAP_UUID, DATA_FROM_STRAP_UUID, MEMFAULT_UUID,
   ConnectionState, WhoopPacket, ScannedDevice,
 } from './packet-types';
 import { PacketAssembler } from './packet-assembler';
@@ -14,6 +14,7 @@ const SCAN_TIMEOUT_MS = 15000;
 
 type PacketListener = (packet: WhoopPacket) => void;
 type StateListener = (state: ConnectionState) => void;
+type MemfaultListener = (base64Chunk: string) => void;
 
 class WhoopBleManager {
   private manager: RNBleManager;
@@ -24,6 +25,7 @@ class WhoopBleManager {
   private dataAssembler = new PacketAssembler();
   private packetListeners = new Map<string, Set<PacketListener>>();
   private stateListeners = new Set<StateListener>();
+  private memfaultListeners = new Set<MemfaultListener>();
   private _connectionState: ConnectionState = 'disconnected';
   private scanTimeout: ReturnType<typeof setTimeout> | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -31,6 +33,8 @@ class WhoopBleManager {
   private manualDisconnect = false;
   private stateSubscription: Subscription | null = null;
   private pendingAutoConnect = false;
+  private isBackground = AppState.currentState !== 'active';
+  private appStateSubscription: { remove(): void } | null = null;
 
   constructor() {
     this.manager = new RNBleManager({
@@ -47,6 +51,28 @@ class WhoopBleManager {
         this.autoConnect().catch(() => undefined);
       }
     }, true);
+    this.appStateSubscription = AppState.addEventListener('change', (next) => {
+      this.handleAppStateChange(next);
+    });
+  }
+
+  // Track foreground/background. On iOS, setTimeout-based reconnect
+  // timers freeze while the app is suspended, so scheduling them in
+  // background is wasted effort — state preservation handles reconnect
+  // at the OS level instead. On foreground resume we verify whether
+  // we're still connected and re-arm auto-connect if not.
+  private handleAppStateChange(next: AppStateStatus) {
+    const wasBackground = this.isBackground;
+    this.isBackground = next !== 'active';
+    if (wasBackground && !this.isBackground) {
+      // Foreground: clear any stalled-while-suspended reconnect timer
+      // and re-issue a fresh auto-connect attempt if we're disconnected.
+      this.clearReconnectTimeout();
+      this.reconnectAttempt = 0;
+      if (this._connectionState === 'disconnected' && !this.manualDisconnect) {
+        this.autoConnect().catch(() => undefined);
+      }
+    }
   }
 
   private async handleRestoreState(
@@ -124,6 +150,12 @@ class WhoopBleManager {
     this.clearReconnectTimeout();
     const preferredId = await AsyncStorage.getItem(PREFERRED_DEVICE_KEY);
     if (!preferredId || this.manualDisconnect) return;
+
+    // iOS suspends setTimeout when the app is backgrounded, so scheduling
+    // a JS-level retry is a no-op until foreground. Skip — iOS's state
+    // preservation will re-deliver the connection via restoreStateFunction
+    // when the strap is back in range and we're allowed to wake.
+    if (Platform.OS === 'ios' && this.isBackground) return;
 
     // Exponential backoff with jitter: 1.5s → 3s → 6s → 12s → 24s,
     // capped at 60s. Without this, a strap that's out of range
@@ -319,6 +351,26 @@ class WhoopBleManager {
     monitor(CMD_FROM_STRAP_UUID, this.cmdAssembler);
     monitor(EVENTS_FROM_STRAP_UUID, this.eventsAssembler);
     monitor(DATA_FROM_STRAP_UUID, this.dataAssembler);
+
+    // MEMFAULT (0x0007) — firmware crash/debug chunks. Not framed like
+    // command/event packets, so we forward raw base64 chunks straight
+    // through to listeners without an assembler.
+    const memfaultSub = device.monitorCharacteristicForService(
+      WHOOP_SERVICE_UUID,
+      MEMFAULT_UUID,
+      (error, char) => {
+        if (error || !char?.value) return;
+        for (const cb of this.memfaultListeners) cb(char.value);
+      },
+    );
+    this.subscriptions.push(memfaultSub);
+  }
+
+  onMemfault(cb: MemfaultListener): () => void {
+    this.memfaultListeners.add(cb);
+    return () => {
+      this.memfaultListeners.delete(cb);
+    };
   }
 
   // --- Commands ---

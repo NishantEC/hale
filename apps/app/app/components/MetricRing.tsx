@@ -1,5 +1,5 @@
 import { TouchableOpacity, View } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import Svg, { Circle } from "react-native-svg"
 
 import { XStack, YStack, Paragraph } from "./tamagui-primitives"
@@ -85,7 +85,7 @@ export function MetricRing({
         </View>
         <XStack alignItems="center" gap={6}>
           <Paragraph fontWeight="600">{label}</Paragraph>
-          <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.72)" />
+          <PhosphorIcon name="chevron-forward" size={14} color="rgba(255,255,255,0.72)" />
         </XStack>
       </YStack>
     </TouchableOpacity>

@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, {
@@ -122,7 +122,7 @@ export const HomeScreen: FC = () => {
     connectionState === "ready"
       ? batteryLevel == null
         ? "--"
-        : `${Math.round(batteryLevel)}%`
+        : `${batteryLevel.toFixed(1)}%`
       : isSyncing
         ? "..."
         : "--"
@@ -224,7 +224,7 @@ export const HomeScreen: FC = () => {
     {
       key: "hrv",
       label: "HRV",
-      value: homeView?.activities.recoveryIndex || "--",
+      value: homeView?.activities.hrv ?? "--",
       desc: "ms",
       tint: colors.ringHrv,
       onPress: () => navigateTo("HrvDetail", "hrv-detail"),
@@ -418,13 +418,13 @@ function DevicePill({
   return (
     <TouchableOpacity style={themed($devicePill)} onPress={onPress}>
       <View style={themed($deviceIconWrap)}>
-        <Ionicons
+        <PhosphorIcon
           name="watch-outline"
           size={18}
           color={isConnected ? colors.text : colors.textDim}
         />
         {isCharging ? (
-          <Ionicons name="flash" size={9} color={colors.statusGreen} style={themed($chargeBolt)} />
+          <PhosphorIcon name="flash" size={9} color={colors.statusGreen} style={themed($chargeBolt)} />
         ) : null}
       </View>
       <Text text={batteryLabel} size="xs" weight="bold" style={themed($devicePillText)} />

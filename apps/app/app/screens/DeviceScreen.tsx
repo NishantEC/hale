@@ -2,6 +2,7 @@ import { FC, useEffect, useRef } from "react"
 import { ScrollView, TouchableOpacity } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
+import { BatteryPanel } from "@/components/BatteryPanel"
 import { GlassCard } from "@/components/GlassCard"
 import { Text } from "@/components/Text"
 import { XStack, YStack } from "@/components/tamagui-primitives"
@@ -14,8 +15,12 @@ export const DeviceScreen: FC = () => {
     connectionState,
     deviceName,
     batteryLevel,
+    batteryVoltageMv,
+    batteryTemperatureC,
+    batteryIconLevel,
     isCharging,
     realtimeHeartRate,
+    liveStressLevel,
     scannedDevices,
     isSyncing,
     syncStage,
@@ -51,12 +56,33 @@ export const DeviceScreen: FC = () => {
           <MetricRow label="Device" value={deviceName ?? "WHOOP not connected"} />
           <MetricRow
             label="Battery"
-            value={batteryLevel == null ? "--" : `${Math.round(batteryLevel)}%`}
+            value={batteryLevel == null ? "--" : `${batteryLevel.toFixed(1)}%`}
+          />
+          <BatteryPanel
+            voltageMv={batteryVoltageMv}
+            temperatureC={batteryTemperatureC}
+            iconLevel={batteryIconLevel}
           />
           <MetricRow label="Charging" value={isCharging ? "Yes" : "No"} />
           <MetricRow
             label="Realtime HR"
             value={realtimeHeartRate ? `${realtimeHeartRate}` : "--"}
+          />
+          <MetricRow
+            label="Live stress"
+            value={
+              liveStressLevel == null
+                ? "--"
+                : `${liveStressLevel} / 3 · ${
+                    liveStressLevel === 0
+                      ? "Calm"
+                      : liveStressLevel === 1
+                        ? "Low"
+                        : liveStressLevel === 2
+                          ? "Medium"
+                          : "High"
+                  }`
+            }
           />
         </GlassCard>
 

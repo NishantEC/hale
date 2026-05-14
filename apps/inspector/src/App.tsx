@@ -17,6 +17,7 @@ import {
   signUp,
   type SleepNight,
   type SleepView,
+  type BatteryHistory,
   type Telemetry,
   tokenStorage,
   triggerPipelineRun,
@@ -202,6 +203,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
   const [homeView, setHomeView] = useState<HomeView | null>(null)
   const [sleepView, setSleepView] = useState<SleepView | null>(null)
   const [telemetry, setTelemetry] = useState<Telemetry | null>(null)
+  const [batteryHistory, setBatteryHistory] = useState<BatteryHistory | null>(null)
   const [trends, setTrends] = useState<TrendsView | null>(null)
   const [trendsDays, setTrendsDays] = useState<number>(
     () => Number(localStorage.getItem("noop.trendsDays")) || 30,
@@ -231,6 +233,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
         sleepViewRes,
         telRes,
         trendsRes,
+        batteryHistoryRes,
       ] = await Promise.all([
         apiGet<Overview>(`/debug/overview?date=${d}`, token),
         // Bumped from 200 → 5000 so the Sleep tab's day-timeline chart
@@ -247,6 +250,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
         apiGet<SleepView>(`/views/sleep?date=${d}`, token),
         apiGet<Telemetry>("/debug/telemetry?limit=200", token).catch(() => null),
         apiGet<TrendsView>(`/views/trends?days=${trendsDays}`, token).catch(() => null),
+        apiGet<BatteryHistory>("/debug/battery-history?hours=24", token).catch(() => null),
       ])
       setOverview(ovRes)
       setRaw(rawRes)
@@ -258,6 +262,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
       setSleepView(sleepViewRes)
       setTelemetry(telRes)
       setTrends(trendsRes)
+      setBatteryHistory(batteryHistoryRes)
       setLastRefreshedAt(new Date().toISOString())
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed")
@@ -269,7 +274,12 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
   const refreshTelemetry = useCallback(async () => {
     if (!token) return
     try {
-      setTelemetry(await apiGet<Telemetry>("/debug/telemetry?limit=200", token))
+      const [tel, batt] = await Promise.all([
+        apiGet<Telemetry>("/debug/telemetry?limit=200", token),
+        apiGet<BatteryHistory>("/debug/battery-history?hours=24", token).catch(() => null),
+      ])
+      setTelemetry(tel)
+      if (batt) setBatteryHistory(batt)
     } catch {
       // swallow — keep last good value
     }
@@ -475,6 +485,7 @@ function Inspector({ token, onLogout }: { token: string; onLogout: () => void })
           {tab === "telemetry" && (
             <TelemetryTab
               telemetry={telemetry}
+              batteryHistory={batteryHistory}
               live={live}
               toggleLive={() => setLive((v) => !v)}
             />

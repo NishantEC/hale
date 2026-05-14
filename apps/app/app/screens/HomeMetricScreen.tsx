@@ -139,7 +139,7 @@ export const HomeMetricScreen: FC = () => {
               <MetricRow label="Skin Temp" value={homeView?.activities.skinTemp ?? "--"} />
               <MetricRow label="Skin Temp Delta" value={homeView?.activities.skinTempDelta ?? "--"} />
               <MetricRow label="Strain" value={homeView?.activities.strain ?? "--"} />
-              <MetricRow label="Recovery Index" value={homeView?.activities.recoveryIndex ?? "--"} />
+              <MetricRow label="Recovery" value={homeView?.todayOverview.dailyBalance ?? "--"} />
               <MetricRow label="Training Load" value={homeView?.activities.trainingLoad ?? "--"} />
               <MetricRow label="Load Risk" value={homeView?.activities.trainingLoadRiskZone ?? "--"} />
               <MetricRow label="SpO₂ Dips" value={homeView?.activities.spo2Dips ?? "--"} />

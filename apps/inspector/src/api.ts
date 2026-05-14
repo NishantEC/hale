@@ -294,6 +294,26 @@ export type Telemetry = {
   };
 };
 
+export type BatteryHistory = {
+  hours: number;
+  count: number;
+  latest: {
+    socPct: number | null;
+    voltageMv: number | null;
+    temperatureC: number | null;
+    iconLevel: number | null;
+    capturedAt: string | null;
+  };
+  series: Array<{
+    capturedAt: string;
+    source: "evt3" | "evt63";
+    socPct: number | null;
+    voltageMv: number | null;
+    temperatureC: number | null;
+    iconLevel: number | null;
+  }>;
+};
+
 export type PipelineRunRow = {
   id: string;
   startedAt: string;

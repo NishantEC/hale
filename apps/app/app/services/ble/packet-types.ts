@@ -4,6 +4,7 @@ export const CMD_TO_STRAP_UUID = '61080002-8d6d-82b8-614a-1c8cb0f8dcc6';
 export const CMD_FROM_STRAP_UUID = '61080003-8d6d-82b8-614a-1c8cb0f8dcc6';
 export const EVENTS_FROM_STRAP_UUID = '61080004-8d6d-82b8-614a-1c8cb0f8dcc6';
 export const DATA_FROM_STRAP_UUID = '61080005-8d6d-82b8-614a-1c8cb0f8dcc6';
+export const MEMFAULT_UUID = '61080007-8d6d-82b8-614a-1c8cb0f8dcc6';
 
 // Frame constants
 export const SOF = 0xaa;
@@ -35,6 +36,7 @@ export enum CommandNumber {
   HistoricalDataResult = 23,
   GetBatteryLevel = 26,
   RebootStrap = 29,
+  PowerCycleStrap = 32,
   GetHelloHarvard = 35,
   SetScheduledAlarm = 66,
   GetScheduledAlarm = 67,

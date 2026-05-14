@@ -41,6 +41,13 @@ import { runPipeline, fetchResults, SeriesPoint } from "@/services/api/noopClien
 import { openDatabase } from "@/services/db"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAuth } from "@/context/AuthContext"
+// Battery parsers live in a separate module so they can be unit-tested
+// without dragging in BleProvider's dependency graph.
+import {
+  parseBatteryLevel,
+  parseBatteryLevelEvent,
+  parseExtendedBatteryEvent,
+} from "@/services/ble/battery-parsers"
 
 const LAST_SYNC_KEY = "noop.lastSyncTimestamp"
 const REALTIME_HR_KEY = "noop.prefersRealtimeHeartRate"
@@ -172,47 +179,6 @@ function readUint16LE(data: Uint8Array, offset: number) {
   return data[offset] | (data[offset + 1] << 8)
 }
 
-function parseBatteryLevel(packet: WhoopPacket): number | null {
-  if (packet.command !== CommandNumber.GetBatteryLevel || packet.data.length < 4) return null
-  const raw = readUint16LE(packet.data, 2)
-  if (raw == null) return null
-  return raw / 10
-}
-
-type BatteryLevelEvent = { socPct: number | null; voltageMv: number | null }
-function parseBatteryLevelEvent(packet: WhoopPacket): BatteryLevelEvent | null {
-  if (packet.type !== PacketType.Event) return null
-  if (packet.command !== EventNumber.BatteryLevel) return null
-  if (packet.data.length < 16) return null
-  const socTenths = readUint16LE(packet.data, 10)
-  const voltageMv = readUint16LE(packet.data, 14)
-  return {
-    socPct: socTenths != null && socTenths <= 1100 ? socTenths / 10 : null,
-    voltageMv: voltageMv != null && voltageMv >= 2500 && voltageMv <= 4500 ? voltageMv : null,
-  }
-}
-
-type ExtendedBatteryEvent = {
-  voltageMv: number | null
-  temperatureC: number | null
-  iconLevel: number | null
-  socPct: number | null
-}
-function parseExtendedBatteryEvent(packet: WhoopPacket): ExtendedBatteryEvent | null {
-  if (packet.type !== PacketType.Event) return null
-  if (packet.command !== EventNumber.ExtendedBatteryInformation) return null
-  if (packet.data.length < 27) return null
-  const voltageMv = readUint16LE(packet.data, 14)
-  const tempTenths = readUint16LE(packet.data, 16)
-  const iconLevel = packet.data[21]
-  const socTenths = readUint16LE(packet.data, 25)
-  return {
-    voltageMv: voltageMv != null && voltageMv >= 2500 && voltageMv <= 4500 ? voltageMv : null,
-    temperatureC: tempTenths != null && tempTenths >= 50 && tempTenths <= 700 ? tempTenths / 10 : null,
-    iconLevel: iconLevel >= 0 && iconLevel <= 7 ? iconLevel : null,
-    socPct: socTenths != null && socTenths <= 1100 ? socTenths / 10 : null,
-  }
-}
 
 function parseVersionInfo(packet: WhoopPacket): string | null {
   if (packet.command !== CommandNumber.ReportVersionInfo) return null
@@ -255,14 +221,18 @@ function parseScheduledAlarm(packet: WhoopPacket, now = new Date()) {
 }
 
 // 0..3 stress proxy from rolling-mean HR over the live sample window.
-// Uses a hardcoded resting baseline of 60 bpm — refine later by reading
-// the user's actual baseline RHR from sleep features.
-const LIVE_STRESS_RESTING_BPM = 60
-function deriveLiveStressLevel(samples: SeriesPoint[]): number | null {
+// Baseline is sourced from BaselineProfile.restingHeartRate (per-user)
+// via dashboard's homeView.activities.baselineRhr; defaults to 60 only
+// if no baseline is available yet (cold-start / not enough nights).
+const LIVE_STRESS_RESTING_BPM_DEFAULT = 60
+function deriveLiveStressLevel(
+  samples: SeriesPoint[],
+  restingBpm: number = LIVE_STRESS_RESTING_BPM_DEFAULT,
+): number | null {
   if (samples.length === 0) return null
   const tail = samples.slice(-15)
   const mean = tail.reduce((s, p) => s + p.value, 0) / tail.length
-  const delta = mean - LIVE_STRESS_RESTING_BPM
+  const delta = mean - restingBpm
   if (delta < 10) return 0
   if (delta < 25) return 1
   if (delta < 50) return 2
@@ -291,7 +261,7 @@ function nextAlarmDate(alarmMinutes: number) {
 }
 
 export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
-  const { refreshDashboard, sleepView } = useDashboard()
+  const { refreshDashboard, sleepView, homeView } = useDashboard()
   const { isAuthenticated } = useAuth()
 
   const [deviceState, setDeviceState] = useState<BleDeviceState>(emptyDeviceState)
@@ -1012,7 +982,10 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       isRawDataStreamingEnabled: deviceState.isRawDataStreamingEnabled,
       realtimeHeartRate: deviceState.realtimeHeartRate,
       realtimeSamples: deviceState.realtimeSamples,
-      liveStressLevel: deriveLiveStressLevel(deviceState.realtimeSamples),
+      liveStressLevel: deriveLiveStressLevel(
+        deviceState.realtimeSamples,
+        homeView?.activities.baselineRhr ?? LIVE_STRESS_RESTING_BPM_DEFAULT,
+      ),
       strapAlarmAt: deviceState.strapAlarmAt,
       strapAlarmArmed: deviceState.strapAlarmArmed,
       isWorn: deviceState.isWorn,

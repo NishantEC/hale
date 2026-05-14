@@ -1,5 +1,5 @@
 import { FC, useCallback } from "react"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import {
   ScrollView,
   Switch,
@@ -60,7 +60,7 @@ export const SleepPlannerScreen: FC = () => {
             onPress={() => router.back()}
             style={themed($closeButton)}
           >
-            <Ionicons name="close" size={18} color={colors.text} />
+            <PhosphorIcon name="close" size={18} color={colors.text} />
           </TouchableOpacity>
         </View>
         <Text text="No sleep data" size="sm" style={themed($muted)} />
@@ -81,7 +81,7 @@ export const SleepPlannerScreen: FC = () => {
           onPress={() => router.back()}
           style={themed($closeButton)}
         >
-          <Ionicons name="close" size={18} color={colors.text} />
+          <PhosphorIcon name="close" size={18} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -112,7 +112,7 @@ export const SleepPlannerScreen: FC = () => {
         <View style={themed($settingCard)}>
           <View style={themed($settingCardTop)}>
             <View style={themed($settingIcon)}>
-              <Ionicons name="moon-outline" size={18} color={colors.iconDefault} />
+              <PhosphorIcon name="moon-outline" size={18} color={colors.iconDefault} />
             </View>
             <View style={themed($settingCopy)}>
               <Text text="Target Sleep" size="xs" weight="semiBold" style={themed($cardLabel)} />
@@ -141,7 +141,7 @@ export const SleepPlannerScreen: FC = () => {
         <View style={themed($settingCard)}>
           <View style={themed($settingCardTop)}>
             <View style={themed($settingIcon)}>
-              <Ionicons name="sunny-outline" size={18} color={colors.iconDefault} />
+              <PhosphorIcon name="sunny-outline" size={18} color={colors.iconDefault} />
             </View>
             <View style={themed($settingCopy)}>
               <Text text="Wake Target" size="xs" weight="semiBold" style={themed($cardLabel)} />
@@ -187,7 +187,7 @@ export const SleepPlannerScreen: FC = () => {
           <View style={themed($settingCard)}>
             <View style={themed($settingCardTop)}>
               <View style={themed($settingIcon)}>
-                <Ionicons name="alarm-outline" size={18} color={colors.iconDefault} />
+                <PhosphorIcon name="alarm-outline" size={18} color={colors.iconDefault} />
               </View>
               <View style={themed($settingCopy)}>
                 <Text text="Alarm Time" size="xs" weight="semiBold" style={themed($cardLabel)} />

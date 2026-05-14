@@ -90,6 +90,26 @@ export interface RealtimeSamplePayload {
   capturedAt: string;
 }
 
+export interface CommandResponsePayload {
+  deviceId: string;
+  command: number;
+  commandName: string;
+  sequence: number;
+  rawPayload: string | null;
+  capturedAt: string;
+}
+
+export interface ImuRecordPayload {
+  timestamp: string;
+  accelX: number;
+  accelY: number;
+  accelZ: number;
+  gyroX: number;
+  gyroY: number;
+  gyroZ: number;
+  source: 'realtime' | 'historical';
+}
+
 export interface ConsoleLogPayload {
   deviceId: string;
   message: string;
@@ -111,6 +131,24 @@ export function createRealtimeForwarder() {
     '/telemetry/realtime',
     'samples',
     { flushIntervalMs: 15_000, flushThreshold: 200, label: 'RealtimeForwarder' },
+  );
+}
+
+export function createCommandResponseForwarder() {
+  return new TelemetryForwarder<CommandResponsePayload>(
+    '/telemetry/command-responses',
+    'responses',
+    { flushIntervalMs: 5_000, flushThreshold: 100, label: 'CommandResponseForwarder' },
+  );
+}
+
+// IMU streams at ~52 Hz × 100 samples per packet, so flush frequently
+// with a larger batch to keep network overhead in check.
+export function createImuForwarder() {
+  return new TelemetryForwarder<ImuRecordPayload>(
+    '/telemetry/imu',
+    'records',
+    { flushIntervalMs: 10_000, flushThreshold: 2_000, label: 'ImuForwarder' },
   );
 }
 
@@ -208,6 +246,20 @@ export class ConsoleLogLineForwarder {
       console.log('[StrapLog]', trimmed);
       this.inner.push({ deviceId: this.deviceId, message: trimmed, capturedAt: now });
     }
+  }
+
+  // Bypass the line buffer for an already-complete line. MEMFAULT
+  // chunks (and similar) contain no \n, so push() would silently
+  // accumulate them forever instead of flushing.
+  pushLine(line: string) {
+    if (!this.deviceId) return;
+    const trimmed = line.replace(/\0/g, '').trim();
+    if (trimmed.length === 0) return;
+    this.inner.push({
+      deviceId: this.deviceId,
+      message: trimmed,
+      capturedAt: new Date().toISOString(),
+    });
   }
 
   stop() {

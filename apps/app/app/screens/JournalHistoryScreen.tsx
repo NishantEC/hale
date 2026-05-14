@@ -7,7 +7,7 @@ import {
   ViewStyle,
   useWindowDimensions,
 } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
 import { router } from "expo-router"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -233,7 +233,7 @@ export const JournalHistoryScreen: FC = () => {
       hitSlop={12}
       style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
     >
-      <Ionicons name="add" size={20} color={colors.text} />
+      <PhosphorIcon name="add" size={20} color={colors.text} />
       <Text text="Log" size="xs" style={{ color: colors.text }} />
     </TouchableOpacity>
   )
@@ -302,7 +302,7 @@ export const JournalHistoryScreen: FC = () => {
                 borderRadius: 12,
               }}
             >
-              <Ionicons name="journal-outline" size={32} color={colors.iconDim} />
+              <PhosphorIcon name="journal-outline" size={32} color={colors.iconDim} />
               <Text
                 text="Nothing logged yet today."
                 size="sm"
@@ -361,7 +361,7 @@ function EntryRow({
 }) {
   const colors = LOCAL_THEME.colors
   const factor = JOURNAL_FACTORS.find((f) => f.tag === entry.factorTag)
-  const iconName: keyof typeof Ionicons.glyphMap = factor?.icon ?? "ellipse-outline"
+  const iconName: PhosphorIconName = factor?.icon ?? "ellipse-outline"
   const color = factor?.color ?? colors.tint
   const label = factor?.label ?? entry.factorTag
   const detail = entryDetail(entry)
@@ -388,7 +388,7 @@ function EntryRow({
           backgroundColor: `${color}1F`,
         }}
       >
-        <Ionicons name={iconName} size={18} color={color} />
+        <PhosphorIcon name={iconName} size={18} color={color} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text text={label} size="sm" weight="semiBold" style={{ color: colors.text }} />
@@ -409,7 +409,7 @@ function EntryRow({
       <View style={{ alignItems: "flex-end", gap: 6 }}>
         <Text text={formatTime(entry.timestamp)} size="xxs" style={{ color: colors.textMuted }} />
         <TouchableOpacity onPress={() => onDelete(entry.id)} hitSlop={8}>
-          <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
+          <PhosphorIcon name="trash-outline" size={14} color={colors.textMuted} />
         </TouchableOpacity>
       </View>
     </View>

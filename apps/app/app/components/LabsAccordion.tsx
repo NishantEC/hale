@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { LayoutAnimation, TouchableOpacity, View } from "react-native"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import { Text } from "@/components/Text"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { useColorMode } from "@/context/ThemeContext"
@@ -32,7 +32,7 @@ export function LabsAccordion({ rows, defaultOpen = false }: LabsAccordionProps)
         style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", paddingVertical: 12, gap: 6 }}
       >
         <Text text="Labs" size="xs" style={{ color: colors.textDim, letterSpacing: 0.6 }} />
-        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={14} color={colors.textDim} />
+        <PhosphorIcon name={open ? "chevron-up" : "chevron-down"} size={14} color={colors.textDim} />
       </TouchableOpacity>
       {open ? (
         <View style={{ paddingBottom: 12 }}>

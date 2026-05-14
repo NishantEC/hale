@@ -369,7 +369,7 @@ export class DebugService {
       const { start, end } = calendarDayBounds(key, timeZone);
       const [detection, count] = await Promise.all([
         this.sleepDetectionRepo.findOne({
-          where: { userId, nightDate: Equal(key) },
+          where: { userId, nightDate: Between(start, end) },
           select: ['id'],
         }),
         this.rawSensorRepo.count({

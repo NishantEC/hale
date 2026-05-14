@@ -227,6 +227,12 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
       dateLabel: `${selectedDateTitle} · ${selectedDateSubtitle}`,
     },
     activities: {
+      hrv: feature?.rmssd != null ? `${Math.round(feature.rmssd)}` : "--",
+      hrvMs: feature?.rmssd ?? null,
+      restingHr:
+        feature?.restingHeartRate != null ? `${Math.round(feature.restingHeartRate)}` : "--",
+      baselineRhr: null,
+      odiPerHour: (metric as any)?.odiPerHour ?? null,
       stress: metric?.stressAverage != null ? `${Math.round(metric.stressAverage)}` : "--",
       spo2: metric?.spo2Average != null ? `${metric.spo2Average.toFixed(1)}%` : "--",
       skinTemp:
@@ -235,10 +241,6 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
       skinTempDelta:
         metric?.skinTempDeltaCelsius != null
           ? `${metric.skinTempDeltaCelsius.toFixed(1)}C`
-          : "--",
-      recoveryIndex:
-        (metric as any)?.recoveryIndex != null
-          ? `${Math.round((metric as any).recoveryIndex)}`
           : "--",
       trainingLoad:
         (metric as any)?.trainingLoadRatio != null
@@ -386,6 +388,9 @@ function buildLegacySleepView(results: PipelineResults, selectedKey: string): Sl
       timestamp: new Date(item.dayDate).toISOString(),
       value: item.dailyBalance ?? 0,
     })),
+    hrvTrend: (results.nightFeatures ?? [])
+      .filter((f) => f.rmssd != null && f.rmssd > 0)
+      .map((f) => ({ timestamp: new Date(f.nightDate).toISOString(), value: f.rmssd })),
     metrics: [
       {
         label: "Recovery",

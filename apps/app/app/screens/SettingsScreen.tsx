@@ -13,7 +13,7 @@ import {
 } from "react-native"
 import Constants from "expo-constants"
 import { router } from "expo-router"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -26,7 +26,7 @@ import { DateOfBirthSheet } from "@/components/DateOfBirthSheet"
 import { fetchProfile, updateProfile, type UserProfileData } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
-type IconName = keyof typeof Ionicons.glyphMap
+type IconName = PhosphorIconName
 
 export const SettingsScreen: FC = () => {
   const colors = LOCAL_THEME.colors
@@ -196,7 +196,7 @@ export const SettingsScreen: FC = () => {
     const content = (
       <View style={$row}>
         {icon ? (
-          <Ionicons
+          <PhosphorIcon
             name={icon}
             size={20}
             color={resolvedIconColor}
@@ -227,7 +227,7 @@ export const SettingsScreen: FC = () => {
           />
         ) : null}
         {chevron ? (
-          <Ionicons
+          <PhosphorIcon
             name="chevron-forward"
             size={14}
             color={colors.textMuted}
@@ -271,7 +271,7 @@ export const SettingsScreen: FC = () => {
           pressed && !active && { opacity: 0.75 },
         ]}
       >
-        <Ionicons
+        <PhosphorIcon
           name={icon}
           size={14}
           color={active ? colors.onPrimary : colors.textDim}

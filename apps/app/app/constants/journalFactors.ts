@@ -1,4 +1,4 @@
-import type { Ionicons } from "@expo/vector-icons"
+import type { PhosphorIconName } from "@/components/PhosphorIcon"
 
 export type InputType =
   | { kind: "toggle" } // yes/no — logs with intensity=1
@@ -8,7 +8,7 @@ export type InputType =
 export interface FactorDefinition {
   tag: string
   label: string
-  icon: keyof typeof Ionicons.glyphMap
+  icon: PhosphorIconName
   color: string
   input: InputType
 }

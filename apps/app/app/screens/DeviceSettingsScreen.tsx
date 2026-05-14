@@ -1,4 +1,5 @@
-import { FC, ReactNode, useEffect, useMemo, useRef } from "react"
+import { FC, useEffect, useMemo, useRef } from "react"
+import { BatteryPanel } from "@/components/BatteryPanel"
 import { PhosphorIcon } from "@/components/PhosphorIcon"
 import {
   Animated,
@@ -173,26 +174,12 @@ export const DeviceSettingsScreen: FC = () => {
           style={[themed($batteryCaption), { color: batteryColor, opacity: 0.6 }]}
         />
 
-        {isConnected && (batteryVoltageMv != null || batteryTemperatureC != null || batteryIconLevel != null) ? (
-          <View style={themed($batteryDetailsRow)}>
-            <BatteryDetail
-              value={batteryVoltageMv != null ? `${(batteryVoltageMv / 1000).toFixed(3)}` : "--"}
-              unit="V"
-              label="Voltage"
-            />
-            <View style={themed($batteryDetailDivider)} />
-            <BatteryDetail
-              value={batteryTemperatureC != null ? batteryTemperatureC.toFixed(1) : "--"}
-              unit="°C"
-              label="Temp"
-              warning={batteryTemperatureC != null && batteryTemperatureC >= 40}
-            />
-            <View style={themed($batteryDetailDivider)} />
-            <BatteryDetail
-              value={batteryIconLevel != null ? <LevelBar level={batteryIconLevel} /> : "--"}
-              label="Level"
-            />
-          </View>
+        {isConnected ? (
+          <BatteryPanel
+            voltageMv={batteryVoltageMv}
+            temperatureC={batteryTemperatureC}
+            iconLevel={batteryIconLevel}
+          />
         ) : null}
       </View>
 
@@ -338,74 +325,6 @@ export const DeviceSettingsScreen: FC = () => {
   )
 }
 
-function BatteryDetail({
-  value,
-  unit,
-  label,
-  warning = false,
-}: {
-  value: ReactNode
-  unit?: string
-  label: string
-  warning?: boolean
-}) {
-  const colors = LOCAL_THEME.colors
-  const valueColor = warning ? colors.statusAmber : colors.text
-  return (
-    <View style={$batteryDetailCell}>
-      <View style={$batteryDetailValueRow}>
-        {typeof value === "string" ? (
-          <Text text={value} size="sm" weight="bold" style={{ color: valueColor }} />
-        ) : (
-          value
-        )}
-        {unit ? (
-          <Text text={unit} size="xxs" weight="semiBold" style={{ color: colors.textMuted, marginLeft: 2 }} />
-        ) : null}
-      </View>
-      <Text text={label} size="xxs" style={{ color: colors.textMuted, marginTop: 2 }} />
-    </View>
-  )
-}
-
-function LevelBar({ level }: { level: number }) {
-  const colors = LOCAL_THEME.colors
-  const segments = 7
-  const filled = Math.max(0, Math.min(segments, level))
-  return (
-    <View style={$levelBarRow}>
-      {Array.from({ length: segments }).map((_, i) => (
-        <View
-          key={i}
-          style={{
-            backgroundColor: i < filled ? colors.text : colors.divider,
-            borderRadius: 1,
-            height: 10,
-            width: 3,
-          }}
-        />
-      ))}
-    </View>
-  )
-}
-
-const $batteryDetailValueRow: ViewStyle = {
-  alignItems: "baseline",
-  flexDirection: "row",
-}
-
-const $batteryDetailCell: ViewStyle = {
-  alignItems: "center",
-  flex: 1,
-}
-
-const $levelBarRow: ViewStyle = {
-  alignItems: "center",
-  flexDirection: "row",
-  gap: 2,
-  height: 14,
-}
-
 // ═══════════════════════ Styles ═══════════════════════
 
 const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
@@ -515,23 +434,6 @@ const $batteryCaption: ThemedStyle<TextStyle> = ({ colors }) => ({
   color: colors.textMuted,
 })
 
-const $batteryDetailsRow: ThemedStyle<ViewStyle> = ({ colors, spacing }) => ({
-  alignItems: "center",
-  backgroundColor: colors.surfaceCard,
-  borderColor: colors.surfaceCardBorder,
-  borderRadius: 14,
-  borderWidth: 1,
-  flexDirection: "row",
-  marginTop: spacing.md,
-  paddingHorizontal: spacing.sm,
-  paddingVertical: spacing.xs,
-})
-
-const $batteryDetailDivider: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  backgroundColor: colors.divider,
-  height: 24,
-  width: 1,
-})
 
 // Info rows
 const $infoSection: ThemedStyle<ViewStyle> = () => ({

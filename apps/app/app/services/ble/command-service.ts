@@ -105,6 +105,10 @@ export class CommandService {
     return this.buildCommand(CommandNumber.RebootStrap, new Uint8Array([0x00]));
   }
 
+  buildPowerCycle(): string {
+    return this.buildCommand(CommandNumber.PowerCycleStrap, new Uint8Array([0x00]));
+  }
+
   buildStartRawData(): string {
     return this.buildCommand(CommandNumber.StartRawData, new Uint8Array([0x01]));
   }

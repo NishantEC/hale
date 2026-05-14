@@ -165,8 +165,8 @@ export const StrainActivityScreen: FC = () => {
         <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
           <VitalCard
             label="Recovery"
-            value={homeView?.activities.recoveryIndex ?? "--"}
-            unit="ms"
+            value={homeView?.todayOverview.dailyBalance ?? "--"}
+            unit="%"
             delta={null}
           />
           <VitalCard
