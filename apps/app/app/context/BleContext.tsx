@@ -18,11 +18,14 @@ import {
   CommandService,
   ConnectionState,
   ConsoleLogLineForwarder,
+  createCommandResponseForwarder,
   createEventForwarder,
+  createImuForwarder,
   DownloadProgress,
   EventNumber,
   HistoryDownloader,
   PacketType,
+  parseIMUPacket,
   RealtimeSessionForwarder,
   ScannedDevice,
   uint8ArrayToBase64,
@@ -54,6 +57,9 @@ type BleDeviceState = {
   connectionState: ConnectionState
   deviceName: string | null
   batteryLevel: number | null
+  batteryVoltageMv: number | null
+  batteryTemperatureC: number | null
+  batteryIconLevel: number | null
   isCharging: boolean
   isBusy: boolean
   isRealtimeHeartRateEnabled: boolean
@@ -73,6 +79,9 @@ export type BleContextValue = {
   connectionState: ConnectionState
   deviceName: string | null
   batteryLevel: number | null
+  batteryVoltageMv: number | null
+  batteryTemperatureC: number | null
+  batteryIconLevel: number | null
   isCharging: boolean
   isBusy: boolean
   isRealtimeHeartRateEnabled: boolean
@@ -80,6 +89,7 @@ export type BleContextValue = {
   isRawDataStreamingEnabled: boolean
   realtimeHeartRate: number | null
   realtimeSamples: SeriesPoint[]
+  liveStressLevel: number | null
   strapAlarmAt: string | null
   strapAlarmArmed: boolean
   isWorn: boolean
@@ -103,6 +113,8 @@ export type BleContextValue = {
   armAlarm: () => Promise<void>
   disarmAlarm: () => Promise<void>
   testAlarm: () => Promise<void>
+  rebootStrap: () => Promise<void>
+  powerCycleStrap: () => Promise<void>
   clearError: () => void
 }
 
@@ -110,6 +122,16 @@ const BleContext = createContext<BleContextValue | null>(null)
 
 const commandService = new CommandService()
 const eventForwarder = createEventForwarder()
+// Both forwarders are write-only as of this session — IMU produces
+// ~45M rows/day per active strap with no downstream reader, and
+// command-responses captures every cmd response (low volume, but no
+// consumer yet either). Default off until a reader/retention exists.
+// Set EXPO_PUBLIC_ENABLE_IMU_INGEST=1 / EXPO_PUBLIC_ENABLE_CMD_RESP_INGEST=1
+// to turn back on locally.
+const IMU_INGEST_ENABLED = process.env.EXPO_PUBLIC_ENABLE_IMU_INGEST === "1"
+const CMD_RESP_INGEST_ENABLED = process.env.EXPO_PUBLIC_ENABLE_CMD_RESP_INGEST === "1"
+const commandResponseForwarder = createCommandResponseForwarder()
+const imuForwarder = createImuForwarder()
 const consoleLogForwarder = new ConsoleLogLineForwarder()
 const realtimeForwarder = new RealtimeSessionForwarder()
 
@@ -117,6 +139,9 @@ const emptyDeviceState: BleDeviceState = {
   connectionState: "disconnected",
   deviceName: null,
   batteryLevel: null,
+  batteryVoltageMv: null,
+  batteryTemperatureC: null,
+  batteryIconLevel: null,
   isCharging: false,
   isBusy: false,
   isRealtimeHeartRateEnabled: true,
@@ -147,31 +172,46 @@ function readUint16LE(data: Uint8Array, offset: number) {
   return data[offset] | (data[offset + 1] << 8)
 }
 
-function normalizeBatteryRaw(raw: number): number | null {
-  if (raw <= 100) return raw
-  if (raw <= 1000) return Math.round(raw / 10)
-  if (raw >= 3000 && raw <= 4300) {
-    return Math.round(Math.max(0, Math.min(100, ((raw - 3300) / 900) * 100)))
-  }
-  if (raw <= 10000) return Math.round(raw / 100)
-  if (raw <= 100000) return Math.round(raw / 1000)
-  return null
+function parseBatteryLevel(packet: WhoopPacket): number | null {
+  if (packet.command !== CommandNumber.GetBatteryLevel || packet.data.length < 4) return null
+  const raw = readUint16LE(packet.data, 2)
+  if (raw == null) return null
+  return raw / 10
 }
 
-function parseBatteryLevel(packet: WhoopPacket) {
-  if (packet.command !== CommandNumber.GetBatteryLevel || packet.data.length < 2) return null
-
-  const rawAt0 = readUint16LE(packet.data, 0)
-  const normAt0 = rawAt0 != null ? normalizeBatteryRaw(rawAt0) : null
-
-  if (packet.data.length >= 4) {
-    const rawAt2 = readUint16LE(packet.data, 2)
-    const normAt2 = rawAt2 != null ? normalizeBatteryRaw(rawAt2) : null
-    if (normAt0 != null && normAt2 != null) return Math.min(normAt0, normAt2)
-    return normAt2 ?? normAt0
+type BatteryLevelEvent = { socPct: number | null; voltageMv: number | null }
+function parseBatteryLevelEvent(packet: WhoopPacket): BatteryLevelEvent | null {
+  if (packet.type !== PacketType.Event) return null
+  if (packet.command !== EventNumber.BatteryLevel) return null
+  if (packet.data.length < 16) return null
+  const socTenths = readUint16LE(packet.data, 10)
+  const voltageMv = readUint16LE(packet.data, 14)
+  return {
+    socPct: socTenths != null && socTenths <= 1100 ? socTenths / 10 : null,
+    voltageMv: voltageMv != null && voltageMv >= 2500 && voltageMv <= 4500 ? voltageMv : null,
   }
+}
 
-  return normAt0
+type ExtendedBatteryEvent = {
+  voltageMv: number | null
+  temperatureC: number | null
+  iconLevel: number | null
+  socPct: number | null
+}
+function parseExtendedBatteryEvent(packet: WhoopPacket): ExtendedBatteryEvent | null {
+  if (packet.type !== PacketType.Event) return null
+  if (packet.command !== EventNumber.ExtendedBatteryInformation) return null
+  if (packet.data.length < 27) return null
+  const voltageMv = readUint16LE(packet.data, 14)
+  const tempTenths = readUint16LE(packet.data, 16)
+  const iconLevel = packet.data[21]
+  const socTenths = readUint16LE(packet.data, 25)
+  return {
+    voltageMv: voltageMv != null && voltageMv >= 2500 && voltageMv <= 4500 ? voltageMv : null,
+    temperatureC: tempTenths != null && tempTenths >= 50 && tempTenths <= 700 ? tempTenths / 10 : null,
+    iconLevel: iconLevel >= 0 && iconLevel <= 7 ? iconLevel : null,
+    socPct: socTenths != null && socTenths <= 1100 ? socTenths / 10 : null,
+  }
 }
 
 function parseVersionInfo(packet: WhoopPacket): string | null {
@@ -214,6 +254,21 @@ function parseScheduledAlarm(packet: WhoopPacket, now = new Date()) {
   return null
 }
 
+// 0..3 stress proxy from rolling-mean HR over the live sample window.
+// Uses a hardcoded resting baseline of 60 bpm — refine later by reading
+// the user's actual baseline RHR from sleep features.
+const LIVE_STRESS_RESTING_BPM = 60
+function deriveLiveStressLevel(samples: SeriesPoint[]): number | null {
+  if (samples.length === 0) return null
+  const tail = samples.slice(-15)
+  const mean = tail.reduce((s, p) => s + p.value, 0) / tail.length
+  const delta = mean - LIVE_STRESS_RESTING_BPM
+  if (delta < 10) return 0
+  if (delta < 25) return 1
+  if (delta < 50) return 2
+  return 3
+}
+
 function parseRealtimeHeartRate(packet: WhoopPacket) {
   if (packet.type !== PacketType.RealtimeData || packet.data.length <= 5) return null
   const heartRate = packet.data[5]
@@ -251,6 +306,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const clearError = useCallback(() => setError(null), [])
 
+  // Cheap reads only. Safe to call on every screen focus.
   const refreshDeviceState = useCallback(async () => {
     if (bleManager.connectionState !== "ready") return
     try {
@@ -259,11 +315,23 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       await bleManager.writeCommand(commandService.buildGetScheduledAlarm())
       await bleManager.writeCommand(commandService.buildReportVersionInfo())
       await bleManager.writeCommand(commandService.buildGetClock())
+    } catch {
+      // Best-effort.
+    }
+  }, [])
+
+  // Sticky modes — Realtime HR, generic HR profile, raw data streaming —
+  // are remembered by the strap firmware. Re-issuing them costs BLE round
+  // trips and can re-init the optical sensor. Call this exactly once per
+  // connect (or when the user explicitly toggles a setting elsewhere).
+  const bootstrapStrapModes = useCallback(async () => {
+    if (bleManager.connectionState !== "ready") return
+    try {
       await bleManager.writeCommand(commandService.buildToggleRealtimeHR(true))
       await bleManager.writeCommand(commandService.buildToggleGenericHRProfile(true))
       await bleManager.writeCommand(commandService.buildStartRawData())
     } catch {
-      // Keep device refresh best-effort to avoid interrupting screen load.
+      // Best-effort.
     }
   }, [])
 
@@ -299,12 +367,13 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
           ...current,
           deviceName: bleManager.getDeviceName() || "WHOOP",
         }))
+        await bootstrapStrapModes()
         await refreshDeviceState()
       } catch (nextError: any) {
         setError(nextError?.message ?? "Connection failed")
       }
     },
-    [refreshDeviceState],
+    [bootstrapStrapModes, refreshDeviceState],
   )
 
   const disconnect = useCallback(async () => {
@@ -377,9 +446,13 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     const now = Date.now()
     if (now - lastAutoSyncAttemptAt.current < 60 * 1000) return
 
+    // Strap flash holds many hours / days of history; the on-strap circular
+    // buffer wraps far slower than our previous 3-minute cadence. Bumping
+    // to 15 min cuts BLE chatter (and the per-pull strap-side burst work)
+    // ~5x without risking buffer wrap.
     if (deviceState.lastSyncAt) {
       const lastSyncMs = new Date(deviceState.lastSyncAt).getTime()
-      if (!Number.isNaN(lastSyncMs) && now - lastSyncMs < 3 * 60 * 1000) {
+      if (!Number.isNaN(lastSyncMs) && now - lastSyncMs < 15 * 60 * 1000) {
         return
       }
     }
@@ -462,6 +535,30 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     [persistPreference],
   )
 
+  const smartWakeTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const smartWakeFiredFor = useRef<string | null>(null)
+  // The interval body reads the latest realtime samples via this ref to
+  // avoid stale-closure capture. The ref is kept current by a useEffect
+  // below; armAlarm itself doesn't need to depend on the array.
+  const realtimeSamplesRef = useRef<SeriesPoint[]>([])
+
+  // Keep ref current. setDeviceState is fast and reading the latest
+  // value here is cheap.
+  useEffect(() => {
+    realtimeSamplesRef.current = deviceState.realtimeSamples
+  }, [deviceState.realtimeSamples])
+
+  // Cleanup on unmount — the existing big-useEffect return doesn't
+  // cover this timer because it lives on a separate ref.
+  useEffect(() => {
+    return () => {
+      if (smartWakeTimer.current) {
+        clearInterval(smartWakeTimer.current)
+        smartWakeTimer.current = null
+      }
+    }
+  }, [])
+
   const armAlarm = useCallback(async () => {
     if (bleManager.connectionState !== "ready" || !sleepView) {
       setError("Connect your WHOOP strap before arming the strap alarm.")
@@ -469,6 +566,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     }
 
     const alarmDate = nextAlarmDate(sleepView.planner.alarmMinutes)
+    const smartWake = sleepView.planner.smartWakeEnabled
 
     try {
       await bleManager.writeCommand(commandService.buildSetScheduledAlarm(alarmDate))
@@ -478,6 +576,54 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         strapAlarmAt: alarmDate.toISOString(),
         strapAlarmArmed: true,
       }))
+
+      // Smart-wake monitor (v1, foreground-only on iOS).
+      // In the 30-min window before the scheduled alarm, poll realtime
+      // HR samples each minute. If recent HR mean rises > 10 bpm above
+      // the session minimum, fire the strap alarm early (proxy for
+      // light/REM stage). Limitations to address later:
+      //   • iOS suspends JS setInterval — only fires when app is foreground
+      //     or Android FGS is active. Lift onto native scheduler post v1.
+      //   • The ~30s realtime buffer is short for physiological wake
+      //     detection; real smart-wake uses 5-10 min rolling slopes.
+      //     Good enough for a movement-spike proxy; expect false negatives.
+      if (smartWakeTimer.current) {
+        clearInterval(smartWakeTimer.current)
+        smartWakeTimer.current = null
+      }
+      if (smartWake) {
+        const WINDOW_MS = 30 * 60 * 1000
+        const windowStart = alarmDate.getTime() - WINDOW_MS
+        const alarmKey = alarmDate.toISOString()
+        smartWakeFiredFor.current = null
+        smartWakeTimer.current = setInterval(async () => {
+          const now = Date.now()
+          if (now < windowStart) return
+          if (now >= alarmDate.getTime()) {
+            if (smartWakeTimer.current) {
+              clearInterval(smartWakeTimer.current)
+              smartWakeTimer.current = null
+            }
+            return
+          }
+          if (smartWakeFiredFor.current === alarmKey) return
+          // Read latest samples through the ref to avoid stale capture
+          const samples = realtimeSamplesRef.current.slice(-30)
+          if (samples.length < 10) return
+          const values = samples.map((s) => s.value).filter((v) => v > 0)
+          if (values.length < 10) return
+          const mean = values.reduce((a, b) => a + b, 0) / values.length
+          const min = Math.min(...values)
+          if (mean - min < 10) return
+          try {
+            await bleManager.writeCommand(commandService.buildRunAlarm())
+            smartWakeFiredFor.current = alarmKey
+          } catch {
+            // best-effort — fall back to scheduled fire
+          }
+        }, 60 * 1000)
+      }
+
       await refreshDashboard()
     } catch (nextError: any) {
       setError(nextError?.message ?? "Failed to arm strap alarm")
@@ -489,6 +635,12 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       setError("Connect your WHOOP strap before disarming the strap alarm.")
       return
     }
+
+    if (smartWakeTimer.current) {
+      clearInterval(smartWakeTimer.current)
+      smartWakeTimer.current = null
+    }
+    smartWakeFiredFor.current = null
 
     try {
       await bleManager.writeCommand(commandService.buildClearScheduledAlarm())
@@ -514,6 +666,30 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       await bleManager.writeCommand(commandService.buildRunAlarm())
     } catch (nextError: any) {
       setError(nextError?.message ?? "Failed to trigger strap alarm")
+    }
+  }, [])
+
+  const rebootStrap = useCallback(async () => {
+    if (bleManager.connectionState !== "ready") {
+      setError("Connect your WHOOP strap before rebooting.")
+      return
+    }
+    try {
+      await bleManager.writeCommand(commandService.buildReboot())
+    } catch (nextError: any) {
+      setError(nextError?.message ?? "Failed to reboot strap")
+    }
+  }, [])
+
+  const powerCycleStrap = useCallback(async () => {
+    if (bleManager.connectionState !== "ready") {
+      setError("Connect your WHOOP strap before power-cycling.")
+      return
+    }
+    try {
+      await bleManager.writeCommand(commandService.buildPowerCycle())
+    } catch (nextError: any) {
+      setError(nextError?.message ?? "Failed to power-cycle strap")
     }
   }, [])
 
@@ -570,6 +746,8 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
       if (connectionState === "ready") {
         eventForwarder.start()
+        if (CMD_RESP_INGEST_ENABLED) commandResponseForwarder.start()
+        if (IMU_INGEST_ENABLED) imuForwarder.start()
         realtimeForwarder.startSession(bleManager.getDeviceId() || "unknown")
         consoleLogForwarder.start(bleManager.getDeviceId() || "unknown")
         refreshDeviceState().catch(() => undefined)
@@ -601,6 +779,18 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         packet.type === PacketType.CommandResponse ? parseBatteryLevel(packet) : null
       if (parsedBattery != null) {
         setDeviceState((current) => ({ ...current, batteryLevel: parsedBattery }))
+      }
+
+      if (packet.type === PacketType.CommandResponse && CMD_RESP_INGEST_ENABLED) {
+        const deviceId = bleManager.getDeviceId() || "unknown"
+        commandResponseForwarder.push({
+          deviceId,
+          command: packet.command,
+          commandName: CommandNumber[packet.command] ?? `unknown_${packet.command}`,
+          sequence: packet.sequence,
+          rawPayload: packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
+          capturedAt: new Date().toISOString(),
+        })
       }
 
       if (
@@ -638,7 +828,26 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
 
       if (packet.type === PacketType.Event) {
-        if (packet.command === EventNumber.ChargingOn) {
+        if (packet.command === EventNumber.BatteryLevel) {
+          const parsed = parseBatteryLevelEvent(packet)
+          if (parsed) {
+            setDeviceState((current) => ({
+              ...current,
+              batteryLevel: parsed.socPct ?? current.batteryLevel,
+              batteryVoltageMv: parsed.voltageMv ?? current.batteryVoltageMv,
+            }))
+          }
+        } else if (packet.command === EventNumber.ExtendedBatteryInformation) {
+          const parsed = parseExtendedBatteryEvent(packet)
+          if (parsed) {
+            setDeviceState((current) => ({
+              ...current,
+              batteryVoltageMv: parsed.voltageMv ?? current.batteryVoltageMv,
+              batteryTemperatureC: parsed.temperatureC ?? current.batteryTemperatureC,
+              batteryIconLevel: parsed.iconLevel ?? current.batteryIconLevel,
+            }))
+          }
+        } else if (packet.command === EventNumber.ChargingOn) {
           setDeviceState((current) => ({ ...current, isCharging: true }))
         } else if (packet.command === EventNumber.ChargingOff) {
           setDeviceState((current) => ({ ...current, isCharging: false }))
@@ -690,12 +899,27 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
 
       if (
-        packet.type === PacketType.RealtimeIMUStream ||
-        packet.type === PacketType.HistoricalIMUStream
+        IMU_INGEST_ENABLED &&
+        (packet.type === PacketType.RealtimeIMUStream ||
+          packet.type === PacketType.HistoricalIMUStream)
       ) {
-        console.log(
-          `[IMU] Received ${packet.type === PacketType.RealtimeIMUStream ? "realtime" : "historical"} IMU packet (${packet.data.length} bytes)`,
-        )
+        const samples = parseIMUPacket(packet)
+        if (samples) {
+          const source =
+            packet.type === PacketType.RealtimeIMUStream ? "realtime" : "historical"
+          for (const s of samples) {
+            imuForwarder.push({
+              timestamp: s.timestamp.toISOString(),
+              accelX: s.accelX,
+              accelY: s.accelY,
+              accelZ: s.accelZ,
+              gyroX: s.gyroX,
+              gyroY: s.gyroY,
+              gyroZ: s.gyroZ,
+              source,
+            })
+          }
+        }
       }
 
       if (packet.type === PacketType.ConsoleLogs && packet.data.length > 7) {
@@ -745,13 +969,28 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       maybeAutoSync().catch(() => undefined)
     }, 2 * 60 * 1000)
 
+    // SOC changes slowly on a multi-day-life device. 30s polling was
+    // pure BLE traffic for no benefit. 5 min is plenty for the UI.
+    const batteryPollTimer = setInterval(() => {
+      if (bleManager.connectionState !== "ready") return
+      bleManager.writeCommand(commandService.buildGetBatteryLevel()).catch(() => undefined)
+    }, 5 * 60 * 1000)
+
+    const unsubscribeMemfault = bleManager.onMemfault((base64Chunk) => {
+      consoleLogForwarder.pushLine(`[MEMFAULT base64=${base64Chunk}]`)
+    })
+
     return () => {
       unsubscribeState()
       unsubscribePackets()
       unsubscribePacketsForDrain()
+      unsubscribeMemfault()
       appStateSub.remove()
       clearInterval(syncTimer)
+      clearInterval(batteryPollTimer)
       eventForwarder.stop()
+      commandResponseForwarder.stop()
+      imuForwarder.stop()
       realtimeForwarder.endSession()
       consoleLogForwarder.stop()
       if (debounceTimer) clearTimeout(debounceTimer)
@@ -763,6 +1002,9 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       connectionState: deviceState.connectionState,
       deviceName: deviceState.deviceName,
       batteryLevel: deviceState.batteryLevel,
+      batteryVoltageMv: deviceState.batteryVoltageMv,
+      batteryTemperatureC: deviceState.batteryTemperatureC,
+      batteryIconLevel: deviceState.batteryIconLevel,
       isCharging: deviceState.isCharging,
       isBusy: deviceState.isBusy,
       isRealtimeHeartRateEnabled: deviceState.isRealtimeHeartRateEnabled,
@@ -770,6 +1012,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       isRawDataStreamingEnabled: deviceState.isRawDataStreamingEnabled,
       realtimeHeartRate: deviceState.realtimeHeartRate,
       realtimeSamples: deviceState.realtimeSamples,
+      liveStressLevel: deriveLiveStressLevel(deviceState.realtimeSamples),
       strapAlarmAt: deviceState.strapAlarmAt,
       strapAlarmArmed: deviceState.strapAlarmArmed,
       isWorn: deviceState.isWorn,
@@ -793,6 +1036,8 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       armAlarm,
       disarmAlarm,
       testAlarm,
+      rebootStrap,
+      powerCycleStrap,
       clearError,
     }),
     [
@@ -814,6 +1059,8 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       armAlarm,
       disarmAlarm,
       testAlarm,
+      rebootStrap,
+      powerCycleStrap,
       clearError,
     ],
   )
