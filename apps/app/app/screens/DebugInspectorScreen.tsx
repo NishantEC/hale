@@ -15,10 +15,8 @@ import { recordPipelineRun } from "@/services/sync/syncTelemetry"
 import {
   apiPost,
   DebugOverview,
-  DebugSleepNight,
   fetchDebugOverview,
   fetchDebugPipelineRuns,
-  fetchDebugSleepNight,
   INSPECTOR_WEB_URL,
   runDebugPipeline,
 } from "@/services/api/noopClient"
@@ -28,7 +26,6 @@ export const DebugInspectorScreen: FC = () => {
   const { selectedDate, refreshDashboard } = useDashboard()
   const { syncNow, rebootStrap, powerCycleStrap } = useBle()
   const [overview, setOverview] = useState<DebugOverview | null>(null)
-  const [, setSleepNight] = useState<DebugSleepNight | null>(null)
   const [lastPipelineRun, setLastPipelineRun] = useState<{
     startedAt: string
     durationMs: number
@@ -46,12 +43,8 @@ export const DebugInspectorScreen: FC = () => {
     setError(null)
 
     try {
-      const [nextOverview, nextSleepNight] = await Promise.all([
-        fetchDebugOverview(selectedDate),
-        fetchDebugSleepNight(selectedDate),
-      ])
+      const nextOverview = await fetchDebugOverview(selectedDate)
       setOverview(nextOverview)
-      setSleepNight(nextSleepNight)
     } catch (nextError: any) {
       setError(nextError?.message || "Failed to load sync inspector data.")
     } finally {
