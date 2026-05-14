@@ -5,6 +5,7 @@ import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
 import { useOutboundQueueStats } from "@/hooks/useOutboundQueueStats"
 import { DebugOverview } from "@/services/api/noopClient"
+import { LOCAL_THEME } from "@/utils/localTheme"
 
 import { InspectorCard } from "./InspectorCard"
 import { StatusPill, StatusTone } from "./StatusPill"
@@ -104,22 +105,21 @@ export const LiveMonitorCard: FC<Props> = ({ overview }) => {
 
 type RowProps = { label: string; value: string; tone?: "warn" | "bad" }
 
-const TONE_COLOR: Record<NonNullable<RowProps["tone"]>, string> = {
-  warn: "#7a5202",
-  bad: "#8a1a1a",
+const Row: FC<RowProps> = ({ label, value, tone }) => {
+  const { colors } = LOCAL_THEME
+  const valueColor = tone === "warn" ? colors.statusAmber : tone === "bad" ? colors.statusRed : colors.text
+  return (
+    <View style={[$row, { borderTopColor: colors.divider }]}>
+      <Text text={label} size="xs" style={{ color: colors.textDim }} />
+      <Text
+        text={value}
+        size="xs"
+        weight="semiBold"
+        style={{ color: valueColor, fontVariant: ["tabular-nums"] }}
+      />
+    </View>
+  )
 }
-
-const Row: FC<RowProps> = ({ label, value, tone }) => (
-  <View style={$row}>
-    <Text text={label} size="xs" style={{ color: "#564E4A" }} />
-    <Text
-      text={value}
-      size="xs"
-      weight="semiBold"
-      style={{ color: tone ? TONE_COLOR[tone] : "#191015", fontVariant: ["tabular-nums"] }}
-    />
-  </View>
-)
 
 const $row: ViewStyle = {
   flexDirection: "row",
@@ -127,5 +127,4 @@ const $row: ViewStyle = {
   alignItems: "center",
   paddingVertical: 7,
   borderTopWidth: 1,
-  borderTopColor: "rgba(0,0,0,0.06)",
 }

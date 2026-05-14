@@ -3,6 +3,7 @@ import { View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
 import { DebugOverview } from "@/services/api/noopClient"
+import { LOCAL_THEME } from "@/utils/localTheme"
 
 import { CoverageBar } from "./CoverageBar"
 import { InspectorCard } from "./InspectorCard"
@@ -30,6 +31,7 @@ function formatDuration(ms: number): string {
 }
 
 export const DiagnosticsCard: FC<Props> = ({ overview, lastPipelineRun }) => {
+  const { colors } = LOCAL_THEME
   const recentNights = overview?.recentNights ?? []
   const coverageMin = overview?.todayCoverageMinutes ?? 0
 
@@ -60,11 +62,9 @@ export const DiagnosticsCard: FC<Props> = ({ overview, lastPipelineRun }) => {
     >
       <SectionLabel text="Last 3 nights" />
       {recentNights.length === 0 ? (
-        <Text text="No data" size="xs" style={{ color: "#564E4A" }} />
+        <Text text="No data" size="xs" style={{ color: colors.textDim }} />
       ) : (
-        recentNights.map((n) => (
-          <NightRow key={n.nightDate} night={n} />
-        ))
+        recentNights.map((n) => <NightRow key={n.nightDate} night={n} />)
       )}
 
       <SectionLabel text="Today's coverage" />
@@ -73,21 +73,23 @@ export const DiagnosticsCard: FC<Props> = ({ overview, lastPipelineRun }) => {
         <Text
           text={`${coverageMin} min of 1440`}
           size="xs"
-          style={{ color: "#564E4A", fontVariant: ["tabular-nums"] }}
+          style={{ color: colors.textDim, fontVariant: ["tabular-nums"] }}
         />
         <Text
           text={`${((coverageMin / 1440) * 100).toFixed(0)}%`}
           size="xs"
           weight="semiBold"
-          style={{ fontVariant: ["tabular-nums"] }}
+          style={{ color: colors.text, fontVariant: ["tabular-nums"] }}
         />
       </View>
 
       <SectionLabel text="Last pipeline run" />
       {lastPipelineRun ? (
         <>
-          <Row label={new Date(lastPipelineRun.startedAt).toLocaleTimeString()}
-               value={`${lastPipelineRun.detections} det · ${lastPipelineRun.sleepStages} stages`} />
+          <Row
+            label={new Date(lastPipelineRun.startedAt).toLocaleTimeString()}
+            value={`${lastPipelineRun.detections} det · ${lastPipelineRun.sleepStages} stages`}
+          />
           {lastPipelineRun.computeMs != null ? (
             <Row
               label="compute"
@@ -97,45 +99,66 @@ export const DiagnosticsCard: FC<Props> = ({ overview, lastPipelineRun }) => {
           ) : null}
         </>
       ) : (
-        <Text text="No runs yet" size="xs" style={{ color: "#564E4A" }} />
+        <Text text="No runs yet" size="xs" style={{ color: colors.textDim }} />
       )}
     </InspectorCard>
   )
 }
 
-const SectionLabel: FC<{ text: string }> = ({ text }) => (
-  <Text
-    text={text}
-    size="xxs"
-    weight="bold"
-    style={{ color: "#564E4A", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 8, marginBottom: 4 }}
-  />
-)
-
-const NightRow: FC<{ night: { nightDate: string; hasDetection: boolean; rawRecordCount: number } }> = ({ night }) => (
-  <View style={$row}>
-    <Text text={formatNightDate(night.nightDate)} size="xs" style={{ color: "#564E4A" }} />
+const SectionLabel: FC<{ text: string }> = ({ text }) => {
+  const { colors } = LOCAL_THEME
+  return (
     <Text
-      text={night.hasDetection ? "classified" : `no detection · ${night.rawRecordCount} rec`}
-      size="xs"
-      weight="semiBold"
+      text={text}
+      size="xxs"
+      weight="bold"
       style={{
-        color: night.hasDetection ? "#191015" : "#8a1a1a",
-        fontVariant: ["tabular-nums"],
+        color: colors.textDim,
+        textTransform: "uppercase",
+        letterSpacing: 0.6,
+        marginTop: 8,
+        marginBottom: 4,
       }}
     />
-  </View>
-)
+  )
+}
+
+const NightRow: FC<{
+  night: { nightDate: string; hasDetection: boolean; rawRecordCount: number }
+}> = ({ night }) => {
+  const { colors } = LOCAL_THEME
+  return (
+    <View style={[$row, { borderTopColor: colors.divider }]}>
+      <Text text={formatNightDate(night.nightDate)} size="xs" style={{ color: colors.textDim }} />
+      <Text
+        text={night.hasDetection ? "classified" : `no detection · ${night.rawRecordCount} rec`}
+        size="xs"
+        weight="semiBold"
+        style={{
+          color: night.hasDetection ? colors.text : colors.statusRed,
+          fontVariant: ["tabular-nums"],
+        }}
+      />
+    </View>
+  )
+}
 
 type RowProps = { label: string; value: string; tone?: "warn" | "bad" }
-const TONE_COLOR: Record<NonNullable<RowProps["tone"]>, string> = { warn: "#7a5202", bad: "#8a1a1a" }
-const Row: FC<RowProps> = ({ label, value, tone }) => (
-  <View style={$row}>
-    <Text text={label} size="xs" style={{ color: "#564E4A" }} />
-    <Text text={value} size="xs" weight="semiBold"
-      style={{ color: tone ? TONE_COLOR[tone] : "#191015", fontVariant: ["tabular-nums"] }} />
-  </View>
-)
+const Row: FC<RowProps> = ({ label, value, tone }) => {
+  const { colors } = LOCAL_THEME
+  const valueColor = tone === "warn" ? colors.statusAmber : tone === "bad" ? colors.statusRed : colors.text
+  return (
+    <View style={[$row, { borderTopColor: colors.divider }]}>
+      <Text text={label} size="xs" style={{ color: colors.textDim }} />
+      <Text
+        text={value}
+        size="xs"
+        weight="semiBold"
+        style={{ color: valueColor, fontVariant: ["tabular-nums"] }}
+      />
+    </View>
+  )
+}
 
 const $row: ViewStyle = {
   flexDirection: "row",
@@ -143,5 +166,4 @@ const $row: ViewStyle = {
   alignItems: "center",
   paddingVertical: 5,
   borderTopWidth: 1,
-  borderTopColor: "rgba(0,0,0,0.06)",
 }

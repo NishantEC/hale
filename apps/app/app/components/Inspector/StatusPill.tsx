@@ -2,23 +2,46 @@ import { FC } from "react"
 import { View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
+import { LOCAL_THEME } from "@/utils/localTheme"
 
 export type StatusTone = "ok" | "warn" | "bad" | "dim"
 
-const TONE_STYLE: Record<StatusTone, { bg: string; fg: string }> = {
-  ok:   { bg: "rgba(34,197,94,0.18)",  fg: "#1a7741" },
-  warn: { bg: "rgba(251,191,36,0.20)", fg: "#7a5202" },
-  bad:  { bg: "rgba(239,68,68,0.18)",  fg: "#8a1a1a" },
-  dim:  { bg: "rgba(0,0,0,0.06)",      fg: "#564E4A" },
+// Pill backgrounds are the status colour at ~22% alpha. We append "38" (≈0.22)
+// to the hex tokens at render time so the same component matches whichever
+// status palette is active.
+function withAlpha(hex: string, alpha: string): string {
+  if (hex.startsWith("rgba") || hex.startsWith("rgb")) return hex
+  return `${hex}${alpha}`
 }
 
 type Props = { tone: StatusTone; text: string }
 
 export const StatusPill: FC<Props> = ({ tone, text }) => {
-  const palette = TONE_STYLE[tone]
+  const { colors } = LOCAL_THEME
+  let fg: string
+  let bg: string
+  switch (tone) {
+    case "ok":
+      fg = colors.statusGreen
+      bg = withAlpha(colors.statusGreen, "38")
+      break
+    case "warn":
+      fg = colors.statusAmber
+      bg = withAlpha(colors.statusAmber, "38")
+      break
+    case "bad":
+      fg = colors.statusRed
+      bg = withAlpha(colors.statusRed, "38")
+      break
+    case "dim":
+    default:
+      fg = colors.textDim
+      bg = colors.surfaceElevated
+      break
+  }
   return (
-    <View style={[$pill, { backgroundColor: palette.bg }]}>
-      <Text text={text} size="xxs" weight="bold" style={{ color: palette.fg }} />
+    <View style={[$pill, { backgroundColor: bg }]}>
+      <Text text={text} size="xxs" weight="bold" style={{ color: fg }} />
     </View>
   )
 }

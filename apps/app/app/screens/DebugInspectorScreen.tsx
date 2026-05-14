@@ -20,9 +20,11 @@ import {
   INSPECTOR_WEB_URL,
   runDebugPipeline,
 } from "@/services/api/noopClient"
+import { LOCAL_THEME } from "@/utils/localTheme"
 import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 
 export const DebugInspectorScreen: FC = () => {
+  const { colors } = LOCAL_THEME
   const { selectedDate, refreshDashboard } = useDashboard()
   const { syncNow, rebootStrap, powerCycleStrap } = useBle()
   const [overview, setOverview] = useState<DebugOverview | null>(null)
@@ -212,18 +214,18 @@ export const DebugInspectorScreen: FC = () => {
   }, [powerCycleStrap])
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={["top", "bottom"]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.screenBackground }} edges={["top", "bottom"]}>
       <ScrollView contentContainerStyle={{ padding: 14 }}>
-        <Text text="Inspector" size="lg" weight="semiBold" style={{ marginBottom: 14 }} />
+        <Text text="Inspector" size="lg" weight="semiBold" style={{ marginBottom: 14, color: colors.text }} />
 
         {error ? (
-          <View style={{ backgroundColor: "rgba(239,68,68,0.12)", padding: 10, borderRadius: 12, marginBottom: 8 }}>
-            <Text text={error} size="xs" weight="semiBold" style={{ color: "#8a1a1a" }} />
+          <View style={{ backgroundColor: colors.errorBackground, padding: 10, borderRadius: 12, marginBottom: 8 }}>
+            <Text text={error} size="xs" weight="semiBold" style={{ color: colors.error }} />
           </View>
         ) : null}
         {banner ? (
-          <View style={{ backgroundColor: "rgba(0,0,0,0.05)", padding: 10, borderRadius: 12, marginBottom: 8 }}>
-            <Text text={banner} size="xs" weight="semiBold" />
+          <View style={{ backgroundColor: colors.surfaceElevated, padding: 10, borderRadius: 12, marginBottom: 8 }}>
+            <Text text={banner} size="xs" weight="semiBold" style={{ color: colors.text }} />
           </View>
         ) : null}
 
@@ -242,7 +244,7 @@ export const DebugInspectorScreen: FC = () => {
 
         {isLoading && !overview ? (
           <View style={{ paddingVertical: 14, alignItems: "center" }}>
-            <ActivityIndicator color="#C76542" />
+            <ActivityIndicator color={colors.tint} />
           </View>
         ) : null}
       </ScrollView>

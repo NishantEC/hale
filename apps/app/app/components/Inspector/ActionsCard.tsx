@@ -2,6 +2,7 @@ import { FC, ReactNode } from "react"
 import { TouchableOpacity, View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
+import { LOCAL_THEME } from "@/utils/localTheme"
 
 import { InspectorCard } from "./InspectorCard"
 
@@ -37,33 +38,52 @@ export const ActionsCard: FC<Props> = (handlers) => (
   </InspectorCard>
 )
 
-const SectionLabel: FC<{ text: string }> = ({ text }) => (
-  <Text
-    text={text}
-    size="xxs"
-    weight="bold"
-    style={{ color: "#564E4A", textTransform: "uppercase", letterSpacing: 0.6, marginTop: 8, marginBottom: 6 }}
-  />
-)
+const SectionLabel: FC<{ text: string }> = ({ text }) => {
+  const { colors } = LOCAL_THEME
+  return (
+    <Text
+      text={text}
+      size="xxs"
+      weight="bold"
+      style={{
+        color: colors.textDim,
+        textTransform: "uppercase",
+        letterSpacing: 0.6,
+        marginTop: 8,
+        marginBottom: 6,
+      }}
+    />
+  )
+}
 
 const Grid: FC<{ children: ReactNode }> = ({ children }) => (
   <View style={$grid}>{children}</View>
 )
 
-const Btn: FC<{ label: string; onPress: ActionHandler; danger?: boolean }> = ({ label, onPress, danger }) => (
-  <TouchableOpacity
-    onPress={() => void onPress()}
-    activeOpacity={0.7}
-    style={[$btn, danger ? $btnDanger : null]}
-  >
-    <Text
-      text={label}
-      size="xxs"
-      weight="semiBold"
-      style={{ color: danger ? "#8a1a1a" : "#191015", textAlign: "center" }}
-    />
-  </TouchableOpacity>
-)
+const Btn: FC<{ label: string; onPress: ActionHandler; danger?: boolean }> = ({
+  label,
+  onPress,
+  danger,
+}) => {
+  const { colors } = LOCAL_THEME
+  return (
+    <TouchableOpacity
+      onPress={() => void onPress()}
+      activeOpacity={0.7}
+      style={[
+        $btn,
+        { backgroundColor: danger ? colors.errorBackground : colors.surfaceElevated },
+      ]}
+    >
+      <Text
+        text={label}
+        size="xxs"
+        weight="semiBold"
+        style={{ color: danger ? colors.error : colors.text, textAlign: "center" }}
+      />
+    </TouchableOpacity>
+  )
+}
 
 const $grid: ViewStyle = {
   flexDirection: "row",
@@ -74,13 +94,8 @@ const $grid: ViewStyle = {
 const $btn: ViewStyle = {
   flexBasis: "48%",
   flexGrow: 1,
-  backgroundColor: "rgba(0,0,0,0.06)",
   borderRadius: 8,
   paddingVertical: 10,
   paddingHorizontal: 8,
   alignItems: "center",
-}
-
-const $btnDanger: ViewStyle = {
-  backgroundColor: "rgba(239,68,68,0.12)",
 }
