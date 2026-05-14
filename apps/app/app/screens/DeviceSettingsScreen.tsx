@@ -1,6 +1,5 @@
-import { FC, useEffect, useMemo, useRef } from "react"
-import { Ionicons } from "@expo/vector-icons"
-import { router } from "expo-router"
+import { FC, ReactNode, useEffect, useMemo, useRef } from "react"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import {
   Animated,
   Easing,
@@ -16,14 +15,20 @@ import { Text } from "@/components/Text"
 import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Dialog } from "@/components/reactx/dialog"
 import { Toast } from "@/components/reactx/toast"
+import { useAuth } from "@/context/AuthContext"
 import { useBle } from "@/context/BleContext"
+import { forceLogout } from "@/services/api/noopClient"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 export const DeviceSettingsScreen: FC = () => {
   const colors = LOCAL_THEME.colors
+  const { logout } = useAuth()
   const {
     connectionState,
     batteryLevel,
+    batteryVoltageMv,
+    batteryTemperatureC,
+    batteryIconLevel,
     isCharging,
     deviceName,
     lastSyncAt,
@@ -43,7 +48,7 @@ export const DeviceSettingsScreen: FC = () => {
   const isConnected = connectionState === "ready"
   const isBusy = connectionState === "connecting" || connectionState === "discovering"
   const batteryLabel =
-    batteryLevel == null ? "--" : `${Math.round(batteryLevel)}`
+    batteryLevel == null ? "--" : batteryLevel.toFixed(1)
   const batteryColor =
     batteryLevel == null
       ? colors.text
@@ -124,7 +129,7 @@ export const DeviceSettingsScreen: FC = () => {
             />
           ) : null}
           <View style={themed($watchCircle)}>
-            <Ionicons
+            <PhosphorIcon
               name="watch-outline"
               size={48}
               color={isConnected ? colors.tint : colors.iconDim}
@@ -133,7 +138,7 @@ export const DeviceSettingsScreen: FC = () => {
               <Animated.View
                 style={[themed($chargingBadge), { transform: [{ scale: chargingBadgeScale }] }]}
               >
-                <Ionicons name="flash" size={12} color={colors.onPrimary} />
+                <PhosphorIcon name="flash" size={12} color={colors.onPrimary} />
               </Animated.View>
             ) : null}
           </View>
@@ -167,6 +172,28 @@ export const DeviceSettingsScreen: FC = () => {
           size="xxs"
           style={[themed($batteryCaption), { color: batteryColor, opacity: 0.6 }]}
         />
+
+        {isConnected && (batteryVoltageMv != null || batteryTemperatureC != null || batteryIconLevel != null) ? (
+          <View style={themed($batteryDetailsRow)}>
+            <BatteryDetail
+              value={batteryVoltageMv != null ? `${(batteryVoltageMv / 1000).toFixed(3)}` : "--"}
+              unit="V"
+              label="Voltage"
+            />
+            <View style={themed($batteryDetailDivider)} />
+            <BatteryDetail
+              value={batteryTemperatureC != null ? batteryTemperatureC.toFixed(1) : "--"}
+              unit="°C"
+              label="Temp"
+              warning={batteryTemperatureC != null && batteryTemperatureC >= 40}
+            />
+            <View style={themed($batteryDetailDivider)} />
+            <BatteryDetail
+              value={batteryIconLevel != null ? <LevelBar level={batteryIconLevel} /> : "--"}
+              label="Level"
+            />
+          </View>
+        ) : null}
       </View>
 
       {/* ─── Info rows ─── */}
@@ -213,7 +240,7 @@ export const DeviceSettingsScreen: FC = () => {
           activeOpacity={0.6}
         >
           <View style={themed($syncLabel)}>
-            <Ionicons
+            <PhosphorIcon
               name={isSyncing ? "sync" : "cloud-download-outline"}
               size={16}
               color={isSyncing ? colors.tint : colors.iconDim}
@@ -225,7 +252,7 @@ export const DeviceSettingsScreen: FC = () => {
             />
           </View>
           {!isSyncing ? (
-            <Ionicons name="chevron-forward" size={16} color={colors.iconDim} />
+            <PhosphorIcon name="chevron-forward" size={16} color={colors.iconDim} />
           ) : null}
         </TouchableOpacity>
 
@@ -298,17 +325,85 @@ export const DeviceSettingsScreen: FC = () => {
           </TouchableOpacity>
         )}
 
-        {/* Debug link */}
+        {/* Log out */}
         <TouchableOpacity
-          activeOpacity={0.5}
-          onPress={() => router.push("/debug-inspector")}
-          style={themed($debugLink)}
+          style={themed($destructiveButton)}
+          activeOpacity={0.8}
+          onPress={() => { forceLogout(); void logout() }}
         >
-          <Text text="Diagnostics" size="xxs" style={themed($debugText)} />
+          <Text text="Log Out" size="xs" weight="semiBold" style={themed($destructiveText)} />
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   )
+}
+
+function BatteryDetail({
+  value,
+  unit,
+  label,
+  warning = false,
+}: {
+  value: ReactNode
+  unit?: string
+  label: string
+  warning?: boolean
+}) {
+  const colors = LOCAL_THEME.colors
+  const valueColor = warning ? colors.statusAmber : colors.text
+  return (
+    <View style={$batteryDetailCell}>
+      <View style={$batteryDetailValueRow}>
+        {typeof value === "string" ? (
+          <Text text={value} size="sm" weight="bold" style={{ color: valueColor }} />
+        ) : (
+          value
+        )}
+        {unit ? (
+          <Text text={unit} size="xxs" weight="semiBold" style={{ color: colors.textMuted, marginLeft: 2 }} />
+        ) : null}
+      </View>
+      <Text text={label} size="xxs" style={{ color: colors.textMuted, marginTop: 2 }} />
+    </View>
+  )
+}
+
+function LevelBar({ level }: { level: number }) {
+  const colors = LOCAL_THEME.colors
+  const segments = 7
+  const filled = Math.max(0, Math.min(segments, level))
+  return (
+    <View style={$levelBarRow}>
+      {Array.from({ length: segments }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            backgroundColor: i < filled ? colors.text : colors.divider,
+            borderRadius: 1,
+            height: 10,
+            width: 3,
+          }}
+        />
+      ))}
+    </View>
+  )
+}
+
+const $batteryDetailValueRow: ViewStyle = {
+  alignItems: "baseline",
+  flexDirection: "row",
+}
+
+const $batteryDetailCell: ViewStyle = {
+  alignItems: "center",
+  flex: 1,
+}
+
+const $levelBarRow: ViewStyle = {
+  alignItems: "center",
+  flexDirection: "row",
+  gap: 2,
+  height: 14,
 }
 
 // ═══════════════════════ Styles ═══════════════════════
@@ -418,6 +513,24 @@ const $batteryPercent: ThemedStyle<TextStyle> = ({ colors }) => ({
 
 const $batteryCaption: ThemedStyle<TextStyle> = ({ colors }) => ({
   color: colors.textMuted,
+})
+
+const $batteryDetailsRow: ThemedStyle<ViewStyle> = ({ colors, spacing }) => ({
+  alignItems: "center",
+  backgroundColor: colors.surfaceCard,
+  borderColor: colors.surfaceCardBorder,
+  borderRadius: 14,
+  borderWidth: 1,
+  flexDirection: "row",
+  marginTop: spacing.md,
+  paddingHorizontal: spacing.sm,
+  paddingVertical: spacing.xs,
+})
+
+const $batteryDetailDivider: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.divider,
+  height: 24,
+  width: 1,
 })
 
 // Info rows
@@ -539,16 +652,6 @@ const $dialogDestructive: ThemedStyle<ViewStyle> = ({ colors }) => ({
   flex: 1,
   justifyContent: "center",
   minHeight: 44,
-})
-
-// Debug
-const $debugLink: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  paddingVertical: 4,
-})
-
-const $debugText: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.textMuted,
 })
 
 const $linkText: ThemedStyle<TextStyle> = ({ colors }) => ({
