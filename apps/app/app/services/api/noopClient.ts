@@ -113,7 +113,6 @@ export interface HomeViewModel {
     skinTemp: string;
     strain: string;
     skinTempDelta: string;
-    recoveryIndex: string;
     trainingLoad: string;
     trainingLoadRiskZone: string;
     spo2Dips: string;
@@ -282,6 +281,13 @@ export interface DebugOverview {
       wakeTime: string;
     };
   };
+  latestSignalSampleAt: string | null;
+  recentNights: Array<{
+    nightDate: string;
+    hasDetection: boolean;
+    rawRecordCount: number;
+  }>;
+  todayCoverageMinutes: number;
 }
 
 export interface DebugSleepNight {
@@ -825,7 +831,12 @@ export async function fetchDebugPipelineResults(): Promise<DebugPipelineResults>
   return apiGet('/debug/pipeline-results');
 }
 
-export async function runDebugPipeline(date: string): Promise<{ runResult: { ok: boolean; computed: Record<string, number> }; overview: DebugOverview }> {
+export async function runDebugPipeline(date: string): Promise<{
+  runResult:
+    | { ok: boolean; computed: Record<string, number>; skipped?: undefined }
+    | { ok: boolean; skipped: 'no-new-input'; computed?: undefined };
+  overview: DebugOverview;
+}> {
   return apiPost(
     withDeviceTimeZone(`/debug/pipeline/run?date=${encodeURIComponent(date)}`),
     {},
