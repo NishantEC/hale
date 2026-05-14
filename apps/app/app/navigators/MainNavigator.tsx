@@ -1,5 +1,5 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { Ionicons } from "@expo/vector-icons"
 import { BlurView } from "expo-blur"
 import { Platform, View } from "react-native"
 
@@ -58,7 +58,7 @@ export function MainNavigator() {
               <View style={{ flex: 1, backgroundColor: colors.background }} />
             ),
           tabBarIcon: ({ color, focused }) => (
-            <PhosphorIcon
+            <Ionicons
               name={focused ? config.activeIcon : config.icon}
               size={22}
               color={color}
