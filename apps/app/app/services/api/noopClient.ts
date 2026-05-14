@@ -844,6 +844,23 @@ export async function runDebugPipeline(date: string): Promise<{
   );
 }
 
+export async function fetchDebugPipelineRuns(limit = 30): Promise<{
+  count: number;
+  stageMedians: Record<string, number>;
+  runs: Array<{
+    id: string;
+    startedAt: string;
+    durationMs: number;
+    skipped: boolean;
+    stages: Record<string, number> | null;
+    detections: number;
+    sleepStages: number;
+    features: number;
+  }>;
+}> {
+  return apiGet(`/debug/pipeline-runs?limit=${limit}`);
+}
+
 export async function recomputeDebugViews(date: string): Promise<DebugViewsRecompute> {
   return apiPost(withDeviceTimeZone(`/debug/views/recompute?date=${encodeURIComponent(date)}`), {});
 }
