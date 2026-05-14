@@ -1,8 +1,9 @@
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs"
-import { Ionicons } from "@expo/vector-icons"
+import { PhosphorIcon } from "@/components/PhosphorIcon"
 import { BlurView } from "expo-blur"
 import { Platform, View } from "react-native"
 
+import { DebugInspectorScreen } from "@/screens/DebugInspectorScreen"
 import { DeviceScreen } from "@/screens/DeviceScreen"
 import { HomeScreen } from "@/screens/HomeScreen"
 import { TrendsScreen } from "@/screens/TrendsScreen"
@@ -13,6 +14,7 @@ const TAB_CONFIG = {
   Home: { icon: "home-outline", activeIcon: "home", label: "Home" },
   Trends: { icon: "stats-chart-outline", activeIcon: "stats-chart", label: "Trends" },
   Device: { icon: "radio-outline", activeIcon: "radio", label: "Device" },
+  Inspector: { icon: "pulse-outline", activeIcon: "pulse", label: "Inspector" },
 } as const
 
 export function MainNavigator() {
@@ -56,7 +58,7 @@ export function MainNavigator() {
               <View style={{ flex: 1, backgroundColor: colors.background }} />
             ),
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
+            <PhosphorIcon
               name={focused ? config.activeIcon : config.icon}
               size={22}
               color={color}
@@ -71,6 +73,7 @@ export function MainNavigator() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Trends" component={TrendsScreen} />
       <Tab.Screen name="Device" component={DeviceScreen} />
+      <Tab.Screen name="Inspector" component={DebugInspectorScreen} />
     </Tab.Navigator>
   )
 }
