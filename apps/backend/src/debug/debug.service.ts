@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThanOrEqual, Repository } from 'typeorm';
+import { Between, Equal, MoreThanOrEqual, Repository } from 'typeorm';
 
 import { PipelineService } from '../pipeline/pipeline.service.js';
 import { RawSensorRecord } from '../pipeline/entities/raw-sensor-record.entity.js';
@@ -23,6 +23,7 @@ import {
   calendarDayKey,
   resolveCalendarDate,
   selectCalendarDayItem,
+  shiftCalendarDay,
 } from '../common/calendar.js';
 
 type SelectionMode =
@@ -283,6 +284,28 @@ export class DebugService {
       ? stageSelection.item!.epochTimeline.length
       : 0;
 
+    const latestSignalSample = await this.signalSampleRepo.findOne({
+      where: { userId },
+      order: { timestamp: 'DESC' },
+      select: ['timestamp'],
+    });
+    const latestSignalSampleAt = latestSignalSample?.timestamp
+      ? new Date(latestSignalSample.timestamp).toISOString()
+      : null;
+
+    const recentNights = await this.computeRecentNights(
+      userId,
+      selectedKey,
+      timeZone,
+      3,
+    );
+
+    const todayCoverageMinutes = await this.computeTodayCoverageMinutes(
+      userId,
+      selectedKey,
+      timeZone,
+    );
+
     return {
       selectedDate: selectedKey,
       selectedDateTitle: this.formatSelectedDateTitle(selectedDate, timeZone),
@@ -328,7 +351,49 @@ export class DebugService {
           wakeTime: sleepView.header.wakeTime,
         },
       },
+      latestSignalSampleAt,
+      recentNights,
+      todayCoverageMinutes,
     };
+  }
+
+  private async computeRecentNights(
+    userId: string,
+    selectedKey: string,
+    timeZone: string | undefined,
+    days: number,
+  ): Promise<Array<{ nightDate: string; hasDetection: boolean; rawRecordCount: number }>> {
+    const out: Array<{ nightDate: string; hasDetection: boolean; rawRecordCount: number }> = [];
+    for (let i = 1; i <= days; i++) {
+      const key = shiftCalendarDay(selectedKey, -i, timeZone);
+      const { start, end } = calendarDayBounds(key, timeZone);
+      const [detection, count] = await Promise.all([
+        this.sleepDetectionRepo.findOne({
+          where: { userId, nightDate: Equal(key) },
+          select: ['id'],
+        }),
+        this.rawSensorRepo.count({
+          where: { userId, timestamp: Between(start, end) },
+        }),
+      ]);
+      out.push({ nightDate: key, hasDetection: detection != null, rawRecordCount: count });
+    }
+    return out;
+  }
+
+  private async computeTodayCoverageMinutes(
+    userId: string,
+    selectedKey: string,
+    timeZone: string | undefined,
+  ): Promise<number> {
+    const { start, end } = calendarDayBounds(selectedKey, timeZone);
+    const rows = await this.rawSensorRepo
+      .createQueryBuilder('r')
+      .select(`COUNT(DISTINCT date_trunc('minute', r.timestamp))`, 'cnt')
+      .where('r.userId = :userId', { userId })
+      .andWhere('r.timestamp BETWEEN :start AND :end', { start, end })
+      .getRawOne<{ cnt: string }>();
+    return rows ? Math.min(1440, parseInt(rows.cnt, 10) || 0) : 0;
   }
 
   async getRawRecords(
@@ -883,6 +948,94 @@ export class DebugService {
     return epochs;
   }
 
+  async getBatteryHistory(userId: string, hours: number) {
+    this.assertEnabled();
+    const sinceMs = Date.now() - hours * 60 * 60 * 1000;
+    const since = new Date(sinceMs);
+    const rows: Array<{ eventNumber: number; capturedAt: Date; rawPayload: Buffer | null }> =
+      await this.deviceEventRepo
+        .createQueryBuilder('e')
+        .select(['e.eventNumber', 'e.capturedAt', 'e.rawPayload'])
+        .where('e."userId" = :userId', { userId })
+        .andWhere('e."eventNumber" IN (3, 63)')
+        .andWhere('e."capturedAt" >= :since', { since })
+        .orderBy('e.capturedAt', 'ASC')
+        .getMany() as any;
+
+    const u16 = (buf: Buffer, off: number) =>
+      off + 1 < buf.length ? buf[off] | (buf[off + 1] << 8) : null;
+
+    const series: Array<{
+      capturedAt: string;
+      source: 'evt3' | 'evt63';
+      socPct: number | null;
+      voltageMv: number | null;
+      temperatureC: number | null;
+      iconLevel: number | null;
+    }> = [];
+
+    for (const r of rows) {
+      const buf = r.rawPayload;
+      if (!buf || buf.length < 16) continue;
+      if (r.eventNumber === 3) {
+        const soc = u16(buf, 10);
+        const v = u16(buf, 14);
+        series.push({
+          capturedAt: r.capturedAt.toISOString(),
+          source: 'evt3',
+          socPct: soc != null && soc <= 1100 ? soc / 10 : null,
+          voltageMv: v != null && v >= 2500 && v <= 4500 ? v : null,
+          temperatureC: null,
+          iconLevel: null,
+        });
+      } else if (r.eventNumber === 63 && buf.length >= 27) {
+        const v = u16(buf, 14);
+        const t = u16(buf, 16);
+        const icon = buf[21];
+        const soc = u16(buf, 25);
+        series.push({
+          capturedAt: r.capturedAt.toISOString(),
+          source: 'evt63',
+          socPct: soc != null && soc <= 1100 ? soc / 10 : null,
+          voltageMv: v != null && v >= 2500 && v <= 4500 ? v : null,
+          temperatureC: t != null && t >= 50 && t <= 700 ? t / 10 : null,
+          iconLevel: icon >= 0 && icon <= 7 ? icon : null,
+        });
+      }
+    }
+
+    // Latest non-null per field — convenience for the inspector header.
+    const latest: Record<string, number | string | null> = {
+      socPct: null,
+      voltageMv: null,
+      temperatureC: null,
+      iconLevel: null,
+      capturedAt: null,
+    };
+    for (let i = series.length - 1; i >= 0; i--) {
+      const p = series[i];
+      if (latest.socPct == null && p.socPct != null) latest.socPct = p.socPct;
+      if (latest.voltageMv == null && p.voltageMv != null) latest.voltageMv = p.voltageMv;
+      if (latest.temperatureC == null && p.temperatureC != null) latest.temperatureC = p.temperatureC;
+      if (latest.iconLevel == null && p.iconLevel != null) latest.iconLevel = p.iconLevel;
+      if (latest.capturedAt == null) latest.capturedAt = p.capturedAt;
+      if (
+        latest.socPct != null &&
+        latest.voltageMv != null &&
+        latest.temperatureC != null &&
+        latest.iconLevel != null
+      )
+        break;
+    }
+
+    return {
+      hours,
+      count: series.length,
+      latest,
+      series,
+    };
+  }
+
   async getTelemetry(userId: string, limit: number) {
     this.assertEnabled();
 
@@ -928,9 +1081,11 @@ export class DebugService {
       take: limit,
     });
 
-    // Aggregate device info from metadata
+    // Aggregate device info from metadata. Iterate oldest→newest so the
+    // most recent log line wins per key (consoleLogs is DESC by capturedAt).
     const deviceInfo: Record<string, any> = {};
-    for (const log of consoleLogs) {
+    for (let i = consoleLogs.length - 1; i >= 0; i--) {
+      const log = consoleLogs[i];
       if (log.metadata) {
         Object.assign(deviceInfo, log.metadata);
       }

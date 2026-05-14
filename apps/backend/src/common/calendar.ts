@@ -76,6 +76,14 @@ export function addDaysToDateKey(dateKey: string, days: number): string {
   );
 }
 
+export function shiftCalendarDay(
+  dateKey: string,
+  deltaDays: number,
+  _timeZone?: string | null,
+): string {
+  return addDaysToDateKey(dateKey, deltaDays);
+}
+
 // Wall-clock minutes since local midnight, evaluated in the given timezone.
 export function clockMinutesInTimeZone(
   date: Date,
