@@ -288,6 +288,7 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
       liveHeartRate: "Live heart-rate requires a connected strap.",
       activities: "Activity summary needs pipeline data.",
     },
+    pendingActivityCards: [],
   }
 }
 

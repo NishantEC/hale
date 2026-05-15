@@ -25,6 +25,7 @@ import {
   Leaf,
   Lightning,
   Moon,
+  NotePencil,
   Plus,
   Sun,
   Trash,
@@ -66,6 +67,7 @@ type AppIconName =
   | "journal"
   | "leaf"
   | "moon"
+  | "note-pencil"
   | "pulse"
   | "water"
   | "phone"
@@ -131,6 +133,9 @@ const ALIAS_MAP: Record<string, AppIconName> = {
   "leaf": "leaf",
   "moon-outline": "moon",
   "moon": "moon",
+  "note-pencil": "note-pencil",
+  "note-pencil-outline": "note-pencil",
+  "square.and.pencil": "note-pencil",
   "phone-portrait-outline": "phone",
   "phone-portrait": "phone",
   "pulse-outline": "pulse",
@@ -178,6 +183,7 @@ const COMPONENT_MAP: Record<AppIconName, PhosphorIconType> = {
   "journal": BookOpen,
   "leaf": Leaf,
   "moon": Moon,
+  "note-pencil": NotePencil,
   "phone": DeviceMobile,
   "pulse": Pulse,
   "restaurant": ForkKnife,

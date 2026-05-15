@@ -45,4 +45,18 @@ export class ActivityController {
   async remove(@Req() req: any, @Param('id') id: string) {
     return this.activityService.remove(req.user.userId, id);
   }
+
+  @Post(':id/confirm')
+  async confirm(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() body: { confirmedType?: string },
+  ) {
+    return this.activityService.confirm(req.user.userId, id, body.confirmedType);
+  }
+
+  @Post(':id/dismiss')
+  async dismiss(@Req() req: any, @Param('id') id: string) {
+    return this.activityService.dismiss(req.user.userId, id);
+  }
 }

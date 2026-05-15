@@ -263,6 +263,9 @@ export class ViewsService {
             ? `${selectedMetric.spo2DipCount}`
             : '--',
         activityFeed: dayActivities
+          // Feed shows real activities + Off-Wrist/No-Data so the user
+          // can see where coverage was lost. Sedentary/Rest are filtered
+          // because they're noisy and not actionable.
           .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest')
           .map((a) => ({
             type: a.activityType,
@@ -272,14 +275,16 @@ export class ViewsService {
             time: a.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           })),
         totalActiveMinutes: (() => {
+          // Active minutes counts only real movement.
           const total = dayActivities
-            .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest')
+            .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest' && a.activityType !== 'Off-Wrist' && a.activityType !== 'No Data')
             .reduce((s, a) => s + a.durationMinutes, 0);
           return total > 0 ? `${Math.round(total)}` : '--';
         })(),
         activityCount: dayActivities
-          .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest').length,
+          .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest' && a.activityType !== 'Off-Wrist' && a.activityType !== 'No Data').length,
       },
+      pendingActivityCards: this.buildPendingActivityCards(dayActivities),
       confidence: {
         confidence: selectedScore?.confidence ?? 'Low',
         pipelineStatus: this.buildPipelineStatus(
@@ -1410,6 +1415,37 @@ export class ViewsService {
 
   private formatDecimal(value: number, precision: number) {
     return value.toFixed(precision);
+  }
+
+  /**
+   * Activities awaiting user confirmation, ordered most-recent first.
+   * Excludes Sedentary/Rest/Off-Wrist/No-Data (not user-facing),
+   * confirmed activities, and dismissed ones. Each entry has enough
+   * detail to render a card without an extra fetch.
+   */
+  private buildPendingActivityCards(activities: ActivityDetection[]) {
+    return activities
+      .filter(
+        (a) =>
+          a.userConfirmedType == null &&
+          a.dismissedAt == null &&
+          a.activityType !== 'Sedentary' &&
+          a.activityType !== 'Rest' &&
+          a.activityType !== 'Off-Wrist' &&
+          a.activityType !== 'No Data',
+      )
+      .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
+      .map((a) => ({
+        id: a.id,
+        activityType: a.activityType,
+        startTime: a.startTime.toISOString(),
+        endTime: a.endTime.toISOString(),
+        durationMinutes: Math.round(a.durationMinutes),
+        intensity: a.intensity,
+        heartRateAvg: Math.round(a.heartRateAvg),
+        strainScore: Math.round(a.strainScore * 10) / 10,
+        confidence: Math.round(a.confidence * 100) / 100,
+      }));
   }
 
   /**

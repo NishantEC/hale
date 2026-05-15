@@ -18,6 +18,7 @@ import { SleepPlan } from '../plans/sleep-plan.entity.js';
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 import { HealthkitDailySummary } from '../activity/entities/healthkit-daily-summary.entity.js';
 import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.js';
+import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.
       HealthkitWorkout,
       PipelineState,
       PipelineRun,
+      DeviceEvent,
     ]),
   ],
   controllers: [PipelineController],

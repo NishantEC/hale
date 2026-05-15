@@ -25,7 +25,8 @@ import {
   computeDailyScore,
   recomputeBaselineProfile,
 } from '../processing/wellness-scoring.js';
-import { SleepEventEngine } from '../processing/sleep-event-engine.js';
+import { SleepEventEngine, buildOffWristIntervals } from '../processing/sleep-event-engine.js';
+import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
 import { detectActivities, type ActivityBout } from '../processing/activity-detector.js';
 import { reclassifyHiking } from '../processing/hiking-detector.js';
 import { reclassifyStairs } from '../processing/stair-detector.js';
@@ -92,6 +93,8 @@ export class PipelineService {
     private pipelineStateRepo: Repository<PipelineState>,
     @InjectRepository(PipelineRun)
     private pipelineRunRepo: Repository<PipelineRun>,
+    @InjectRepository(DeviceEvent)
+    private deviceEventRepo: Repository<DeviceEvent>,
   ) {}
 
   // ------------------------------------------------------------------ ingest
@@ -313,23 +316,38 @@ export class PipelineService {
     };
 
     // 1. Fetch raw data
-    const [dbSignalSamples, dbSensorRecords, dbBaseline, dbSleepPlan, dbJournalEntries] =
-      await Promise.all([
-        this.signalSampleRepo.find({
-          where: { userId, timestamp: MoreThanOrEqual(cutoff) },
-          order: { timestamp: 'ASC' },
-        }),
-        this.rawSensorRepo.find({
-          where: { userId, timestamp: MoreThanOrEqual(cutoff) },
-          order: { timestamp: 'ASC' },
-        }),
-        this.baselineRepo.findOne({ where: { userId } }),
-        this.sleepPlanRepo.findOne({ where: { userId } }),
-        this.journalRepo.find({
-          where: { userId, timestamp: MoreThanOrEqual(cutoff) },
-          order: { timestamp: 'ASC' },
-        }),
-      ]);
+    const [
+      dbSignalSamples,
+      dbSensorRecords,
+      dbBaseline,
+      dbSleepPlan,
+      dbJournalEntries,
+      dbWristEvents,
+    ] = await Promise.all([
+      this.signalSampleRepo.find({
+        where: { userId, timestamp: MoreThanOrEqual(cutoff) },
+        order: { timestamp: 'ASC' },
+      }),
+      this.rawSensorRepo.find({
+        where: { userId, timestamp: MoreThanOrEqual(cutoff) },
+        order: { timestamp: 'ASC' },
+      }),
+      this.baselineRepo.findOne({ where: { userId } }),
+      this.sleepPlanRepo.findOne({ where: { userId } }),
+      this.journalRepo.find({
+        where: { userId, timestamp: MoreThanOrEqual(cutoff) },
+        order: { timestamp: 'ASC' },
+      }),
+      // WristOn/Off (9/10) + ChargingOn/Off (7/8) drive authoritative
+      // off-wrist gating in the sleep engine — see buildOffWristIntervals.
+      this.deviceEventRepo.find({
+        where: {
+          userId,
+          capturedAt: MoreThanOrEqual(cutoff),
+        },
+        order: { capturedAt: 'ASC' },
+      }),
+    ]);
     mark('fetch');
 
     // 2. Convert DB records to interface types
@@ -389,11 +407,36 @@ export class PipelineService {
         : this.deriveSignalSamplesFromSensorRecords(sensorRecords);
     const sanitized = sanitize(signalSamples);
 
-    const sleepDetections = SleepEventEngine.detect(sensorRecords, timeZone);
+    const wristEventWindowEnd =
+      dbSensorRecords.length > 0
+        ? dbSensorRecords[dbSensorRecords.length - 1].timestamp
+        : new Date();
+    const offWristIntervals = buildOffWristIntervals(
+      dbWristEvents
+        .filter((e) => [7, 8, 9, 10].includes(e.eventNumber))
+        .map((e) => ({ eventNumber: e.eventNumber, capturedAt: e.capturedAt })),
+      wristEventWindowEnd,
+    );
+    const sleepDetections = SleepEventEngine.detect(
+      sensorRecords,
+      timeZone,
+      offWristIntervals,
+    );
     mark('sleep-detect');
 
-    // Activity detection on non-sleep daytime periods
-    let activityBouts = detectActivities(sensorRecords, sleepDetections, baseline);
+    // Activity detection on non-sleep daytime periods. Surface off-wrist
+    // intervals as their own entries so the user sees where coverage was
+    // lost (e.g. charging, BLE drop).
+    const sourceLabeledIntervals = buildSourceLabeledOffWristIntervals(
+      dbWristEvents,
+      wristEventWindowEnd,
+    );
+    let activityBouts = detectActivities(
+      sensorRecords,
+      sleepDetections,
+      baseline,
+      sourceLabeledIntervals,
+    );
 
     // Apply HealthKit-driven reclassifiers (hiking, stairs, Apple workout match)
     if (activityBouts.length > 0) {
@@ -1291,6 +1334,50 @@ export class PipelineService {
 
     return restaged;
   }
+}
+
+/**
+ * Build {start, end, source} intervals for the activity detector. Source
+ * distinguishes WristOff vs ChargingOn so the UI can label the entry
+ * accurately ("Off-Wrist" vs "Charging" — currently both surface as
+ * "Off-Wrist" but we keep the distinction for downstream use).
+ */
+function buildSourceLabeledOffWristIntervals(
+  events: DeviceEvent[],
+  windowEnd: Date,
+): Array<{ start: Date; end: Date; source: 'WristOff' | 'ChargingOn' | null }> {
+  const MAX_OFF_WRIST_MS = 24 * 60 * 60 * 1000;
+  const sorted = [...events]
+    .filter((e) => [7, 8, 9, 10].includes(e.eventNumber))
+    .sort((a, b) => a.capturedAt.getTime() - b.capturedAt.getTime());
+  const intervals: Array<{ start: Date; end: Date; source: 'WristOff' | 'ChargingOn' | null }> = [];
+  let wristOffOpen: Date | null = null;
+  let chargingOpen: Date | null = null;
+  const push = (
+    start: Date,
+    end: Date,
+    source: 'WristOff' | 'ChargingOn',
+  ) => {
+    const cap = new Date(start.getTime() + MAX_OFF_WRIST_MS);
+    const boundedEnd = end.getTime() > cap.getTime() ? cap : end;
+    intervals.push({ start, end: boundedEnd, source });
+  };
+  for (const e of sorted) {
+    if (e.eventNumber === 10 && wristOffOpen == null) {
+      wristOffOpen = e.capturedAt;
+    } else if (e.eventNumber === 9 && wristOffOpen != null) {
+      push(wristOffOpen, e.capturedAt, 'WristOff');
+      wristOffOpen = null;
+    } else if (e.eventNumber === 7 && chargingOpen == null) {
+      chargingOpen = e.capturedAt;
+    } else if (e.eventNumber === 8 && chargingOpen != null) {
+      push(chargingOpen, e.capturedAt, 'ChargingOn');
+      chargingOpen = null;
+    }
+  }
+  if (wristOffOpen != null) push(wristOffOpen, windowEnd, 'WristOff');
+  if (chargingOpen != null) push(chargingOpen, windowEnd, 'ChargingOn');
+  return intervals;
 }
 
 function groupBoutsByDay(bouts: ActivityBout[]): Map<string, ActivityBout[]> {

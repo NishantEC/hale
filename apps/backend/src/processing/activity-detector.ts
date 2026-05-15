@@ -23,7 +23,9 @@ export type ActivityType =
   | 'General Exercise'
   | 'Light Activity'
   | 'Rest'
-  | 'Sedentary';
+  | 'Sedentary'
+  | 'Off-Wrist'
+  | 'No Data';
 
 export interface ActivityBout {
   startTime: Date;
@@ -48,6 +50,14 @@ const MOTION_THRESHOLD = 0.01;        // matches reference (openwhoop activity.p
 const STILL_FRACTION_SEDENTARY = 0.85;
 const MIN_BOUT_MINUTES = 3;
 const MERGE_GAP_MINUTES = 5;
+// Any gap larger than this between consecutive records means we lost data
+// (BLE disconnect, off-wrist, etc.). Don't let a bout span the gap — it
+// produces phantom multi-hour "Sedentary" entries when really there was
+// nothing to classify.
+const BOUT_DATA_GAP_BREAK_MS = 5 * 60 * 1000;
+// Gaps at least this long warrant their own "Off-Wrist" / "No Data" entry
+// on the activity feed so the user can see where coverage was lost.
+const GAP_ENTRY_MIN_MS = 15 * 60 * 1000;
 const STRAIN_LN_7201 = Math.log(7201);
 
 // Cadence bands (Hz) — from FFT of gravity magnitude oscillations
@@ -60,10 +70,18 @@ const CADENCE_CYCLING_HIGH = 2.0;
 
 // ── Main entry point ─────────────────────────────────────
 
+export interface OffWristIntervalLite {
+  start: Date;
+  end: Date;
+  /** 'WristOff' or 'ChargingOn' if from a device event; null when inferred from a data gap alone. */
+  source: 'WristOff' | 'ChargingOn' | null;
+}
+
 export function detectActivities(
   records: HistoricalSensorRecord[],
   sleepDetections: SleepDetectionSummary[],
   baseline: BaselineProfile,
+  offWristIntervals: OffWristIntervalLite[] = [],
 ): ActivityBout[] {
   const sorted = [...records].sort(
     (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
@@ -86,8 +104,107 @@ export function detectActivities(
     (b) => (b.end.getTime() - b.start.getTime()) >= MIN_BOUT_MINUTES * 60 * 1000,
   );
 
-  // Classify each bout
-  return validBouts.map((bout) => classifyBout(bout, awakeRecords, baseline));
+  const classified = validBouts.map((bout) => classifyBout(bout, awakeRecords, baseline));
+
+  // Emit Off-Wrist / No-Data entries for gaps in awake records. These let
+  // the user see where coverage was lost (charging, BLE drop, strap off)
+  // instead of an invisible hole in the day.
+  const gapBouts = detectGapEntries(awakeRecords, sleepDetections, offWristIntervals);
+
+  return [...classified, ...gapBouts].sort(
+    (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+  );
+}
+
+function detectGapEntries(
+  awakeRecords: HistoricalSensorRecord[],
+  sleepDetections: SleepDetectionSummary[],
+  offWristIntervals: OffWristIntervalLite[],
+): ActivityBout[] {
+  const entries: ActivityBout[] = [];
+  // 1. Gaps inside the awake-records stream.
+  for (let i = 1; i < awakeRecords.length; i++) {
+    const gapMs =
+      awakeRecords[i].timestamp.getTime() - awakeRecords[i - 1].timestamp.getTime();
+    if (gapMs < GAP_ENTRY_MIN_MS) continue;
+    const start = awakeRecords[i - 1].timestamp;
+    const end = awakeRecords[i].timestamp;
+    if (overlapsSleep(start, end, sleepDetections)) continue;
+    const source = pickOffWristSource(start, end, offWristIntervals);
+    entries.push(makeGapBout(start, end, source));
+  }
+  // 2. Off-wrist intervals reported by the device but with no surrounding
+  // sensor records (rare — strap powered off completely). We still want
+  // these to surface as off-wrist time.
+  for (const interval of offWristIntervals) {
+    if (interval.end.getTime() - interval.start.getTime() < GAP_ENTRY_MIN_MS) continue;
+    if (overlapsAnyExisting(interval.start, interval.end, entries)) continue;
+    if (overlapsSleep(interval.start, interval.end, sleepDetections)) continue;
+    entries.push(makeGapBout(interval.start, interval.end, interval.source));
+  }
+  return entries;
+}
+
+function overlapsSleep(
+  start: Date,
+  end: Date,
+  sleepDetections: SleepDetectionSummary[],
+): boolean {
+  const s = start.getTime();
+  const e = end.getTime();
+  return sleepDetections.some(
+    (d) => d.bedtime.getTime() <= e && d.wakeTime.getTime() >= s,
+  );
+}
+
+function overlapsAnyExisting(start: Date, end: Date, bouts: ActivityBout[]): boolean {
+  const s = start.getTime();
+  const e = end.getTime();
+  return bouts.some(
+    (b) => b.startTime.getTime() <= e && b.endTime.getTime() >= s,
+  );
+}
+
+function pickOffWristSource(
+  start: Date,
+  end: Date,
+  offWristIntervals: OffWristIntervalLite[],
+): 'WristOff' | 'ChargingOn' | null {
+  const s = start.getTime();
+  const e = end.getTime();
+  // Find an off-wrist interval whose middle falls inside the gap.
+  const overlap = offWristIntervals.find(
+    (i) =>
+      i.start.getTime() <= e &&
+      i.end.getTime() >= s &&
+      i.source != null,
+  );
+  return overlap?.source ?? null;
+}
+
+function makeGapBout(
+  start: Date,
+  end: Date,
+  source: 'WristOff' | 'ChargingOn' | null,
+): ActivityBout {
+  const durationMinutes = (end.getTime() - start.getTime()) / 60000;
+  const activityType: ActivityType = source != null ? 'Off-Wrist' : 'No Data';
+  return {
+    startTime: start,
+    endTime: end,
+    durationMinutes: Math.round(durationMinutes * 10) / 10,
+    activityType,
+    intensity: 'light',
+    confidence: source != null ? 0.95 : 0.6,
+    heartRateAvg: 0,
+    heartRateMax: 0,
+    strainScore: 0,
+    cadenceHz: null,
+    flightsCount: null,
+    elevationGainMeters: null,
+    distanceMeters: null,
+    externalSource: source != null ? `event:${source}` : null,
+  };
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -140,6 +257,19 @@ function segmentIntoBouts(
   let boutStart: Date | null = null;
 
   for (let i = 0; i < records.length; i++) {
+    // If there's a large gap between this record and the previous one,
+    // force-close any open bout at the previous record's timestamp. This
+    // prevents bouts from straddling BLE/off-wrist gaps and producing
+    // phantom multi-hour entries.
+    if (i > 0 && inBout && boutStart) {
+      const gapMs = records[i].timestamp.getTime() - records[i - 1].timestamp.getTime();
+      if (gapMs > BOUT_DATA_GAP_BREAK_MS) {
+        bouts.push({ start: boutStart, end: records[i - 1].timestamp });
+        inBout = false;
+        boutStart = null;
+      }
+    }
+
     const isMoving = deltas[i] > MOTION_THRESHOLD;
     if (isMoving && !inBout) {
       inBout = true;

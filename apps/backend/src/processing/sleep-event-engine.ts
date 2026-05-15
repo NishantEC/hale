@@ -8,6 +8,11 @@ interface TempPeriod {
   end: Date;
 }
 
+export interface OffWristInterval {
+  start: Date;
+  end: Date;
+}
+
 interface NightGroup {
   nightDate: Date;
   bedtime: Date;
@@ -21,11 +26,16 @@ interface NightGroup {
 const HISTORICAL_GAP_BREAK_SECONDS = 20 * 60;
 const SHORT_FLIP_MERGE_SECONDS = 15 * 60;
 const MIN_SLEEP_PERIOD_MS = 60 * 60 * 1000;
+// Maximum gap allowed between two sleep periods to still count as the same
+// "night". Anything longer means a daytime nap (or sedentary at-desk time
+// mis-classified as still) — not part of the main overnight sleep.
+const SAME_NIGHT_GAP_MS = 4 * 60 * 60 * 1000;
 
 export class SleepEventEngine {
   static detect(
     records: HistoricalSensorRecord[],
     timeZone?: string,
+    offWristIntervals: OffWristInterval[] = [],
   ): SleepDetectionSummary[] {
     const sorted = [...records].sort(
       (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
@@ -52,6 +62,21 @@ export class SleepEventEngine {
     const deltas = gravityDeltas(gravityRecords);
     let isSleepFlags = classifySleep(deltas, windowSize);
 
+    // Off-wrist gating. Three signals, in order of authority:
+    //   1. Device-emitted WristOff / ChargingOn events (passed in as
+    //      offWristIntervals) — authoritative when present.
+    //   2. skinContact === false on a record — strap reports no contact.
+    //   3. HR-fraction fallback further below (period-level).
+    // Any epoch caught by 1 or 2 is forced to wake.
+    const offWristSorted = sortIntervals(offWristIntervals);
+    isSleepFlags = isSleepFlags.map((flag, idx) => {
+      if (!flag) return false;
+      const record = gravityRecords[idx];
+      if (record.skinContact === false) return false;
+      if (isInsideAnyInterval(record.timestamp, offWristSorted)) return false;
+      return true;
+    });
+
     // HR-assisted refinement: adjust boundary epochs based on heart rate trends
     isSleepFlags = hrAssistedRefinement(gravityRecords, isSleepFlags);
 
@@ -67,8 +92,28 @@ export class SleepEventEngine {
     );
     if (longSleeps.length === 0) return [];
 
+    // Off-wrist gating (HR fallback): when skinContact is not populated
+    // (older firmware/clients), still reject periods where the bulk of
+    // records have heartRate <= 0. A real night has HR present for the
+    // vast majority of records; a strap left on the desk reads HR=0.
+    const wristContactSleeps = longSleeps.filter((period) =>
+      periodHasWristContact(period, gravityRecords),
+    );
+    if (wristContactSleeps.length === 0) return [];
+
+    // HR-baseline gate: sleeping HR is typically 10+ bpm below the user's
+    // awake HR. A sedentary at-desk period (still gravity, HR present,
+    // skinContact true) sails through the gates above — but its HR sits in
+    // the awake range. Require the period's median HR to be at least
+    // SLEEP_HR_OFFSET below the day's awake-window median.
+    const heartRateGatedSleeps = filterByHrBelowAwakeBaseline(
+      wristContactSleeps,
+      gravityRecords,
+    );
+    if (heartRateGatedSleeps.length === 0) return [];
+
     const groups = groupSleepsByNight(
-      longSleeps,
+      heartRateGatedSleeps,
       gravityRecords,
       intervalSeconds,
       timeZone,
@@ -98,6 +143,197 @@ export class SleepEventEngine {
       };
     });
   }
+}
+
+const WRIST_CONTACT_MIN_HR_FRACTION = 0.3;
+// Sleep HR is reliably below awake HR. We require the candidate sleep
+// period's median HR to be at least this much below the median HR of all
+// records OUTSIDE candidate sleep periods (the "awake baseline").
+const SLEEP_HR_OFFSET_BPM = 8;
+// Hard ceiling on sleep HR. Real sleeping HR rarely exceeds 80 bpm. Above
+// this, the period is definitionally not sleep regardless of baseline.
+const SLEEP_HR_MAX_BPM = 85;
+
+function periodHrMedian(
+  period: TempPeriod,
+  records: HistoricalSensorRecord[],
+): number | null {
+  const startMs = period.start.getTime();
+  const endMs = period.end.getTime();
+  const hrs: number[] = [];
+  for (const r of records) {
+    const ts = r.timestamp.getTime();
+    if (ts < startMs || ts > endMs) continue;
+    if (r.heartRate > 0) hrs.push(r.heartRate);
+  }
+  if (hrs.length === 0) return null;
+  hrs.sort((a, b) => a - b);
+  return hrs[Math.floor(hrs.length / 2)];
+}
+
+function filterByHrBelowAwakeBaseline(
+  candidates: TempPeriod[],
+  records: HistoricalSensorRecord[],
+): TempPeriod[] {
+  if (candidates.length === 0) return [];
+  // Build the awake baseline: HR values from records OUTSIDE all candidates.
+  const sortedCandidates = [...candidates].sort(
+    (a, b) => a.start.getTime() - b.start.getTime(),
+  );
+  const awakeHrs: number[] = [];
+  for (const r of records) {
+    if (r.heartRate <= 0) continue;
+    const ts = r.timestamp.getTime();
+    let insideCandidate = false;
+    for (const c of sortedCandidates) {
+      if (c.start.getTime() > ts) break;
+      if (c.end.getTime() >= ts) {
+        insideCandidate = true;
+        break;
+      }
+    }
+    if (!insideCandidate) awakeHrs.push(r.heartRate);
+  }
+  // If we don't have enough awake samples to estimate baseline, skip the
+  // gate (degrades gracefully on cold-start / partial data).
+  if (awakeHrs.length < 30) {
+    return candidates.filter((p) => {
+      const m = periodHrMedian(p, records);
+      return m == null || m <= SLEEP_HR_MAX_BPM;
+    });
+  }
+  awakeHrs.sort((a, b) => a - b);
+  const awakeMedian = awakeHrs[Math.floor(awakeHrs.length / 2)];
+  return candidates.filter((p) => {
+    const m = periodHrMedian(p, records);
+    if (m == null) return true;
+    if (m > SLEEP_HR_MAX_BPM) return false;
+    return m <= awakeMedian - SLEEP_HR_OFFSET_BPM;
+  });
+}
+
+function sortIntervals(intervals: OffWristInterval[]): OffWristInterval[] {
+  return [...intervals]
+    .filter((i) => i.end.getTime() > i.start.getTime())
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+function isInsideAnyInterval(
+  timestamp: Date,
+  sortedIntervals: OffWristInterval[],
+): boolean {
+  if (sortedIntervals.length === 0) return false;
+  const ts = timestamp.getTime();
+  // Linear scan is fine; off-wrist intervals per night are typically <20.
+  for (const interval of sortedIntervals) {
+    if (interval.start.getTime() > ts) return false;
+    if (interval.end.getTime() >= ts) return true;
+  }
+  return false;
+}
+
+// Maximum off-wrist interval we'll accept. Real off-wrist durations
+// (charging, overnight removal) are bounded; longer means the closing
+// event was lost over BLE, so we cap to avoid over-filtering legitimate
+// sleep. Beyond this cap the engine falls back to skinContact + HR gating.
+const MAX_OFF_WRIST_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Build off-wrist intervals from device events. WristOff/ChargingOn opens
+ * an interval; the next matching WristOn/ChargingOff closes it. Unclosed
+ * intervals (still off-wrist at end of window) close at the earlier of
+ * `windowEnd` or `open + MAX_OFF_WRIST_MS` — preventing a missed close
+ * event from blanket-filtering days of data.
+ */
+export function buildOffWristIntervals(
+  events: Array<{ eventNumber: number; capturedAt: Date }>,
+  windowEnd: Date,
+): OffWristInterval[] {
+  const sorted = [...events].sort(
+    (a, b) => a.capturedAt.getTime() - b.capturedAt.getTime(),
+  );
+  const intervals: OffWristInterval[] = [];
+  // WristOff (10) and ChargingOn (7) open; WristOn (9) and ChargingOff (8) close.
+  // Track each axis independently so a WristOff during charging doesn't
+  // collapse the two intervals.
+  let wristOffOpen: Date | null = null;
+  let chargingOpen: Date | null = null;
+  const pushBounded = (start: Date, end: Date) => {
+    const cap = new Date(start.getTime() + MAX_OFF_WRIST_MS);
+    const boundedEnd = end.getTime() > cap.getTime() ? cap : end;
+    intervals.push({ start, end: boundedEnd });
+  };
+  for (const e of sorted) {
+    if (e.eventNumber === 10 && wristOffOpen == null) {
+      wristOffOpen = e.capturedAt;
+    } else if (e.eventNumber === 9 && wristOffOpen != null) {
+      pushBounded(wristOffOpen, e.capturedAt);
+      wristOffOpen = null;
+    } else if (e.eventNumber === 7 && chargingOpen == null) {
+      chargingOpen = e.capturedAt;
+    } else if (e.eventNumber === 8 && chargingOpen != null) {
+      pushBounded(chargingOpen, e.capturedAt);
+      chargingOpen = null;
+    }
+  }
+  if (wristOffOpen != null) pushBounded(wristOffOpen, windowEnd);
+  if (chargingOpen != null) pushBounded(chargingOpen, windowEnd);
+  return intervals;
+}
+
+function pickNightCluster(periods: TempPeriod[]): TempPeriod[] {
+  if (periods.length <= 1) return periods;
+  const sorted = [...periods].sort(
+    (a, b) => a.start.getTime() - b.start.getTime(),
+  );
+  // Walk forward from the longest period in both directions, including any
+  // neighbor whose gap to the cluster is < SAME_NIGHT_GAP_MS.
+  let anchorIdx = 0;
+  let anchorLen = 0;
+  for (let i = 0; i < sorted.length; i++) {
+    const len = sorted[i].end.getTime() - sorted[i].start.getTime();
+    if (len > anchorLen) {
+      anchorLen = len;
+      anchorIdx = i;
+    }
+  }
+  const cluster: TempPeriod[] = [sorted[anchorIdx]];
+  // Expand backward
+  for (let i = anchorIdx - 1; i >= 0; i--) {
+    const gap = cluster[0].start.getTime() - sorted[i].end.getTime();
+    if (gap > SAME_NIGHT_GAP_MS) break;
+    cluster.unshift(sorted[i]);
+  }
+  // Expand forward
+  for (let i = anchorIdx + 1; i < sorted.length; i++) {
+    const gap = sorted[i].start.getTime() - cluster[cluster.length - 1].end.getTime();
+    if (gap > SAME_NIGHT_GAP_MS) break;
+    cluster.push(sorted[i]);
+  }
+  return cluster;
+}
+
+function periodHasWristContact(
+  period: TempPeriod,
+  records: HistoricalSensorRecord[],
+): boolean {
+  const startMs = period.start.getTime();
+  const endMs = period.end.getTime();
+  let total = 0;
+  let withHr = 0;
+  let explicitOffWrist = 0;
+  for (const r of records) {
+    const ts = r.timestamp.getTime();
+    if (ts < startMs || ts > endMs) continue;
+    total++;
+    if (r.heartRate > 0) withHr++;
+    if (r.skinContact === false) explicitOffWrist++;
+  }
+  if (total === 0) return false;
+  // If the strap explicitly reported off-wrist for the majority of the
+  // period, drop it even if some HR happened to be present.
+  if (explicitOffWrist / total > 0.5) return false;
+  return withHr / total >= WRIST_CONTACT_MIN_HR_FRACTION;
 }
 
 function gravityMagnitude(
@@ -247,6 +483,7 @@ function groupSleepsByNight(
   intervalSeconds: number,
   timeZone?: string,
 ): NightGroup[] {
+  // First pass: group periods by calendar day of end time.
   const grouped = new Map<number, TempPeriod[]>();
   for (const period of sleepPeriods) {
     const day = startOfDay(period.end, timeZone);
@@ -259,12 +496,17 @@ function groupSleepsByNight(
     }
   }
 
+  // Second pass: within each calendar day, only keep periods that are
+  // within SAME_NIGHT_GAP_MS of the main sleep block. The main block is
+  // the longest single period; daytime stationary/desk time mis-classified
+  // as sleep typically lives many hours away from the actual night.
   const results: NightGroup[] = [];
-  for (const [, periods] of grouped) {
-    const sorted = [...periods].sort(
+  for (const [, periodsForDay] of grouped) {
+    const dayPeriods = pickNightCluster(periodsForDay);
+    if (dayPeriods.length === 0) continue;
+    const sorted = [...dayPeriods].sort(
       (a, b) => a.start.getTime() - b.start.getTime(),
     );
-    if (sorted.length === 0) continue;
     const first = sorted[0];
     const last = sorted[sorted.length - 1];
     const totalSleep = sorted.reduce(

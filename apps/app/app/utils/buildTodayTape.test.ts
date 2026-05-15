@@ -58,6 +58,7 @@ function makeHomeView(rings: Partial<HomeViewModel["rings"]>): HomeViewModel {
     stressTrend: [],
     strainTrend: [],
     noDataReasons: {},
+    pendingActivityCards: [],
   }
 }
 

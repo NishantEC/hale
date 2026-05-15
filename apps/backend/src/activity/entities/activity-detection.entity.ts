@@ -54,6 +54,12 @@ export class ActivityDetection {
   @Column('varchar', { default: 'detected' })
   source: string;
 
+  @Column('varchar', { nullable: true })
+  userConfirmedType: string | null;
+
+  @Column('timestamptz', { nullable: true })
+  dismissedAt: Date | null;
+
   @UpdateDateColumn()
   updatedAt: Date;
 }

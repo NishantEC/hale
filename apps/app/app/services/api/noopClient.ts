@@ -146,6 +146,19 @@ export interface HomeViewModel {
   stressTrend: SeriesPoint[];
   strainTrend: SeriesPoint[];
   noDataReasons: Record<string, string>;
+  pendingActivityCards: PendingActivityCard[];
+}
+
+export interface PendingActivityCard {
+  id: string;
+  activityType: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  intensity: string;
+  heartRateAvg: number;
+  strainScore: number;
+  confidence: number;
 }
 
 export interface SleepViewModel {
@@ -672,6 +685,19 @@ export async function fetchResults(): Promise<PipelineResults> {
 
 export async function fetchHomeView(date: string): Promise<HomeViewModel> {
   return apiGet(withDeviceTimeZone(`/views/home?date=${encodeURIComponent(date)}`));
+}
+
+export async function confirmActivity(
+  id: string,
+  confirmedType?: string,
+): Promise<{ ok: boolean }> {
+  return apiPost(`/activities/${encodeURIComponent(id)}/confirm`, {
+    confirmedType,
+  });
+}
+
+export async function dismissActivity(id: string): Promise<{ ok: boolean }> {
+  return apiPost(`/activities/${encodeURIComponent(id)}/dismiss`, {});
 }
 
 export async function fetchSleepView(date: string): Promise<SleepViewModel> {

@@ -54,4 +54,25 @@ export class ActivityService {
     await this.repo.remove(entity);
     return { ok: true };
   }
+
+  async confirm(userId: string, id: string, confirmedType?: string) {
+    const entity = await this.repo.findOne({ where: { id, userId } });
+    if (!entity) return { ok: false as const };
+    entity.userConfirmedType = confirmedType ?? entity.activityType;
+    entity.dismissedAt = null;
+    // Flip source so the pipeline's delete-by-source on next run doesn't
+    // wipe this row. Preserves the user's curation across recomputes.
+    if (entity.source === 'detected') entity.source = 'user_confirmed';
+    await this.repo.save(entity);
+    return { ok: true as const, userConfirmedType: entity.userConfirmedType };
+  }
+
+  async dismiss(userId: string, id: string) {
+    const entity = await this.repo.findOne({ where: { id, userId } });
+    if (!entity) return { ok: false as const };
+    entity.dismissedAt = new Date();
+    if (entity.source === 'detected') entity.source = 'user_dismissed';
+    await this.repo.save(entity);
+    return { ok: true as const };
+  }
 }

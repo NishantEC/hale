@@ -23,17 +23,17 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BlurHeader } from "@/components/BlurHeader"
 import { DateSwitcher } from "@/components/DateSwitcher"
-import { AppleHealthCard } from "@/components/home/AppleHealthCard"
-import { RecoveryHero } from "@/components/home/RecoveryHero"
-import { StatGrid, type StatGridItem } from "@/components/home/StatGrid"
-import { TodayTape } from "@/components/home/TodayTape"
+import { MetricRingsRow } from "@/components/home/MetricRingsRow"
+import { type MetricCell } from "@/components/home/MetricsBar"
+import { StatsHealthSwitcher } from "@/components/home/StatsHealthSwitcher"
+import { PendingActivityCards } from "@/components/home/PendingActivityCards"
+import { TodayCard } from "@/components/home/TodayCard"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
 import { useHealthKit } from "@/context/HealthKitContext"
-import { fetchJournalEntries, JournalEntryResponse } from "@/services/api/noopClient"
 import { buildTodayTape, type TapeEvent } from "@/utils/buildTodayTape"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 import { recoveryVerdict } from "@/utils/recoveryVerdict"
@@ -95,14 +95,7 @@ export const HomeScreen: FC = () => {
   const { connectionState, batteryLevel, isCharging, isSyncing } = useBle()
   const { setActiveDate: setHealthKitActiveDate } = useHealthKit()
   const [isHorizontalDaySwipeActive, setIsHorizontalDaySwipeActive] = useState(false)
-  const [journalEntries, setJournalEntries] = useState<JournalEntryResponse[]>([])
   const lastShownError = useRef<string | null>(null)
-
-  useEffect(() => {
-    fetchJournalEntries(selectedDate)
-      .then((res) => setJournalEntries(res.entries))
-      .catch(() => setJournalEntries([]))
-  }, [selectedDate])
 
   useEffect(() => {
     setHealthKitActiveDate(selectedDate)
@@ -204,38 +197,65 @@ export const HomeScreen: FC = () => {
     : null
   const verdict = recoveryVerdict(recoveryNumeric)
 
-  const statItems: StatGridItem[] = [
+  const ringTrio = [
     {
       key: "sleep",
       label: "Sleep",
       value: homeView?.rings.sleep.value ?? "--",
-      desc: undefined,
-      tint: colors.ringSleep,
+      unit: "%",
+      progress: homeView?.rings.sleep.progress ?? 0,
+      color: colors.ringSleep,
       onPress: () => navigateTo("SleepDetail", "sleep-detail", { date: selectedDate }),
+    },
+    {
+      key: "recovery",
+      label: "Recovery",
+      value: homeView?.rings.recovery.value ?? "--",
+      unit: "%",
+      progress: homeView?.rings.recovery.progress ?? 0,
+      color: colors.ringRecovery,
+      onPress: () => navigateTo("HomeMetric", "home-metric", { metric: "recovery" }),
     },
     {
       key: "strain",
       label: "Strain",
       value: homeView?.rings.strain.value ?? "--",
-      desc: undefined,
-      tint: colors.ringStrain,
+      unit: "/21",
+      progress: homeView?.rings.strain.progress ?? 0,
+      color: colors.ringStrain,
       onPress: () => navigateTo("StrainActivity", "strain-activity"),
     },
+  ] as const
+
+  const metricCells: MetricCell[] = [
     {
       key: "hrv",
       label: "HRV",
       value: homeView?.activities.hrv ?? "--",
-      desc: "ms",
-      tint: colors.ringHrv,
+      unit: "ms",
+      dotColor: colors.ringHrv,
       onPress: () => navigateTo("HrvDetail", "hrv-detail"),
     },
     {
-      key: "journal",
-      label: "Journal",
-      value: String(journalEntries.length),
-      desc: journalEntries.length === 1 ? "entry" : "entries",
-      tint: colors.tint,
-      onPress: () => navigateTo("JournalHistory", "journal-history"),
+      key: "rhr",
+      label: "RHR",
+      value: homeView?.activities.restingHr ?? "--",
+      unit: "bpm",
+      dotColor: colors.ringStrain,
+    },
+    {
+      key: "resp",
+      label: "RESP",
+      value: "--",
+      unit: "/min",
+      dotColor: colors.ringSleep,
+    },
+    {
+      key: "spo2",
+      label: "SPO₂",
+      value: (homeView?.activities.spo2 ?? "--").replace("%", ""),
+      unit: "%",
+      dotColor: colors.ringRecovery,
     },
   ]
 
@@ -243,7 +263,7 @@ export const HomeScreen: FC = () => {
     () =>
       buildTodayTape({
         homeView,
-        journalEntries,
+        journalEntries: [],
         now: Date.now(),
         colors: {
           ringRecovery: colors.ringRecovery,
@@ -256,7 +276,6 @@ export const HomeScreen: FC = () => {
       }),
     [
       homeView,
-      journalEntries,
       selectedDate,
       colors.ringRecovery,
       colors.ringSleep,
@@ -274,13 +293,6 @@ export const HomeScreen: FC = () => {
       case "recovery":
       case "vital":
         navigateTo("HomeMetric", "home-metric", { metric: "recovery" })
-        break
-      case "journal":
-        navigateTo(
-          "JournalEntry",
-          "journal-entry",
-          event.payload?.journalEntryId ? { id: event.payload.journalEntryId } : undefined,
-        )
         break
       case "workout":
         navigateTo("StrainActivity", "strain-activity")
@@ -343,54 +355,18 @@ export const HomeScreen: FC = () => {
                 entering={FadeIn.duration(120)}
                 exiting={FadeOut.duration(90)}
               >
-                <RecoveryHero
-                  value={recoveryProgress}
-                  label={recoveryLabelText}
-                  verdict={verdict.verdict}
-                  verdictDetail={verdict.detail}
-                  onPress={() => navigateTo("HomeMetric", "home-metric", { metric: "recovery" })}
+                <MetricRingsRow
+                  rings={[ringTrio[0], ringTrio[1], ringTrio[2]] as any}
                 />
 
-                <Text
-                  text="STATS"
-                  style={{
-                    color: colors.textDim,
-                    fontSize: 11,
-                    fontWeight: "700",
-                    letterSpacing: 1.4,
-                    marginBottom: 8,
-                    marginLeft: 2,
-                  }}
-                />
-                <StatGrid items={statItems} />
+                <StatsHealthSwitcher statsCells={metricCells} />
 
-                <Text
-                  text="APPLE HEALTH"
-                  style={{
-                    color: colors.textDim,
-                    fontSize: 11,
-                    fontWeight: "700",
-                    letterSpacing: 1.4,
-                    marginTop: 28,
-                    marginBottom: 8,
-                    marginLeft: 2,
-                  }}
+                <PendingActivityCards
+                  cards={homeView?.pendingActivityCards ?? []}
+                  onResolved={refreshDashboard}
                 />
-                <AppleHealthCard />
 
-                <Text
-                  text="TODAY'S TAPE"
-                  style={{
-                    color: colors.textDim,
-                    fontSize: 11,
-                    fontWeight: "700",
-                    letterSpacing: 1.4,
-                    marginTop: 28,
-                    marginBottom: 8,
-                    marginLeft: 2,
-                  }}
-                />
-                <TodayTape events={tapeEvents} onEventPress={handleTapePress} />
+                <TodayCard events={tapeEvents} onEventPress={handleTapePress} />
               </Animated.View>
             )}
           </View>
@@ -399,6 +375,20 @@ export const HomeScreen: FC = () => {
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
       </SafeAreaView>
     </PanGestureHandler>
+  )
+}
+
+function ComposeButton({ onPress }: { onPress: () => void }) {
+  const colors = LOCAL_THEME.colors
+  return (
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityLabel="New journal entry"
+      style={themed($composeButton)}
+      onPress={onPress}
+    >
+      <PhosphorIcon name="note-pencil-outline" size={18} color={colors.text} />
+    </TouchableOpacity>
   )
 }
 
@@ -494,6 +484,21 @@ const $topStrip: ThemedStyle<ViewStyle> = () => ({
   gap: 12,
   justifyContent: "space-between",
   marginBottom: 6,
+})
+
+const $topStripRight: ThemedStyle<ViewStyle> = () => ({
+  alignItems: "center",
+  flexDirection: "row",
+  gap: 10,
+})
+
+const $composeButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  alignItems: "center",
+  backgroundColor: colors.surfaceElevated,
+  borderRadius: 16,
+  height: 32,
+  justifyContent: "center",
+  width: 32,
 })
 
 const $devicePill: ThemedStyle<ViewStyle> = () => ({
