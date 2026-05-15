@@ -14,12 +14,16 @@ import {
   fetchHomeView,
   fetchResults,
   fetchSleepView,
+  HealthMonitorSummary,
   HomeViewModel,
+  MonitorState,
   PipelineResults,
   SleepPlanInput,
   SleepViewModel,
+  StressMonitorSummary,
   updateSleepPlan,
 } from "../services/api/noopClient"
+import { scoreToZone } from "@/utils/stressZone"
 import { openDatabase } from "../services/db"
 import { getViewCache, setViewCache } from "../services/db/repositories/viewCache"
 
@@ -38,6 +42,39 @@ type DashboardContextValue = {
 }
 
 const DashboardContext = createContext<DashboardContextValue | null>(null)
+
+function deriveMonitorsFallback(
+  view: Omit<HomeViewModel, "monitors">,
+): { health: HealthMonitorSummary; stress: StressMonitorSummary } {
+  const activities = view.activities
+
+  const hrvNum = activities.hrvMs != null ? activities.hrvMs : null
+  const rhrNum = activities.baselineRhr != null ? activities.baselineRhr : null
+  const inRangeCount = [hrvNum, rhrNum].filter((n) => n != null).length + 2 // RR + SpO2 always considered ok in fallback
+  const healthState: MonitorState = inRangeCount === 4 ? "ok" : "warn"
+
+  const health: HealthMonitorSummary = {
+    state: healthState,
+    verdict: healthState === "ok" ? "Within range" : "Check vitals",
+    inRangeCount,
+    totalMetrics: 4,
+    staleSinceMs: null,
+  }
+
+  const stressStr = activities.stress
+  const stressNum =
+    stressStr && stressStr !== "--" ? parseFloat(stressStr) : null
+  const stress: StressMonitorSummary = {
+    state: stressNum == null ? "stale" : "ok",
+    score: stressNum,
+    zone: scoreToZone(stressNum),
+    lastReadingAt: null,
+    todayStrip: new Array(12).fill(null),
+    timeInZone: { calm: 0, moderate: 0, high: 0 },
+  }
+
+  return { health, stress }
+}
 
 function todayKey() {
   return dayKeyForDate(new Date())
@@ -173,7 +210,7 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
   const targetSleepMinutes =
     results.sleepPlan?.targetSleepMinutes ?? results.sleepPlan?.wakeTargetMinutes ?? 480
 
-  return {
+  const base: Omit<HomeViewModel, "monitors"> = {
     selectedDate: selectedKey,
     selectedDateTitle,
     selectedDateSubtitle,
@@ -289,6 +326,10 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
       activities: "Activity summary needs pipeline data.",
     },
     pendingActivityCards: [],
+  }
+  return {
+    ...base,
+    monitors: deriveMonitorsFallback(base),
   }
 }
 

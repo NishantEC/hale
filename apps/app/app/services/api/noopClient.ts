@@ -63,6 +63,25 @@ export type HomeMetricRing = {
   progress: number;
 };
 
+export type MonitorState = "ok" | "warn" | "alert" | "stale"
+
+export interface HealthMonitorSummary {
+  state: MonitorState
+  verdict: string
+  inRangeCount: number
+  totalMetrics: number
+  staleSinceMs: number | null
+}
+
+export interface StressMonitorSummary {
+  state: MonitorState
+  score: number | null
+  zone: "Calm" | "Moderate" | "High" | null
+  lastReadingAt: string | null
+  todayStrip: Array<number | null>
+  timeInZone: { calm: number; moderate: number; high: number }
+}
+
 export interface HomeViewModel {
   selectedDate: string;
   selectedDateTitle: string;
@@ -147,6 +166,10 @@ export interface HomeViewModel {
   strainTrend: SeriesPoint[];
   noDataReasons: Record<string, string>;
   pendingActivityCards: PendingActivityCard[];
+  monitors?: {
+    health: HealthMonitorSummary
+    stress: StressMonitorSummary
+  }
 }
 
 export interface PendingActivityCard {
