@@ -124,6 +124,7 @@ export type BleContextValue = {
   rebootStrap: () => Promise<void>
   powerCycleStrap: () => Promise<void>
   probeDataRange: () => Promise<{ raw: number[]; hex: string; decoded: string }>
+  rewindAndResync: (unixTs: number, shape: "ts" | "ack" | "bare") => Promise<void>
   clearError: () => void
 }
 
@@ -422,15 +423,28 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       if (records.length > 0) {
         setSyncStage("Running pipeline…")
         console.log("[syncNow] Running pipeline on backend")
-        await runPipeline()
+        // Don't let a slow / timing-out backend pipeline turn a successful
+        // local persist into a "Sync failed" toast. Records are already in
+        // SQLite + outbound queue at this point; the pipeline can finish
+        // on the next backend tick. We still try, but on failure we
+        // continue to refresh views and surface a soft warning rather
+        // than throwing.
+        try {
+          await runPipeline()
 
-        setSyncStage("Refreshing views…")
-        const results = await fetchResults()
-        setSyncSummary({
-          nights: results.sleepDetections?.length ?? 0,
-          stages: results.sleepStages?.length ?? 0,
-          scores: results.dailyScores?.length ?? 0,
-        })
+          setSyncStage("Refreshing views…")
+          const results = await fetchResults()
+          setSyncSummary({
+            nights: results.sleepDetections?.length ?? 0,
+            stages: results.sleepStages?.length ?? 0,
+            scores: results.dailyScores?.length ?? 0,
+          })
+        } catch (pipelineErr: any) {
+          console.warn(
+            "[syncNow] pipeline/fetchResults failed (records persisted locally; backend will catch up):",
+            pipelineErr?.message ?? pipelineErr,
+          )
+        }
       }
 
       await refreshDashboard()
@@ -775,6 +789,68 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       },
     )
   }, [])
+
+  // Recovery: rewind the strap's read pointer to `unixTs` then trigger a
+  // normal sync. The strap re-streams everything in flash from that point
+  // forward, caught by the new durable-ACK + batched-ingest path. `shape`
+  // selects the experimental SetReadPointer payload format — try "ts"
+  // first, fall back to "ack" or "bare" if the strap doesn't re-stream.
+  //
+  // Also actively listens for the strap's CommandResponse to cmd 33 for
+  // up to 1.5s before issuing SendHistoricalData. If we see one, we log
+  // the bytes — that's our only signal as to whether the strap accepted,
+  // rejected, or doesn't implement the command.
+  const rewindAndResync = useCallback(
+    async (unixTs: number, shape: "ts" | "ack" | "bare") => {
+      if (bleManager.connectionState !== "ready") {
+        throw new Error("Connect your WHOOP strap before rewinding.")
+      }
+      console.log(
+        "[rewindAndResync] sending SetReadPointer shape=",
+        shape,
+        "ts=",
+        unixTs,
+        new Date(unixTs * 1000).toISOString(),
+      )
+
+      // Listen for the response before we send. Resolves either when
+      // we see a CommandResponse with command=33, or after 1.5s.
+      const responsePromise = new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          unsub()
+          console.log(
+            "[rewindAndResync] no CommandResponse for cmd 33 within 1.5s — strap likely ignored or doesn't implement it",
+          )
+          resolve()
+        }, 1500)
+        const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
+          if (
+            packet.type === PacketType.CommandResponse &&
+            packet.command === CommandNumber.SetReadPointer
+          ) {
+            clearTimeout(timer)
+            unsub()
+            const bytes = Array.from(packet.data)
+            const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
+            console.log(
+              "[rewindAndResync] CommandResponse for cmd 33: len=",
+              bytes.length,
+              "hex=",
+              hex,
+            )
+            resolve()
+          }
+        })
+      })
+
+      await bleManager.writeCommand(
+        commandService.buildSetReadPointer(unixTs, shape),
+      )
+      await responsePromise
+      await syncNow()
+    },
+    [syncNow],
+  )
 
   useEffect(() => {
     KVStore.getItemAsync(LAST_SYNC_KEY).then((lastSyncAt) => {
@@ -1125,6 +1201,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       rebootStrap,
       powerCycleStrap,
       probeDataRange,
+      rewindAndResync,
       clearError,
     }),
     [
@@ -1149,6 +1226,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       rebootStrap,
       powerCycleStrap,
       probeDataRange,
+      rewindAndResync,
       clearError,
     ],
   )

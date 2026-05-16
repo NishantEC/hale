@@ -77,9 +77,7 @@ export class HistoryDownloader {
       this.timeoutHandle = setTimeout(() => {
         // If we have data, finish with what we have instead of erroring
         if (this.allRecords.length > 0 || this.dataBuffer.length > 0) {
-          this.parseBufferedData();
-          this.emitProgress('complete');
-          this.finishSuccess();
+          void this.persistAndFinish();
         } else {
           this.finishWithError(new Error('History download timed out'));
         }
@@ -103,11 +101,31 @@ export class HistoryDownloader {
       this.idleHandle = setTimeout(() => {
         // No packets for 15 seconds after data started flowing — assume done
         console.log('[HistoryDownloader] Idle timeout — finishing with', this.allRecords.length, 'records');
-        this.parseBufferedData();
-        this.emitProgress('complete');
-        this.finishSuccess();
+        void this.persistAndFinish();
       }, IDLE_TIMEOUT_MS);
     }
+  }
+
+  // Persist any final buffered records (parsed from packets received
+  // since the last HistoryEnd) then resolve the download. Used by
+  // terminal paths: HistoryComplete, idle timeout, hard timeout — none
+  // of which produce a trim value to ACK with, so we persist without
+  // ACKing. Until this existed, terminal-path batches got pushed into
+  // allRecords but never reached persistBatch, leaking ~half the
+  // per-sync records on the (very common) two-cycle sync pattern.
+  private async persistAndFinish() {
+    const finalBatch = this.parseBufferedData();
+    if (finalBatch.length > 0 && this.persistBatch) {
+      try {
+        await this.persistBatch(finalBatch);
+      } catch (err) {
+        // Already in a terminal flow; just log and move on.
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log('[HistoryDownloader] final persistBatch failed:', msg);
+      }
+    }
+    this.emitProgress('complete');
+    this.finishSuccess();
   }
 
   private handlePacket(packet: WhoopPacket) {
@@ -158,9 +176,7 @@ export class HistoryDownloader {
       }
 
       if (metaType === MetadataType.HistoryComplete) {
-        this.parseBufferedData();
-        this.emitProgress('complete');
-        this.finishSuccess();
+        void this.persistAndFinish();
         return;
       }
       return;
@@ -189,9 +205,7 @@ export class HistoryDownloader {
           // Likely done — wait briefly then finish
           setTimeout(() => {
             if (this.resolve) {
-              this.parseBufferedData();
-              this.emitProgress('complete');
-              this.finishSuccess();
+              void this.persistAndFinish();
             }
           }, 3000);
         }

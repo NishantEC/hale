@@ -144,6 +144,50 @@ export class CommandService {
     return this.buildCommand(CommandNumber.GetDataRange, new Uint8Array([0x00]));
   }
 
+  /**
+   * DEAD END as of 2026-05-16. The strap responds (status byte = 0x01)
+   * but does NOT rewind. Cross-referenced with chukfinley/whoopsi
+   * (BLE-protocol decompilation of the official WHOOP Android APK) and
+   * jogolden/whoomp + bWanShiTong/openwhoop:
+   *
+   *   1. Real payload format is [u32_LE sector, u32_LE offset] (8 bytes,
+   *      4-byte aligned), flash-space not time-space. Sector 10 is the
+   *      circular buffer.
+   *   2. The official WHOOP app DEFINES this command but never sends it.
+   *   3. Trim watermark is per-BLE-bond. SetReadPointer cannot expose
+   *      data older than the current bond's trim, regardless of payload.
+   *   4. The whoopsi project's only working recovery mechanism is
+   *      connecting the strap to a DIFFERENT phone (new bond = fresh
+   *      trim watermark; full ~20-day flash re-streams).
+   *
+   * Kept here as a breadcrumb. The three shapes are wrong; don't waste
+   * time iterating on them. If/when we need recovery in production, the
+   * actionable path is a "second device" flow, not this command.
+   */
+  buildSetReadPointer(
+    unixTs: number,
+    shape: "ts" | "ack" | "bare" = "ts",
+  ): string {
+    if (shape === "bare") {
+      return this.buildCommand(CommandNumber.SetReadPointer, new Uint8Array([0x00]));
+    }
+    if (shape === "ack") {
+      const data = new Uint8Array(9);
+      data[0] = 0x01;
+      data[1] = unixTs & 0xff;
+      data[2] = (unixTs >> 8) & 0xff;
+      data[3] = (unixTs >> 16) & 0xff;
+      data[4] = (unixTs >> 24) & 0xff;
+      return this.buildCommand(CommandNumber.SetReadPointer, data);
+    }
+    const data = new Uint8Array(4);
+    data[0] = unixTs & 0xff;
+    data[1] = (unixTs >> 8) & 0xff;
+    data[2] = (unixTs >> 16) & 0xff;
+    data[3] = (unixTs >> 24) & 0xff;
+    return this.buildCommand(CommandNumber.SetReadPointer, data);
+  }
+
   buildExitHighFreqSync(): string {
     return this.buildCommand(CommandNumber.ExitHighFreqSync, new Uint8Array([0x00]));
   }

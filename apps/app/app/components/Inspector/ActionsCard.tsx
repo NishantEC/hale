@@ -18,6 +18,9 @@ type Props = {
   onClearQueue: ActionHandler
   onOpenWebInspector: ActionHandler
   onProbeDataRange: ActionHandler
+  onRewindTs: ActionHandler
+  onRewindAck: ActionHandler
+  onRewindBare: ActionHandler
 }
 
 export const ActionsCard: FC<Props> = (handlers) => (
@@ -32,6 +35,12 @@ export const ActionsCard: FC<Props> = (handlers) => (
     <SectionLabel text="Strap RE Probes" />
     <Grid>
       <Btn label="Probe Data Range" onPress={handlers.onProbeDataRange} />
+    </Grid>
+    <SectionLabel text="Rewind (try in order)" />
+    <Grid>
+      <Btn label="Rewind ts (4B)" onPress={handlers.onRewindTs} />
+      <Btn label="Rewind ack (9B)" onPress={handlers.onRewindAck} />
+      <Btn label="Rewind bare (1B)" onPress={handlers.onRewindBare} />
     </Grid>
     <SectionLabel text="Recovery" />
     <Grid>

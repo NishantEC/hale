@@ -26,7 +26,13 @@ import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 export const DebugInspectorScreen: FC = () => {
   const { colors } = LOCAL_THEME
   const { selectedDate, refreshDashboard } = useDashboard()
-  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange } = useBle()
+  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange, rewindAndResync } = useBle()
+
+  // Earliest timestamp confirmed in the GetDataRange response (offset 35
+  // of the 69-byte payload): 2026-05-05 23:25:47 UTC. The strap reports
+  // data on flash back to this point, so this is the rewind target until
+  // we have a date picker.
+  const REWIND_TARGET_UNIX_TS = 1778025947
   const [overview, setOverview] = useState<DebugOverview | null>(null)
   const [lastPipelineRun, setLastPipelineRun] = useState<{
     startedAt: string
@@ -191,6 +197,22 @@ export const DebugInspectorScreen: FC = () => {
     )
   }, [rebootStrap])
 
+  const handleRewind = useCallback(
+    async (shape: "ts" | "ack" | "bare") => {
+      setError(null)
+      setBanner(`Rewind ${shape} → re-syncing from ${new Date(REWIND_TARGET_UNIX_TS * 1000).toISOString().slice(0, 16).replace("T", " ")}…`)
+      try {
+        await rewindAndResync(REWIND_TARGET_UNIX_TS, shape)
+        await refreshDashboard()
+        await refreshInspector()
+        setBanner(`Rewind ${shape} complete. Check Metro logs for record counts.`)
+      } catch (e: any) {
+        setError(`Rewind ${shape} failed: ${e?.message ?? "unknown error"}`)
+      }
+    },
+    [refreshDashboard, refreshInspector, rewindAndResync],
+  )
+
   const handleProbeDataRange = useCallback(async () => {
     setError(null)
     setBanner("Probing strap data range…")
@@ -265,6 +287,9 @@ export const DebugInspectorScreen: FC = () => {
           onClearQueue={handleClearQueue}
           onOpenWebInspector={() => openLinkInBrowser(INSPECTOR_WEB_URL)}
           onProbeDataRange={handleProbeDataRange}
+          onRewindTs={() => handleRewind("ts")}
+          onRewindAck={() => handleRewind("ack")}
+          onRewindBare={() => handleRewind("bare")}
         />
 
         {isLoading && !overview ? (
