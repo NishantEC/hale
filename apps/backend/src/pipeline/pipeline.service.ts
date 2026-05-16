@@ -401,10 +401,21 @@ export class PipelineService {
       note: j.note,
     }));
 
-    const signalSamples =
-      persistedSignalSamples.length > 0
-        ? persistedSignalSamples
-        : this.deriveSignalSamplesFromSensorRecords(sensorRecords);
+    // Merge persisted signal_samples with samples derived from
+    // raw_sensor_records. Persisted entries win on timestamp collision.
+    // Previously this gated globally on persistedSignalSamples.length > 0,
+    // which meant any stale row in signal_samples (e.g. residue from the
+    // pre-drainer sync path) would suppress the derived fallback for every
+    // other day in the query range. That left strainScore = null for days
+    // with only raw_sensor_records coverage. Always merging fixes it.
+    const derivedSignalSamples =
+      this.deriveSignalSamplesFromSensorRecords(sensorRecords);
+    const samplesByTs = new Map<number, SignalSample>();
+    for (const s of derivedSignalSamples) samplesByTs.set(s.timestamp.getTime(), s);
+    for (const s of persistedSignalSamples) samplesByTs.set(s.timestamp.getTime(), s);
+    const signalSamples = Array.from(samplesByTs.values()).sort(
+      (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+    );
     const sanitized = sanitize(signalSamples);
 
     const wristEventWindowEnd =
