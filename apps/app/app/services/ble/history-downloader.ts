@@ -6,6 +6,26 @@ import { CommandService } from './command-service';
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const IDLE_TIMEOUT_MS = 15000; // If no packets for 15s after receiving data, assume done
 
+/**
+ * Called once per batch BEFORE the strap is ACK'd for that batch. Must
+ * commit the records to durable storage (SQLite). If this throws, the
+ * batch is NOT ACK'd — the strap keeps it in flash and will resend on the
+ * next sync. This is the fix for over-ACKing data that never made it to
+ * disk in release builds.
+ */
+export type PersistBatch = (records: HistoricalRecord[]) => Promise<void>;
+
+export interface HistoryDownloadOptions {
+  onProgress?: (p: DownloadProgress) => void;
+  /**
+   * Optional per-batch persistence callback. When provided, each batch
+   * is persisted (and the call awaited) before the ACK fires. When
+   * omitted, the legacy fire-ACK-immediately behavior is used — only the
+   * caller's overall promise resolution can be relied on for persistence.
+   */
+  persistBatch?: PersistBatch;
+}
+
 export class HistoryDownloader {
   private commandService = new CommandService();
   private allRecords: HistoricalRecord[] = [];
@@ -20,15 +40,26 @@ export class HistoryDownloader {
   private idleHandle: ReturnType<typeof setTimeout> | null = null;
   private progressCallback: ((p: DownloadProgress) => void) | null = null;
   private hasReceivedAnyData = false;
+  private persistBatch: PersistBatch | null = null;
 
-  async startDownload(onProgress?: (p: DownloadProgress) => void): Promise<HistoricalRecord[]> {
+  async startDownload(
+    optionsOrCallback?: HistoryDownloadOptions | ((p: DownloadProgress) => void),
+  ): Promise<HistoricalRecord[]> {
     this.cleanup();
     this.allRecords = [];
     this.dataBuffer = [];
     this.chunksReceived = 0;
     this.totalBytes = 0;
     this.hasReceivedAnyData = false;
-    this.progressCallback = onProgress ?? null;
+    // Backwards-compat: caller can pass just a progress callback (old shape)
+    // OR an options object. Both supported so existing call sites don't break.
+    if (typeof optionsOrCallback === 'function') {
+      this.progressCallback = optionsOrCallback;
+      this.persistBatch = null;
+    } else {
+      this.progressCallback = optionsOrCallback?.onProgress ?? null;
+      this.persistBatch = optionsOrCallback?.persistBatch ?? null;
+    }
 
     return new Promise<HistoricalRecord[]>((resolve, reject) => {
       this.resolve = resolve;
@@ -105,7 +136,7 @@ export class HistoryDownloader {
           '[HistoryDownloader] HistoryEnd received — buffer has',
           this.dataBuffer.length, 'packets to parse',
         );
-        this.parseBufferedData();
+        const batchRecords = this.parseBufferedData();
         this.chunksReceived++;
         this.emitProgress('receiving');
 
@@ -116,7 +147,13 @@ export class HistoryDownloader {
         } else if (packet.data.length >= 5) {
           trimValue = (packet.data[1]) | (packet.data[2] << 8) | (packet.data[3] << 16) | ((packet.data[4] << 24) >>> 0);
         }
-        bleManager.writeCommand(this.commandService.buildHistoricalDataAck(trimValue)).catch(() => {});
+
+        // Durable-ACK ordering: if a persistBatch callback was supplied,
+        // commit this batch to local storage BEFORE ACKing. If persistence
+        // fails, do NOT ACK — the strap keeps the batch and we'll re-pull
+        // it on the next sync. Without this, a release-build crash between
+        // parse and persist over-ACKs and the data is gone forever.
+        this.persistAndAck(batchRecords, trimValue);
         return;
       }
 
@@ -162,8 +199,8 @@ export class HistoryDownloader {
     }
   }
 
-  private parseBufferedData() {
-    if (this.dataBuffer.length === 0) return;
+  private parseBufferedData(): HistoricalRecord[] {
+    if (this.dataBuffer.length === 0) return [];
 
     const packets = this.dataBuffer;
     this.dataBuffer = [];
@@ -186,6 +223,48 @@ export class HistoryDownloader {
       'Running total:', this.allRecords.length,
     );
     this.emitProgress('parsing');
+    return records;
+  }
+
+  /**
+   * Commit `batchRecords` to durable storage (via persistBatch callback)
+   * and only then ACK the strap with `trimValue`. If persistence fails,
+   * the ACK is skipped and the sync is aborted with an error so the
+   * strap keeps the batch for the next pull. If no persistBatch callback
+   * was provided, falls back to legacy ACK-immediately behavior.
+   */
+  private persistAndAck(batchRecords: HistoricalRecord[], trimValue: number) {
+    const persist = this.persistBatch;
+    if (!persist) {
+      // Legacy path: no caller-supplied persistence, ACK immediately.
+      bleManager
+        .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
+        .catch(() => {});
+      return;
+    }
+    if (batchRecords.length === 0) {
+      // Empty batch — nothing to persist, ACK so strap moves on.
+      bleManager
+        .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
+        .catch(() => {});
+      return;
+    }
+    // Persistence is async; fire and chain. If it throws, abort the sync
+    // so we don't ACK and leave the strap thinking we have data we don't.
+    persist(batchRecords)
+      .then(() => {
+        bleManager
+          .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
+          .catch(() => {});
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(
+          '[HistoryDownloader] persistBatch failed, NOT acking. trim=', trimValue,
+          'err=', msg,
+        );
+        this.finishWithError(new Error(`persistBatch failed: ${msg}`));
+      });
   }
 
   private emitProgress(state: DownloadProgress['state']) {
@@ -241,5 +320,6 @@ export class HistoryDownloader {
     this.resolve = null;
     this.reject = null;
     this.progressCallback = null;
+    this.persistBatch = null;
   }
 }

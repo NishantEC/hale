@@ -14,6 +14,7 @@ import { AppState } from "react-native"
 
 import {
   bleManager,
+  CMD_FROM_STRAP_UUID,
   CommandNumber,
   CommandService,
   ConnectionState,
@@ -122,6 +123,7 @@ export type BleContextValue = {
   testAlarm: () => Promise<void>
   rebootStrap: () => Promise<void>
   powerCycleStrap: () => Promise<void>
+  probeDataRange: () => Promise<{ raw: number[]; hex: string; decoded: string }>
   clearError: () => void
 }
 
@@ -364,9 +366,48 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     setError(null)
 
     try {
+      // Preflight: cancel any half-finished prior history transmit on the
+      // strap. Safe — doesn't touch the trim/read pointer. Recovers from
+      // the case where a prior sync started but BLE dropped mid-stream.
+      const commandService = new (
+        await import("@/services/ble/command-service")
+      ).CommandService()
+      await bleManager
+        .writeCommand(commandService.buildAbortHistoricalTransmits())
+        .catch(() => {})
+
+      const db = openDatabase()
+      let persistedCount = 0
+
       const downloader = new HistoryDownloader()
-      const records = await downloader.startDownload(setSyncProgress)
-      console.log("[syncNow] download resolved with", records.length, "records")
+      const records = await downloader.startDownload({
+        onProgress: setSyncProgress,
+        // Durable-ACK: commit each batch to local SQLite BEFORE the strap
+        // is ACK'd for that batch. If persistence fails, the ACK is
+        // skipped and the strap retains the batch (no more silent
+        // over-ACKing in release builds).
+        persistBatch: async (batch) => {
+          if (batch.length === 0) return
+          const mapped = batch.map(historicalRecordToRawRow)
+          const { ok, failed } = await ingestBleRecords(db, mapped)
+          // Throw if any record failed so the downloader skips the ACK
+          // and the strap keeps the batch for the next sync — preserves
+          // the durable-ACK guarantee.
+          if (failed > 0) {
+            throw new Error(
+              `persistBatch: ${failed}/${mapped.length} records failed to persist`,
+            )
+          }
+          persistedCount += ok
+        },
+      })
+      console.log(
+        "[syncNow] download resolved with",
+        records.length,
+        "records; persisted",
+        persistedCount,
+        "to local SQLite",
+      )
       setSyncProgress((current) => ({
         state: "complete",
         chunksReceived: current?.chunksReceived ?? 0,
@@ -379,13 +420,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       setDeviceState((current) => ({ ...current, lastSyncAt }))
 
       if (records.length > 0) {
-        setSyncStage(`Writing ${records.length} records locally…`)
-        const db = openDatabase()
-        const mapped = records.map(historicalRecordToRawRow)
-        console.log("[syncNow] calling ingestBleRecords for", mapped.length, "records")
-        const ingestLocalResult = await ingestBleRecords(db, mapped)
-        console.log("[syncNow] ingestBleRecords done", ingestLocalResult)
-
         setSyncStage("Running pipeline…")
         console.log("[syncNow] Running pipeline on backend")
         await runPipeline()
@@ -661,6 +695,85 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     } catch (nextError: any) {
       setError(nextError?.message ?? "Failed to power-cycle strap")
     }
+  }, [])
+
+  // Empirically probe what historical-data range the strap reports. Sends
+  // cmd 34 (GetDataRange) and waits up to 3s for the matching command
+  // response on CMD_FROM_STRAP_UUID. Read-only — does not alter strap
+  // state. Payload format is not reverse-engineered in any open reference;
+  // this returns the raw bytes plus a best-effort decode (assumes the
+  // payload is [start_u32_LE, end_u32_LE, ...] which is the convention
+  // the trim-value-in-ACK uses) so we can confirm the layout on real
+  // hardware before building a recovery-sync flow on top of it.
+  const probeDataRange = useCallback(async () => {
+    if (bleManager.connectionState !== "ready") {
+      throw new Error("Connect your WHOOP strap before probing.")
+    }
+    return await new Promise<{ raw: number[]; hex: string; decoded: string }>(
+      (resolve, reject) => {
+        let settled = false
+        const timeout = setTimeout(() => {
+          if (settled) return
+          settled = true
+          unsub()
+          reject(new Error("GetDataRange timed out (3s) — no response from strap"))
+        }, 3000)
+        const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
+          if (settled) return
+          if (
+            packet.type !== PacketType.CommandResponse ||
+            packet.command !== CommandNumber.GetDataRange
+          ) {
+            return
+          }
+          settled = true
+          clearTimeout(timeout)
+          unsub()
+          const bytes = Array.from(packet.data)
+          const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
+          // Best-effort decode: try interpreting first 8 bytes as
+          // [start_u32_LE, end_u32_LE] (unix seconds, matching the trim
+          // ack encoding) and the next 8 the same way.
+          const u32 = (offset: number): number | null => {
+            if (offset + 4 > bytes.length) return null
+            return (
+              bytes[offset] |
+              (bytes[offset + 1] << 8) |
+              (bytes[offset + 2] << 16) |
+              ((bytes[offset + 3] << 24) >>> 0)
+            )
+          }
+          const fmtTs = (v: number | null) => {
+            if (v == null) return "—"
+            if (v > 1_000_000_000 && v < 4_000_000_000) {
+              return `${v} (${new Date(v * 1000).toISOString()})`
+            }
+            return `${v}`
+          }
+          const a = u32(0)
+          const b = u32(4)
+          const c = u32(8)
+          const d = u32(12)
+          const decoded = [
+            `len=${bytes.length}`,
+            `u32@0: ${fmtTs(a)}`,
+            `u32@4: ${fmtTs(b)}`,
+            `u32@8: ${fmtTs(c)}`,
+            `u32@12: ${fmtTs(d)}`,
+          ].join("\n")
+          resolve({ raw: bytes, hex, decoded })
+        })
+        bleManager
+          .writeCommand(commandService.buildGetDataRange())
+          .catch((err) => {
+            if (settled) return
+            settled = true
+            clearTimeout(timeout)
+            unsub()
+            reject(err instanceof Error ? err : new Error(String(err)))
+          })
+      },
+    )
   }, [])
 
   useEffect(() => {
@@ -1011,6 +1124,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       testAlarm,
       rebootStrap,
       powerCycleStrap,
+      probeDataRange,
       clearError,
     }),
     [
@@ -1034,6 +1148,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       testAlarm,
       rebootStrap,
       powerCycleStrap,
+      probeDataRange,
       clearError,
     ],
   )

@@ -121,6 +121,29 @@ export class CommandService {
     return this.buildCommand(CommandNumber.EnterHighFreqSync, new Uint8Array([0x00]));
   }
 
+  /**
+   * Cancel any in-progress history transmit on the strap. Safe to call as
+   * a preflight before SendHistoricalData — clears half-finished prior
+   * sync state without touching the read cursor or trim pointer.
+   * Payload format follows the no-arg convention used by other commands
+   * (single 0x00 byte). Documented in openwhoop / openWhoop-2 enums but
+   * neither implements it; format is best-effort.
+   */
+  buildAbortHistoricalTransmits(): string {
+    return this.buildCommand(CommandNumber.AbortHistoricalTransmits, new Uint8Array([0x00]));
+  }
+
+  /**
+   * Query the available historical data range on the strap. Response
+   * payload format is not reverse-engineered in any open reference; this
+   * is a read-only probe — we send the standard no-arg payload and log
+   * whatever bytes come back so the format can be decoded empirically.
+   * Safe: read-only, doesn't modify any state on the strap.
+   */
+  buildGetDataRange(): string {
+    return this.buildCommand(CommandNumber.GetDataRange, new Uint8Array([0x00]));
+  }
+
   buildExitHighFreqSync(): string {
     return this.buildCommand(CommandNumber.ExitHighFreqSync, new Uint8Array([0x00]));
   }

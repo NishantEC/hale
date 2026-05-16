@@ -1,8 +1,10 @@
 import type { NoopDatabase } from "../db"
 import {
   insertRawSensorRecord,
+  insertRawSensorRecordTx,
   RawSensorRecordInput,
 } from "../db/repositories/rawSensorRecord"
+import { notifyTable } from "../db/observable"
 import { peekActiveUserId } from "../db/session"
 import type { HistoricalRecord } from "../ble/packet-types"
 
@@ -69,30 +71,33 @@ export async function ingestBleRecord(
   await insertRawSensorRecord(db, record)
 }
 
+// Batch ingest: wraps the entire set of inserts in ONE SQLite transaction
+// and fires notifyTable exactly once at the end. The previous per-record
+// transaction + per-record notify pattern was deadlocking subscribers'
+// async refetches against the next iteration's COMMIT, producing the
+// `cannot commit transaction - SQL statements in progress` failure on
+// every record after the first.
 export async function ingestBleRecords(
   db: NoopDatabase,
   records: RawSensorRecordInput[],
 ): Promise<{ ok: number; failed: number }> {
-  if (!peekActiveUserId()) return { ok: 0, failed: 0 }
-  let ok = 0
-  let failed = 0
-  for (const r of records) {
-    try {
-      await ingestBleRecord(db, r)
-      ok++
-    } catch (err) {
-      failed++
-      console.warn(
-        "[ingestBleRecord] failed",
-        r.id,
-        err instanceof Error ? err.message : err,
-      )
-    }
-  }
-  if (failed > 0) {
+  const userId = peekActiveUserId()
+  if (!userId) return { ok: 0, failed: 0 }
+  if (records.length === 0) return { ok: 0, failed: 0 }
+  try {
+    await db.transaction(async (tx) => {
+      for (const r of records) {
+        await insertRawSensorRecordTx(tx, r, userId)
+      }
+    })
+    notifyTable("raw_sensor_records")
+    return { ok: records.length, failed: 0 }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
     console.warn(
-      `[ingestBleRecords] ${failed}/${records.length} records failed to persist`,
+      `[ingestBleRecords] batch of ${records.length} failed to persist:`,
+      msg,
     )
+    return { ok: 0, failed: records.length }
   }
-  return { ok, failed }
 }

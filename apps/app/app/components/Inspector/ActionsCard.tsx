@@ -17,6 +17,7 @@ type Props = {
   onPowerCycleStrap: ActionHandler
   onClearQueue: ActionHandler
   onOpenWebInspector: ActionHandler
+  onProbeDataRange: ActionHandler
 }
 
 export const ActionsCard: FC<Props> = (handlers) => (
@@ -27,6 +28,10 @@ export const ActionsCard: FC<Props> = (handlers) => (
       <Btn label="Force Upload" onPress={handlers.onForceUpload} />
       <Btn label="Run Pipeline" onPress={handlers.onRunPipeline} />
       <Btn label="Refresh View" onPress={handlers.onRefreshView} />
+    </Grid>
+    <SectionLabel text="Strap RE Probes" />
+    <Grid>
+      <Btn label="Probe Data Range" onPress={handlers.onProbeDataRange} />
     </Grid>
     <SectionLabel text="Recovery" />
     <Grid>

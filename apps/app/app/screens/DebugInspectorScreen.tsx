@@ -26,7 +26,7 @@ import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 export const DebugInspectorScreen: FC = () => {
   const { colors } = LOCAL_THEME
   const { selectedDate, refreshDashboard } = useDashboard()
-  const { syncNow, rebootStrap, powerCycleStrap } = useBle()
+  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange } = useBle()
   const [overview, setOverview] = useState<DebugOverview | null>(null)
   const [lastPipelineRun, setLastPipelineRun] = useState<{
     startedAt: string
@@ -191,6 +191,30 @@ export const DebugInspectorScreen: FC = () => {
     )
   }, [rebootStrap])
 
+  const handleProbeDataRange = useCallback(async () => {
+    setError(null)
+    setBanner("Probing strap data range…")
+    try {
+      const result = await probeDataRange()
+      // Surface every byte so we can decode the format from the response.
+      // Logged to console.log so it lands in the JS log stream, AND shown
+      // in an Alert so it's visible without re-attaching Console.app.
+      console.log(
+        "[probeDataRange] response bytes:",
+        result.hex,
+        "\ndecoded attempt:\n",
+        result.decoded,
+      )
+      Alert.alert(
+        "GetDataRange response",
+        `hex (${result.raw.length} bytes):\n${result.hex}\n\nbest-effort decode:\n${result.decoded}`,
+      )
+      setBanner(`Probe ok — ${result.raw.length} bytes (see alert / console).`)
+    } catch (e: any) {
+      setError(e?.message ?? "Probe failed")
+    }
+  }, [probeDataRange])
+
   const handlePowerCycleStrap = useCallback(() => {
     Alert.alert(
       "Power-cycle strap?",
@@ -240,6 +264,7 @@ export const DebugInspectorScreen: FC = () => {
           onPowerCycleStrap={handlePowerCycleStrap}
           onClearQueue={handleClearQueue}
           onOpenWebInspector={() => openLinkInBrowser(INSPECTOR_WEB_URL)}
+          onProbeDataRange={handleProbeDataRange}
         />
 
         {isLoading && !overview ? (
