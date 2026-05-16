@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 
 import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
 import { Text } from "@/components/Text"
+import { hexWithAlpha } from "@/utils/hexWithAlpha"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 export type MonitorCardState = "ok" | "warn" | "alert" | "stale"
@@ -93,19 +94,10 @@ function toneFor(
   state: MonitorCardState,
   colors: typeof LOCAL_THEME.colors,
 ): { fg: string; tileBg: string } {
-  if (state === "ok") return { fg: colors.statusGreen, tileBg: hexToRGBA(colors.statusGreen, 0.18) }
-  if (state === "warn") return { fg: colors.statusAmber, tileBg: hexToRGBA(colors.statusAmber, 0.18) }
-  if (state === "alert") return { fg: colors.statusRed, tileBg: hexToRGBA(colors.statusRed, 0.18) }
-  return { fg: colors.statusStale, tileBg: hexToRGBA(colors.statusStale, 0.18) }
-}
-
-function hexToRGBA(hex: string, alpha: number): string {
-  if (hex.startsWith("rgba") || hex.startsWith("rgb")) return hex
-  const h = hex.replace("#", "")
-  const r = parseInt(h.substring(0, 2), 16)
-  const g = parseInt(h.substring(2, 4), 16)
-  const b = parseInt(h.substring(4, 6), 16)
-  return `rgba(${r},${g},${b},${alpha})`
+  if (state === "ok") return { fg: colors.statusGreen, tileBg: hexWithAlpha(colors.statusGreen, 0.18) }
+  if (state === "warn") return { fg: colors.statusAmber, tileBg: hexWithAlpha(colors.statusAmber, 0.18) }
+  if (state === "alert") return { fg: colors.statusRed, tileBg: hexWithAlpha(colors.statusRed, 0.18) }
+  return { fg: colors.statusStale, tileBg: hexWithAlpha(colors.statusStale, 0.18) }
 }
 
 const styles = StyleSheet.create({
