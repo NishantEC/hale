@@ -2,13 +2,16 @@ import { FC } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 import Svg, { Polyline } from "react-native-svg"
 
-import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
+import {
+  CaretRight,
+  Icon as PhosphorIcon,
+} from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { hexWithAlpha } from "@/utils/hexWithAlpha"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 type Props = {
-  iconName: PhosphorIconName
+  icon: PhosphorIcon
   iconColor: string
   label: string
   name: string
@@ -20,7 +23,7 @@ type Props = {
 }
 
 export const VitalRow: FC<Props> = ({
-  iconName,
+  icon: Icon,
   iconColor,
   label,
   name,
@@ -34,7 +37,7 @@ export const VitalRow: FC<Props> = ({
   const content = (
     <View style={styles.row}>
       <View style={[styles.iconBox, { backgroundColor: hexWithAlpha(iconColor, 0.15) }]}>
-        <PhosphorIcon name={iconName} size={16} color={iconColor} />
+        <Icon size={16} color={iconColor} />
       </View>
       <View style={styles.body}>
         <Text
@@ -84,7 +87,7 @@ export const VitalRow: FC<Props> = ({
           style={{ color: colors.textDim, fontSize: 10, marginTop: 2 }}
         />
       </View>
-      <PhosphorIcon name="chevron-forward" size={14} color={colors.textMuted} />
+      <CaretRight size={14} color={colors.textMuted} />
     </View>
   )
 

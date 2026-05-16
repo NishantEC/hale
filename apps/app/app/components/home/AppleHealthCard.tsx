@@ -1,6 +1,12 @@
 import { FC } from "react"
 import { Platform, Pressable, View, ViewStyle } from "react-native"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import {
+  ArrowsClockwise,
+  Clock,
+  Fire,
+  Footprints,
+  Heart,
+} from "phosphor-react-native"
 
 import { Text } from "@/components/Text"
 import { useHealthKit } from "@/context/HealthKitContext"
@@ -59,7 +65,7 @@ export const AppleHealthCard: FC = () => {
         ]}
       >
         <View style={$header}>
-          <PhosphorIcon name="heart" size={18} color={colors.statusRed} />
+          <Heart size={18} color={colors.statusRed} />
           <Text
             text={status === "error" ? "Couldn't connect — tap to retry" : "Connect Apple Health"}
             style={{ color: colors.text, fontSize: 16, fontWeight: "700" }}
@@ -82,28 +88,28 @@ export const AppleHealthCard: FC = () => {
       key: "steps",
       label: "Steps",
       value: formatInt(summary?.steps),
-      iconName: "footsteps",
+      icon: Footprints,
       iconColor: colors.ringHrv,
     },
     {
       key: "kcal",
       label: "Active kcal",
       value: formatKcal(summary?.activeEnergyKcal),
-      iconName: "flame",
+      icon: Fire,
       iconColor: colors.ringStrain,
     },
     {
       key: "exercise",
       label: "Exercise min",
       value: formatInt(summary?.exerciseMinutes),
-      iconName: "time",
+      icon: Clock,
       iconColor: colors.statusGreen,
     },
     {
       key: "stand",
       label: "Stand min",
       value: formatInt(summary?.standMinutes),
-      iconName: "sync",
+      icon: ArrowsClockwise,
       iconColor: colors.ringSleep,
     },
   ]

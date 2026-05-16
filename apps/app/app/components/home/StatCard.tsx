@@ -1,7 +1,7 @@
 import { FC } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 
-import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
+import { Icon as PhosphorIcon } from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
@@ -10,7 +10,7 @@ export type StatChipData = {
   label: string
   value: string
   unit?: string
-  iconName?: PhosphorIconName
+  icon?: PhosphorIcon
   iconColor?: string
   dotColor?: string
   onPress?: () => void
@@ -45,10 +45,11 @@ export const StatCard: FC<Props> = ({ chips, footer }) => {
 
 const StatChip: FC<{ chip: StatChipData }> = ({ chip }) => {
   const { colors } = LOCAL_THEME
+  const ChipIcon = chip.icon
   const content = (
     <>
-      {chip.iconName ? (
-        <PhosphorIcon name={chip.iconName} size={16} color={chip.iconColor ?? colors.text} />
+      {ChipIcon ? (
+        <ChipIcon size={16} color={chip.iconColor ?? colors.text} />
       ) : chip.dotColor ? (
         <View style={[styles.dot, { backgroundColor: chip.dotColor }]} />
       ) : null}

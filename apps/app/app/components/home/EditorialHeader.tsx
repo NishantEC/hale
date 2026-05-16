@@ -1,7 +1,7 @@
 import { FC } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { CaretLeft, CaretRight } from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
@@ -35,7 +35,7 @@ export const EditorialHeader: FC<Props> = ({
     <View style={styles.row}>
       <View style={styles.left}>
         <Pressable onPress={onPrevious} hitSlop={12} style={styles.chev}>
-          <PhosphorIcon name="chevron-back" size={16} color={colors.textDim} />
+          <CaretLeft size={16} color={colors.textDim} />
         </Pressable>
         <Text
           text={dateLabel}
@@ -47,7 +47,7 @@ export const EditorialHeader: FC<Props> = ({
           }}
         />
         <Pressable onPress={onNext} hitSlop={12} style={styles.chev}>
-          <PhosphorIcon name="chevron-forward" size={16} color={colors.textDim} />
+          <CaretRight size={16} color={colors.textDim} />
         </Pressable>
       </View>
 

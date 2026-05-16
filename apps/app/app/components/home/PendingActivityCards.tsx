@@ -1,7 +1,12 @@
 import { FC, useState } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import {
+  Check,
+  Icon as PhosphorIcon,
+  PencilSimple,
+  X,
+} from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { confirmActivity, dismissActivity, PendingActivityCard } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
@@ -101,21 +106,21 @@ const Card: FC<{ card: PendingActivityCard; onResolved?: () => void }> = ({
       <View style={styles.actions}>
         <ActionButton
           label="Yes"
-          icon="check"
+          icon={Check}
           variant="primary"
           disabled={busy}
           onPress={() => handle(() => confirmActivity(card.id))}
         />
         <ActionButton
           label="No, change"
-          icon="pencil-simple"
+          icon={PencilSimple}
           variant="ghost"
           disabled={busy}
           onPress={() => setShowReclassify((s) => !s)}
         />
         <ActionButton
           label="Dismiss"
-          icon="x"
+          icon={X}
           variant="ghost"
           disabled={busy}
           onPress={() => handle(() => dismissActivity(card.id))}
@@ -148,11 +153,11 @@ const Card: FC<{ card: PendingActivityCard; onResolved?: () => void }> = ({
 
 const ActionButton: FC<{
   label: string
-  icon: string
+  icon: PhosphorIcon
   variant: "primary" | "ghost"
   disabled?: boolean
   onPress: () => void
-}> = ({ label, icon, variant, disabled, onPress }) => {
+}> = ({ label, icon: Icon, variant, disabled, onPress }) => {
   const { colors } = LOCAL_THEME
   const bg = variant === "primary" ? colors.tint : "transparent"
   const fg = variant === "primary" ? colors.background : colors.text
@@ -170,7 +175,7 @@ const ActionButton: FC<{
         },
       ]}
     >
-      <PhosphorIcon name={icon} size={14} color={fg} />
+      <Icon size={14} color={fg} />
       <Text text={label} style={{ color: fg, fontSize: 13, fontWeight: "600" }} />
     </Pressable>
   )

@@ -1,7 +1,10 @@
 import { FC } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 
-import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
+import {
+  CaretRight,
+  Icon as PhosphorIcon,
+} from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { hexWithAlpha } from "@/utils/hexWithAlpha"
 import { LOCAL_THEME } from "@/utils/localTheme"
@@ -9,11 +12,11 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 export type MonitorCardState = "ok" | "warn" | "alert" | "stale"
 
 type Props = {
-  icon: PhosphorIconName
+  icon: PhosphorIcon
   title: string
   state: MonitorCardState
   /** Either tileIcon or tileText is rendered inside the tile. */
-  tileIcon?: PhosphorIconName
+  tileIcon?: PhosphorIcon
   tileText?: string
   verdict: string
   subline: string
@@ -21,10 +24,10 @@ type Props = {
 }
 
 export const MonitorCard: FC<Props> = ({
-  icon,
+  icon: Icon,
   title,
   state,
-  tileIcon,
+  tileIcon: TileIcon,
   tileText,
   verdict,
   subline,
@@ -46,7 +49,7 @@ export const MonitorCard: FC<Props> = ({
     >
       <View style={styles.head}>
         <View style={styles.titleRow}>
-          <PhosphorIcon name={icon} size={14} color={colors.textDim} />
+          <Icon size={14} color={colors.textDim} />
           <Text
             text={title.toUpperCase()}
             style={{
@@ -57,12 +60,12 @@ export const MonitorCard: FC<Props> = ({
             }}
           />
         </View>
-        <PhosphorIcon name="chevron-forward" size={14} color={colors.textMuted} />
+        <CaretRight size={14} color={colors.textMuted} />
       </View>
       <View style={styles.body}>
         <View style={[styles.tile, { backgroundColor: tone.tileBg }]}>
-          {tileIcon ? (
-            <PhosphorIcon name={tileIcon} size={16} color={tone.fg} weight="fill" />
+          {TileIcon ? (
+            <TileIcon size={16} color={tone.fg} weight="fill" />
           ) : tileText ? (
             <Text
               text={tileText}
