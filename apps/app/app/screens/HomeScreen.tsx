@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from "react-native"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { Brain, Check, ClockCountdown, Heartbeat, Lightning, NotePencil, Watch, Warning, WarningOctagon } from "phosphor-react-native"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, {
@@ -24,8 +24,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurHeader } from "@/components/BlurHeader"
 import { DateSwitcher } from "@/components/DateSwitcher"
 import { MetricRingsRow } from "@/components/home/MetricRingsRow"
-import { type MetricCell } from "@/components/home/MetricsBar"
-import { StatsHealthSwitcher } from "@/components/home/StatsHealthSwitcher"
+import { MonitorCard } from "@/components/home/MonitorCard"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
 import { TodayCard } from "@/components/home/TodayCard"
 import { Shimmer } from "@/components/reactx/Shimmer"
@@ -227,37 +226,8 @@ export const HomeScreen: FC = () => {
     },
   ] as const
 
-  const metricCells: MetricCell[] = [
-    {
-      key: "hrv",
-      label: "HRV",
-      value: homeView?.activities.hrv ?? "--",
-      unit: "ms",
-      dotColor: colors.ringHrv,
-      onPress: () => navigateTo("HrvDetail", "hrv-detail"),
-    },
-    {
-      key: "rhr",
-      label: "RHR",
-      value: homeView?.activities.restingHr ?? "--",
-      unit: "bpm",
-      dotColor: colors.ringStrain,
-    },
-    {
-      key: "resp",
-      label: "RESP",
-      value: "--",
-      unit: "/min",
-      dotColor: colors.ringSleep,
-    },
-    {
-      key: "spo2",
-      label: "SPO₂",
-      value: (homeView?.activities.spo2 ?? "--").replace("%", ""),
-      unit: "%",
-      dotColor: colors.ringRecovery,
-    },
-  ]
+  const healthMonitor = homeView?.monitors?.health
+  const stressMonitor = homeView?.monitors?.stress
 
   const tapeEvents = useMemo<TapeEvent[]>(
     () =>
@@ -359,7 +329,38 @@ export const HomeScreen: FC = () => {
                   rings={[ringTrio[0], ringTrio[1], ringTrio[2]] as any}
                 />
 
-                <StatsHealthSwitcher statsCells={metricCells} />
+                <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                  <MonitorCard
+                    icon={Heartbeat}
+                    title="Health"
+                    state={healthMonitor?.state ?? "stale"}
+                    tileIcon={
+                      healthMonitor?.state === "warn"
+                        ? Warning
+                        : healthMonitor?.state === "alert"
+                          ? WarningOctagon
+                          : healthMonitor?.state === "stale"
+                            ? ClockCountdown
+                            : Check
+                    }
+                    verdict={healthMonitor?.verdict ?? "No recent data"}
+                    subline={`${healthMonitor?.inRangeCount ?? 0}/${healthMonitor?.totalMetrics ?? 4} metrics`}
+                    onPress={() => navigateTo("HealthMonitor", "health-monitor")}
+                  />
+                  <MonitorCard
+                    icon={Brain}
+                    title="Stress"
+                    state={stressMonitor?.state ?? "stale"}
+                    tileText={stressMonitor?.score == null ? "--" : stressMonitor.score.toFixed(1)}
+                    verdict={stressMonitor?.zone ?? "No reading"}
+                    subline={
+                      stressMonitor?.lastReadingAt
+                        ? new Date(stressMonitor.lastReadingAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+                        : "—"
+                    }
+                    onPress={() => navigateTo("StressMonitor", "stress-monitor")}
+                  />
+                </View>
 
                 <PendingActivityCards
                   cards={homeView?.pendingActivityCards ?? []}
@@ -387,7 +388,7 @@ function ComposeButton({ onPress }: { onPress: () => void }) {
       style={themed($composeButton)}
       onPress={onPress}
     >
-      <PhosphorIcon name="note-pencil-outline" size={18} color={colors.text} />
+      <NotePencil size={18} color={colors.text} />
     </TouchableOpacity>
   )
 }
@@ -408,13 +409,12 @@ function DevicePill({
   return (
     <TouchableOpacity style={themed($devicePill)} onPress={onPress}>
       <View style={themed($deviceIconWrap)}>
-        <PhosphorIcon
-          name="watch-outline"
+        <Watch
           size={18}
           color={isConnected ? colors.text : colors.textDim}
         />
         {isCharging ? (
-          <PhosphorIcon name="flash" size={9} color={colors.statusGreen} style={themed($chargeBolt)} />
+          <Lightning size={9} color={colors.statusGreen} style={themed($chargeBolt)} />
         ) : null}
       </View>
       <Text text={batteryLabel} size="xs" weight="bold" style={themed($devicePillText)} />
