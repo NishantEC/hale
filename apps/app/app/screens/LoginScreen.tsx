@@ -1,5 +1,5 @@
 import { FC, useRef, useState } from "react"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { Eye, EyeSlash, WarningCircle } from "phosphor-react-native"
 // eslint-disable-next-line no-restricted-imports
 import {
   ActivityIndicator,
@@ -208,7 +208,7 @@ export const LoginScreen: FC = () => {
                   { backgroundColor: colors.errorBackground, borderColor: colors.error },
                 ]}
               >
-                <PhosphorIcon name="alert-circle" size={16} color={colors.error} />
+                <WarningCircle size={16} color={colors.error} />
                 <Text
                   text={authError}
                   style={{ color: colors.error, flex: 1, fontSize: 13, lineHeight: 18 }}
@@ -301,11 +301,11 @@ export const LoginScreen: FC = () => {
                   hitSlop={10}
                   style={$inputIconButton}
                 >
-                  <PhosphorIcon
-                    name={isPasswordHidden ? "eye-off-outline" : "eye-outline"}
-                    size={20}
-                    color={colors.textDim}
-                  />
+                  {isPasswordHidden ? (
+                    <EyeSlash size={20} color={colors.textDim} />
+                  ) : (
+                    <Eye size={20} color={colors.textDim} />
+                  )}
                 </TouchableOpacity>
               </View>
             </View>

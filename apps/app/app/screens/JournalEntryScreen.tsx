@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { CheckCircle, X } from "phosphor-react-native"
 import {
   Dimensions,
   SafeAreaView,
@@ -106,7 +106,7 @@ export function JournalEntryScreen() {
           onPress={() => navigation.goBack()}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <PhosphorIcon name="close" size={24} color={colors.textDim} />
+          <X size={24} color={colors.textDim} />
         </TouchableOpacity>
       </View>
 
@@ -134,7 +134,7 @@ export function JournalEntryScreen() {
                 ]}
                 activeOpacity={0.75}
               >
-                <PhosphorIcon name={factor.icon} size={28} color={factor.color} />
+                <factor.icon size={28} color={factor.color} />
                 <Text size="xxs" weight="medium" style={{ color: colors.textDim }}>
                   {factor.label}
                 </Text>
@@ -210,7 +210,7 @@ function FactorInput({
     return (
       <View style={$inputSection}>
         <View style={$toggleRow}>
-          <PhosphorIcon name="checkmark-circle" size={24} color={color} />
+          <CheckCircle size={24} color={color} />
           <Text size="sm" weight="medium" style={{ color: colors.textDim }}>
             Will be logged
           </Text>

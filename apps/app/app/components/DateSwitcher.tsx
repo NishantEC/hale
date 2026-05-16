@@ -1,6 +1,6 @@
 import { TextStyle, TouchableOpacity, View, ViewStyle } from "react-native"
 import Animated, { FadeInRight, FadeOutLeft } from "react-native-reanimated"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { CaretLeft, CaretRight } from "phosphor-react-native"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 export type DateSwitcherProps = {
@@ -15,7 +15,7 @@ export function DateSwitcher({ title, onPrevious, onNext }: DateSwitcherProps) {
   return (
     <View style={themed($dateSwitcher)}>
       <TouchableOpacity style={themed($switcherButton)} onPress={onPrevious}>
-        <PhosphorIcon name="chevron-back" size={20} color={colors.text} />
+        <CaretLeft size={20} color={colors.text} />
       </TouchableOpacity>
       <Animated.Text
         key={title}
@@ -26,7 +26,7 @@ export function DateSwitcher({ title, onPrevious, onNext }: DateSwitcherProps) {
         {title}
       </Animated.Text>
       <TouchableOpacity style={themed($switcherButton)} onPress={onNext}>
-        <PhosphorIcon name="chevron-forward" size={20} color={colors.text} />
+        <CaretRight size={20} color={colors.text} />
       </TouchableOpacity>
     </View>
   )
@@ -35,9 +35,7 @@ export function DateSwitcher({ title, onPrevious, onNext }: DateSwitcherProps) {
 const $dateSwitcher: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
   backgroundColor: colors.surfaceSubtle,
-  borderColor: colors.surfaceCardBorder,
   borderRadius: 999,
-  borderWidth: 1,
   flexDirection: "row",
   paddingHorizontal: 6,
   paddingVertical: 4,

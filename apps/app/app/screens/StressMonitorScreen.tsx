@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useNavigation } from "@react-navigation/native"
 
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { CaretLeft, Info } from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { StressColorStrip } from "@/components/home/StressColorStrip"
 import { useDashboard } from "@/context/DashboardContext"
@@ -43,11 +43,11 @@ export const StressMonitorScreen: FC = () => {
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.screenBackground }]} edges={["top"]}>
       <View style={styles.navBar}>
         <Pressable onPress={goBack} hitSlop={12} style={styles.navBack}>
-          <PhosphorIcon name="chevron-back" size={20} color={colors.text} />
+          <CaretLeft size={20} color={colors.text} />
           <Text text="Stress Monitor" style={{ color: colors.text, fontSize: 16, fontWeight: "700" }} />
         </Pressable>
         <View style={{ flex: 1 }} />
-        <PhosphorIcon name="info-outline" size={20} color={colors.textDim} />
+        <Info size={20} color={colors.textDim} />
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>

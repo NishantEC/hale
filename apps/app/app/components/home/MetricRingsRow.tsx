@@ -13,6 +13,7 @@ type Ring = {
   unit: string
   progress: number
   color: string
+  hero?: boolean
   onPress?: () => void
 }
 
@@ -39,12 +40,18 @@ const RingItem: FC<{ ring: Ring }> = ({ ring }) => {
     progress.value = withTiming(target, { duration: 800, easing: Easing.out(Easing.ease) })
   }, [ring.progress, progress])
 
+  const size = ring.hero ? 125 : 96
+  const strokeWidth = ring.hero ? 6 : 5
+  const valueSize = ring.hero ? 32 : 24
+  const valueLineHeight = ring.hero ? 36 : 28
+  const unitSize = ring.hero ? 13 : 10
+
   return (
     <View style={styles.col}>
       <CircularProgress
         progress={progress}
-        size={96}
-        strokeWidth={5}
+        size={size}
+        strokeWidth={strokeWidth}
         progressCircleColor={ring.color}
         outerCircleColor={colors.surfaceElevated}
         backgroundColor="transparent"
@@ -56,10 +63,10 @@ const RingItem: FC<{ ring: Ring }> = ({ ring }) => {
               text={ring.value}
               style={{
                 color: ring.color,
-                fontSize: 24,
+                fontSize: valueSize,
                 fontWeight: "800",
                 letterSpacing: -0.5,
-                lineHeight: 28,
+                lineHeight: valueLineHeight,
                 fontVariant: ["tabular-nums"],
               }}
             />
@@ -67,7 +74,7 @@ const RingItem: FC<{ ring: Ring }> = ({ ring }) => {
               text={ring.unit}
               style={{
                 color: colors.textDim,
-                fontSize: 10,
+                fontSize: unitSize,
                 marginTop: 1,
               }}
             />
@@ -93,6 +100,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
     marginTop: 4,
     marginBottom: 18,
   } as ViewStyle,

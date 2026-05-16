@@ -3,7 +3,19 @@ import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useNavigation } from "@react-navigation/native"
 
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import {
+  CaretLeft,
+  Check,
+  ClockCountdown,
+  Drop,
+  Heartbeat,
+  Info,
+  Icon as PhosphorIcon,
+  Warning,
+  WarningOctagon,
+  WaveSine,
+  Wind,
+} from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { VitalRow } from "@/components/home/VitalRow"
 import { useDashboard } from "@/context/DashboardContext"
@@ -34,30 +46,30 @@ export const HealthMonitorScreen: FC = () => {
     tone.bg = "rgba(102,102,102,0.18)"
   }
 
-  const heroIconName: "check" | "warning" | "warning-octagon" | "clock-countdown" =
+  const HeroIcon: PhosphorIcon =
     health?.state === "warn"
-      ? "warning"
+      ? Warning
       : health?.state === "alert"
-        ? "warning-octagon"
+        ? WarningOctagon
         : health?.state === "stale"
-          ? "clock-countdown"
-          : "check"
+          ? ClockCountdown
+          : Check
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.screenBackground }]} edges={["top"]}>
       <View style={styles.navBar}>
         <Pressable onPress={goBack} hitSlop={12} style={styles.navBack}>
-          <PhosphorIcon name="chevron-back" size={20} color={colors.text} />
+          <CaretLeft size={20} color={colors.text} />
           <Text text="Health Monitor" style={{ color: colors.text, fontSize: 16, fontWeight: "700" }} />
         </Pressable>
         <View style={{ flex: 1 }} />
-        <PhosphorIcon name="info-outline" size={20} color={colors.textDim} />
+        <Info size={20} color={colors.textDim} />
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
         <View style={[styles.hero, { backgroundColor: colors.surfaceCard }]}>
           <View style={[styles.heroTile, { backgroundColor: tone.bg }]}>
-            <PhosphorIcon name={heroIconName} size={28} color={tone.fg} weight="fill" />
+            <HeroIcon size={28} color={tone.fg} weight="fill" />
           </View>
           <Text
             text={health?.verdict ?? "--"}
@@ -71,7 +83,7 @@ export const HealthMonitorScreen: FC = () => {
 
         <View style={[styles.list, { backgroundColor: colors.surfaceCard }]}>
           <VitalRow
-            iconName="wave-sine"
+            icon={WaveSine}
             iconColor={colors.ringHrv}
             label="HRV"
             name="Heart rate variability"
@@ -81,7 +93,7 @@ export const HealthMonitorScreen: FC = () => {
           />
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
           <VitalRow
-            iconName="heartbeat"
+            icon={Heartbeat}
             iconColor={colors.ringStrain}
             label="RHR"
             name="Resting heart rate"
@@ -90,7 +102,7 @@ export const HealthMonitorScreen: FC = () => {
           />
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
           <VitalRow
-            iconName="wind"
+            icon={Wind}
             iconColor={colors.ringSleep}
             label="RR"
             name="Respiratory rate"
@@ -99,7 +111,7 @@ export const HealthMonitorScreen: FC = () => {
           />
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
           <VitalRow
-            iconName="drop"
+            icon={Drop}
             iconColor={colors.ringRecovery}
             label="SpO₂"
             name="Blood oxygen"

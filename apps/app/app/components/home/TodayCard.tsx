@@ -28,7 +28,7 @@ export const TodayCard: FC<Props> = ({ events, onEventPress }) => {
       <View
         style={[
           styles.card,
-          { backgroundColor: colors.surfaceCard, borderColor: colors.surfaceCardBorder },
+          { backgroundColor: colors.surfaceCard },
         ]}
       >
         {events.length === 0 ? (
@@ -111,7 +111,6 @@ const styles = StyleSheet.create({
   } as ViewStyle,
   card: {
     borderRadius: 14,
-    borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 4,
   } as ViewStyle,

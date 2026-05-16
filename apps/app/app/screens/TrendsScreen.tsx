@@ -1,7 +1,19 @@
 import { FC, useCallback, useEffect, useState } from "react"
 import { RefreshControl, TextStyle, View, ViewStyle, useWindowDimensions } from "react-native"
 import { Chart, Host } from "@expo/ui/swift-ui"
-import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
+import {
+  Barbell,
+  BatteryCharging,
+  Calendar,
+  Drop,
+  Heart,
+  Icon as PhosphorIcon,
+  Leaf,
+  Moon,
+  Pulse,
+  TrendDown,
+  TrendUp,
+} from "phosphor-react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -22,7 +34,7 @@ const TREND_CARDS: Array<{
   dataKey: keyof TrendsViewModel
   color: string
   unit: string
-  icon: PhosphorIconName
+  icon: PhosphorIcon
   invertTrend?: boolean // true if lower = better (e.g. resting HR)
 }> = [
   {
@@ -32,7 +44,7 @@ const TREND_CARDS: Array<{
     dataKey: "hrvTrend",
     color: "#5EC4E6",
     unit: "ms",
-    icon: "pulse-outline",
+    icon: Pulse,
   },
   {
     id: "rhr",
@@ -41,7 +53,7 @@ const TREND_CARDS: Array<{
     dataKey: "restingHrTrend",
     color: "#FF6B6B",
     unit: "bpm",
-    icon: "heart-outline",
+    icon: Heart,
     invertTrend: true,
   },
   {
@@ -51,7 +63,7 @@ const TREND_CARDS: Array<{
     dataKey: "sleepDurationTrend",
     color: "#7C6FF7",
     unit: "h",
-    icon: "moon-outline",
+    icon: Moon,
   },
   {
     id: "recovery",
@@ -60,7 +72,7 @@ const TREND_CARDS: Array<{
     dataKey: "recoveryTrend",
     color: "#4ECDC4",
     unit: "%",
-    icon: "battery-charging-outline",
+    icon: BatteryCharging,
   },
   {
     id: "training",
@@ -69,7 +81,7 @@ const TREND_CARDS: Array<{
     dataKey: "trainingLoadTrend",
     color: "#FFB347",
     unit: "",
-    icon: "barbell-outline",
+    icon: Barbell,
   },
   {
     id: "consistency",
@@ -78,7 +90,7 @@ const TREND_CARDS: Array<{
     dataKey: "consistencyTrend",
     color: "#A78BFA",
     unit: "",
-    icon: "calendar-outline",
+    icon: Calendar,
   },
   {
     id: "respiratory",
@@ -87,7 +99,7 @@ const TREND_CARDS: Array<{
     dataKey: "respiratoryRateTrend",
     color: "#6BCB77",
     unit: "br/min",
-    icon: "leaf-outline",
+    icon: Leaf,
   },
   {
     id: "spo2",
@@ -96,7 +108,7 @@ const TREND_CARDS: Array<{
     dataKey: "spo2Trend",
     color: "#FF6BB5",
     unit: "%",
-    icon: "water-outline",
+    icon: Drop,
   },
 ]
 
@@ -214,7 +226,7 @@ export const TrendsScreen: FC = () => {
         return (
           <GlassCard key={card.id} style={themed($card)}>
             <View style={themed($cardHeader)}>
-              <PhosphorIcon name={card.icon} size={18} color={card.color} />
+              <card.icon size={18} color={card.color} />
               <View style={{ flex: 1 }}>
                 <Text text={card.title} size="xs" weight="semiBold" style={$cardTitle(colors)} />
                 <Text text={card.subtitle} size="xxs" style={$cardSubtitle(colors)} />
@@ -279,8 +291,8 @@ function SummaryPill({
   invertTrend?: boolean
   colors: any
 }) {
-  const trendIcon =
-    trend === "improving" ? "trending-up" : trend === "declining" ? "trending-down" : null
+  const TrendIcon =
+    trend === "improving" ? TrendUp : trend === "declining" ? TrendDown : null
   const trendColor =
     trend === "improving"
       ? colors.statusGreen
@@ -297,7 +309,7 @@ function SummaryPill({
         <Text text={value} size="lg" weight="bold" style={{ color: colors.text }} />
         <Text text={unit} size="xxs" style={{ color: colors.textDim }} />
       </View>
-      {trendIcon && <PhosphorIcon name={trendIcon as any} size={14} color={trendColor} />}
+      {TrendIcon && <TrendIcon size={14} color={trendColor} />}
     </View>
   )
 }

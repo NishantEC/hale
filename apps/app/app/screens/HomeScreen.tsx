@@ -200,7 +200,7 @@ export const HomeScreen: FC = () => {
     {
       key: "sleep",
       label: "Sleep",
-      value: homeView?.rings.sleep.value ?? "--",
+      value: (homeView?.rings.sleep.value ?? "--").replace("%", ""),
       unit: "%",
       progress: homeView?.rings.sleep.progress ?? 0,
       color: colors.ringSleep,
@@ -209,10 +209,11 @@ export const HomeScreen: FC = () => {
     {
       key: "recovery",
       label: "Recovery",
-      value: homeView?.rings.recovery.value ?? "--",
+      value: (homeView?.rings.recovery.value ?? "--").replace("%", ""),
       unit: "%",
       progress: homeView?.rings.recovery.progress ?? 0,
       color: colors.ringRecovery,
+      hero: true,
       onPress: () => navigateTo("HomeMetric", "home-metric", { metric: "recovery" }),
     },
     {

@@ -13,7 +13,21 @@ import {
 } from "react-native"
 import Constants from "expo-constants"
 import { router } from "expo-router"
-import { PhosphorIcon, type PhosphorIconName } from "@/components/PhosphorIcon"
+import {
+  Calendar,
+  CaretRight,
+  Clock,
+  Cpu,
+  DeviceMobile,
+  FileText,
+  Icon as PhosphorIconType,
+  Info,
+  Moon,
+  Pulse,
+  ShieldCheck,
+  Sun,
+  Watch,
+} from "phosphor-react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -26,7 +40,7 @@ import { DateOfBirthSheet } from "@/components/DateOfBirthSheet"
 import { fetchProfile, updateProfile, type UserProfileData } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
-type IconName = PhosphorIconName
+type IconName = PhosphorIconType
 
 export const SettingsScreen: FC = () => {
   const colors = LOCAL_THEME.colors
@@ -193,11 +207,11 @@ export const SettingsScreen: FC = () => {
     const labelColor = destructive ? colors.error : colors.text
     const resolvedIconColor = iconColor ?? (destructive ? colors.error : colors.iconDim)
 
+    const IconCmp = icon
     const content = (
       <View style={$row}>
-        {icon ? (
-          <PhosphorIcon
-            name={icon}
+        {IconCmp ? (
+          <IconCmp
             size={20}
             color={resolvedIconColor}
             style={{ marginRight: 14, width: 22 }}
@@ -227,8 +241,7 @@ export const SettingsScreen: FC = () => {
           />
         ) : null}
         {chevron ? (
-          <PhosphorIcon
-            name="chevron-forward"
+          <CaretRight
             size={14}
             color={colors.textMuted}
             style={{ marginLeft: 6 }}
@@ -271,11 +284,15 @@ export const SettingsScreen: FC = () => {
           pressed && !active && { opacity: 0.75 },
         ]}
       >
-        <PhosphorIcon
-          name={icon}
-          size={14}
-          color={active ? colors.onPrimary : colors.textDim}
-        />
+        {(() => {
+          const PillIcon = icon
+          return (
+            <PillIcon
+              size={14}
+              color={active ? colors.onPrimary : colors.textDim}
+            />
+          )
+        })()}
         <Text
           text={label}
           style={{
@@ -403,7 +420,7 @@ export const SettingsScreen: FC = () => {
         <SectionLabel>Health Profile</SectionLabel>
         <Card>
           <Row
-            icon="calendar-outline"
+            icon={Calendar}
             label="Date of birth"
             value={profile?.dateOfBirth ?? "Not set"}
             valueColor={profile?.dateOfBirth ? colors.text : colors.textMuted}
@@ -434,11 +451,7 @@ export const SettingsScreen: FC = () => {
                   active={colorMode === option}
                   label={option === "system" ? "Auto" : option === "light" ? "Light" : "Dark"}
                   icon={
-                    option === "system"
-                      ? "phone-portrait-outline"
-                      : option === "light"
-                        ? "sunny-outline"
-                        : "moon-outline"
+                    option === "system" ? DeviceMobile : option === "light" ? Sun : Moon
                   }
                   onPress={() => setColorMode(option as ColorMode)}
                 />
@@ -451,7 +464,7 @@ export const SettingsScreen: FC = () => {
         <SectionLabel>Device</SectionLabel>
         <Card>
           <Row
-            icon="watch-outline"
+            icon={Watch}
             iconColor={isConnected ? colors.statusGreen : colors.iconDim}
             label={deviceName || "WHOOP"}
             value={deviceStatusLabel}
@@ -460,12 +473,12 @@ export const SettingsScreen: FC = () => {
             onPress={() => router.push("/device-settings")}
           />
           <Divider />
-          <Row icon="time-outline" label="Last sync" value={lastSyncLabel} />
+          <Row icon={Clock} label="Last sync" value={lastSyncLabel} />
           {firmwareVersion ? (
             <>
               <Divider />
               <Row
-                icon="hardware-chip-outline"
+                icon={Cpu}
                 label="Firmware"
                 value={firmwareVersion}
               />
@@ -477,21 +490,21 @@ export const SettingsScreen: FC = () => {
         <SectionLabel>General</SectionLabel>
         <Card>
           <Row
-            icon="document-text-outline"
+            icon={FileText}
             label="Privacy policy"
             chevron
             onPress={() => Linking.openURL("https://noop.app/privacy").catch(() => {})}
           />
           <Divider />
           <Row
-            icon="shield-checkmark-outline"
+            icon={ShieldCheck}
             label="Terms of service"
             chevron
             onPress={() => Linking.openURL("https://noop.app/terms").catch(() => {})}
           />
           <Divider />
           <Row
-            icon="pulse-outline"
+            icon={Pulse}
             label="Diagnostics"
             chevron
             onPress={() => router.push("/debug-inspector")}
@@ -501,10 +514,10 @@ export const SettingsScreen: FC = () => {
         {/* About */}
         <SectionLabel>About</SectionLabel>
         <Card>
-          <Row icon="information-circle-outline" label="Version" value={versionLabel} />
+          <Row icon={Info} label="Version" value={versionLabel} />
           <Divider />
           <Row
-            icon="phone-portrait-outline"
+            icon={DeviceMobile}
             label="Platform"
             value={`${Platform.OS} ${Platform.Version}`}
           />

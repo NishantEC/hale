@@ -11,15 +11,15 @@ export default function TabsLayout() {
     <NativeTabs tintColor={colors.tint} minimizeBehavior="automatic" blurEffect="systemChromeMaterial">
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Icon sf={{ default: "house", selected: "house.fill" }} md="home" />
-        <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>Home</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="health">
         <NativeTabs.Trigger.Icon sf="waveform.path.ecg" md="monitor_heart" />
-        <NativeTabs.Trigger.Label>Health</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>Health</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <NativeTabs.Trigger.Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} md="settings" />
-        <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>Settings</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   )

@@ -16,7 +16,14 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from "react-native-reanimated"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import {
+  ArrowRight,
+  CaretDown,
+  CaretLeft,
+  CaretRight,
+  CaretUp,
+  Info,
+} from "phosphor-react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
@@ -163,14 +170,14 @@ const Header: FC<{
     <View style={styles.headerWrap}>
       <View style={styles.headerRow}>
         <Pressable onPress={() => router.back()} style={styles.iconBtn} hitSlop={10}>
-          <PhosphorIcon name="chevron-back" size={24} color={colors.text} />
+          <CaretLeft size={24} color={colors.text} />
         </Pressable>
         <View style={{ alignItems: "center" }}>
           <Text style={[styles.headerLabel, { color: colors.text }]}>HEALTHSPAN</Text>
           <Text style={[styles.headerSub, { color: colors.textDim }]}>{nextUpdateLabel()}</Text>
         </View>
         <Pressable style={styles.iconBtn} hitSlop={10} onPress={() => setInfoOpen(true)}>
-          <PhosphorIcon name="information-circle-outline" size={22} color={colors.textDim} />
+          <Info size={22} color={colors.textDim} />
         </Pressable>
       </View>
 
@@ -217,7 +224,7 @@ const Header: FC<{
 
       <View style={styles.weekStrip}>
         <Pressable onPress={onPrev} hitSlop={10} style={styles.chevBtn}>
-          <PhosphorIcon name="chevron-back" size={18} color={colors.textMuted} />
+          <CaretLeft size={18} color={colors.textMuted} />
         </Pressable>
         <Text style={[styles.weekText, { color: colors.text }]}>{formatWeekRange(weekStart)}</Text>
         <Pressable
@@ -226,8 +233,7 @@ const Header: FC<{
           disabled={!canGoForward}
           style={styles.chevBtn}
         >
-          <PhosphorIcon
-            name="chevron-forward"
+          <CaretRight
             size={18}
             color={canGoForward ? colors.textMuted : "transparent"}
           />
@@ -352,7 +358,7 @@ const CoachingBlock: FC<{ title: string | null; body: string | null }> = ({ titl
       {body ? <Text style={[styles.coachBody, { color: colors.textDim }]}>{body}</Text> : null}
       <View style={styles.coachLinkRow}>
         <Text style={[styles.coachLink, { color: colors.tint }]}>VIEW YOUR PLAN</Text>
-        <PhosphorIcon name="arrow-forward" size={14} color={colors.tint} />
+        <ArrowRight size={14} color={colors.tint} />
       </View>
     </View>
   )
@@ -402,12 +408,11 @@ const MetricCard: FC<{ contributor: HealthContributor }> = ({ contributor }) => 
     <View style={[styles.metric, { backgroundColor: colors.cardBase, borderColor: colors.surfaceCardBorder }]}>
       <Pressable onPress={toggle} style={styles.metricTrigger}>
         <MetricSummary contributor={contributor} />
-        <PhosphorIcon
-          name={open ? "chevron-up" : "chevron-down"}
-          size={14}
-          color={colors.textMuted}
-          style={{ marginLeft: 6 }}
-        />
+        {open ? (
+          <CaretUp size={14} color={colors.textMuted} style={{ marginLeft: 6 }} />
+        ) : (
+          <CaretDown size={14} color={colors.textMuted} style={{ marginLeft: 6 }} />
+        )}
       </Pressable>
       {open ? (
         <View style={styles.metricDetail}>

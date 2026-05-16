@@ -1,5 +1,5 @@
 import { FC, ReactNode } from "react"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import { CaretLeft } from "phosphor-react-native"
 import { router } from "expo-router"
 import { useNavigation } from "@react-navigation/native"
 import { TouchableOpacity } from "react-native"
@@ -39,7 +39,7 @@ export const DetailScreenHeader: FC<DetailScreenHeaderProps> = ({ title, subtitl
           backgroundColor={colors.surfaceCard}
           borderColor={colors.surfaceCardBorder}
         >
-          <PhosphorIcon name="chevron-back" size={22} color={colors.text} />
+          <CaretLeft size={22} color={colors.text} />
         </XStack>
       </TouchableOpacity>
       <YStack flex={1} alignItems="center" gap={2}>

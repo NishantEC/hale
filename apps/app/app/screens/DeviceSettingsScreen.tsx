@@ -1,6 +1,12 @@
 import { FC, useEffect, useMemo, useRef } from "react"
 import { BatteryPanel } from "@/components/BatteryPanel"
-import { PhosphorIcon } from "@/components/PhosphorIcon"
+import {
+  ArrowsClockwise,
+  CaretRight,
+  CloudArrowDown,
+  Lightning,
+  Watch,
+} from "phosphor-react-native"
 import {
   Animated,
   Easing,
@@ -130,8 +136,7 @@ export const DeviceSettingsScreen: FC = () => {
             />
           ) : null}
           <View style={themed($watchCircle)}>
-            <PhosphorIcon
-              name="watch-outline"
+            <Watch
               size={48}
               color={isConnected ? colors.tint : colors.iconDim}
             />
@@ -139,7 +144,7 @@ export const DeviceSettingsScreen: FC = () => {
               <Animated.View
                 style={[themed($chargingBadge), { transform: [{ scale: chargingBadgeScale }] }]}
               >
-                <PhosphorIcon name="flash" size={12} color={colors.onPrimary} />
+                <Lightning size={12} color={colors.onPrimary} />
               </Animated.View>
             ) : null}
           </View>
@@ -227,11 +232,11 @@ export const DeviceSettingsScreen: FC = () => {
           activeOpacity={0.6}
         >
           <View style={themed($syncLabel)}>
-            <PhosphorIcon
-              name={isSyncing ? "sync" : "cloud-download-outline"}
-              size={16}
-              color={isSyncing ? colors.tint : colors.iconDim}
-            />
+            {isSyncing ? (
+              <ArrowsClockwise size={16} color={colors.tint} />
+            ) : (
+              <CloudArrowDown size={16} color={colors.iconDim} />
+            )}
             <Text
               text={isSyncing ? (syncStage || "Syncing...") : "Sync now"}
               size="xs"
@@ -239,7 +244,7 @@ export const DeviceSettingsScreen: FC = () => {
             />
           </View>
           {!isSyncing ? (
-            <PhosphorIcon name="chevron-forward" size={16} color={colors.iconDim} />
+            <CaretRight size={16} color={colors.iconDim} />
           ) : null}
         </TouchableOpacity>
 
