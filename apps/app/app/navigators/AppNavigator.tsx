@@ -18,6 +18,8 @@ import { JournalEntryScreen } from "@/screens/JournalEntryScreen"
 import { JournalHistoryScreen } from "@/screens/JournalHistoryScreen"
 import { SleepDetailScreen } from "@/screens/SleepDetailScreen"
 import { StrainActivityScreen } from "@/screens/StrainActivityScreen"
+import { HealthMonitorScreen } from "@/screens/HealthMonitorScreen"
+import { StressMonitorScreen } from "@/screens/StressMonitorScreen"
 import { useNavigationTheme } from "./useNavigationTheme"
 
 import { MainNavigator } from "./MainNavigator"
@@ -85,6 +87,8 @@ const AppStack = () => {
       />
       <Stack.Screen name="JournalHistory" component={JournalHistoryScreen} />
       <Stack.Screen name="SleepDetail" component={SleepDetailScreen} />
+      <Stack.Screen name="HealthMonitor" component={HealthMonitorScreen} />
+      <Stack.Screen name="StressMonitor" component={StressMonitorScreen} />
       {/* IGNITE_GENERATOR_ANCHOR_APP_STACK_SCREENS */}
     </Stack.Navigator>
   )

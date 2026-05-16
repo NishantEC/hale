@@ -24,6 +24,8 @@ export type AppStackParamList = {
   JournalEntry: undefined
   JournalHistory: undefined
   SleepDetail: { date: string }
+  HealthMonitor: undefined
+  StressMonitor: undefined
   // 🔥 Your screens go here
   // IGNITE_GENERATOR_ANCHOR_APP_STACK_PARAM_LIST
 }
