@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from "react"
 import {
   CartesianGrid,
   Line,
@@ -12,52 +13,126 @@ import type { BatteryHistory, Telemetry } from "../api"
 import { Num, Pill, SectionHead } from "../components/primitives"
 import { formatTime } from "../format"
 
+type LogLevel = "error" | "warn" | "info" | "debug"
+const ALL_LEVELS: LogLevel[] = ["error", "warn", "info", "debug"]
+
+function normaliseLevel(raw: string | null): LogLevel {
+  if (raw === "error" || raw === "warn" || raw === "info" || raw === "debug") return raw
+  return "info"
+}
+
 export function TelemetryTab({
   telemetry,
   batteryHistory,
   live,
-  toggleLive,
 }: {
   telemetry: Telemetry | null
   batteryHistory: BatteryHistory | null
   live: boolean
   toggleLive: () => void
 }) {
+  const [tabHidden, setTabHidden] = useState(false)
+  const hiddenSinceRef = useRef<number | null>(null)
+  const [pausedMs, setPausedMs] = useState<number | null>(null)
+
+  useEffect(() => {
+    function onVisibility() {
+      if (document.hidden) {
+        hiddenSinceRef.current = Date.now()
+        setTabHidden(true)
+      } else {
+        const since = hiddenSinceRef.current
+        if (since !== null) {
+          setPausedMs(Date.now() - since)
+        }
+        hiddenSinceRef.current = null
+        setTabHidden(false)
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => document.removeEventListener("visibilitychange", onVisibility)
+  }, [])
+
+  useEffect(() => {
+    if (pausedMs === null) return
+    const id = setTimeout(() => setPausedMs(null), 4_000)
+    return () => clearTimeout(id)
+  }, [pausedMs])
+
+  const [logSearch, setLogSearch] = useState("")
+  const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(new Set(ALL_LEVELS))
+
+  function toggleLevel(level: LogLevel) {
+    setEnabledLevels((prev) => {
+      const next = new Set(prev)
+      if (next.has(level)) {
+        if (next.size === 1) return prev
+        next.delete(level)
+      } else {
+        next.add(level)
+      }
+      return next
+    })
+  }
+
+  const filteredLogs = useMemo(() => {
+    const logs = telemetry?.consoleLogs?.recent ?? []
+    const needle = logSearch.trim().toLowerCase()
+    return logs.filter((l) => {
+      const level = normaliseLevel(l.logLevel)
+      if (!enabledLevels.has(level)) return false
+      if (needle && !l.message.toLowerCase().includes(needle)) return false
+      return true
+    })
+  }, [telemetry?.consoleLogs?.recent, logSearch, enabledLevels])
+
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-4">
-        <button
-          onClick={toggleLive}
-          className={`px-4 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-            live
-              ? "bg-green-soft text-green"
-              : "text-text-1 border border-border hover:border-border-strong"
-          }`}
-        >
-          {live ? "Live · 5s" : "Auto-refresh off"}
-        </button>
-        {live && (
+      {tabHidden && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-surface-1 border border-border text-sm text-text-2">
+          <span className="w-2 h-2 rounded-full bg-text-2 shrink-0" />
+          Polling paused while tab is hidden — data will refresh when you return
+        </div>
+      )}
+      {!tabHidden && pausedMs !== null && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-surface-1 border border-border text-sm text-text-2">
+          <span className="w-2 h-2 rounded-full bg-green shrink-0" />
+          Resumed — refreshing after {Math.round(pausedMs / 1000)}s pause
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-1 border border-border">
           <span
-            className="inline-block w-2 h-2 rounded-full bg-green"
-            style={{ animation: "pulse 1.5s ease-in-out infinite" }}
+            className={`w-1.5 h-1.5 rounded-full ${live ? "bg-green animate-pulse" : "bg-text-2"}`}
           />
-        )}
+          <span className="text-xs font-medium text-text-1">
+            {live ? "Live tail active — polling every 5s via TopBar" : "Live tail off — toggle in TopBar"}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-8">
         <Num
           label="Device events"
           value={telemetry?.events.totalCount ?? 0}
-          sub={`${Object.keys(telemetry?.events.summary ?? {}).length} event types`}
+          sub={`${Object.keys(telemetry?.events.summary ?? {}).length} distinct event types received from strap`}
         />
         <Num
-          label="Realtime samples"
+          label="BLE realtime samples"
           value={telemetry?.realtime.totalCount ?? 0}
-          sub={`${Object.keys(telemetry?.realtime.sessions ?? {}).length} sessions`}
+          sub={`${Object.keys(telemetry?.realtime.sessions ?? {}).length} streaming sessions — heart rate, accel, etc.`}
         />
       </div>
 
-      <BatterySection history={batteryHistory} fgSocTenths={typeof telemetry?.consoleLogs?.deviceInfo?.batterySocTenths === "number" ? (telemetry.consoleLogs.deviceInfo.batterySocTenths as number) : null} />
+      <BatterySection
+        history={batteryHistory}
+        fgSocTenths={
+          typeof telemetry?.consoleLogs?.deviceInfo?.batterySocTenths === "number"
+            ? (telemetry.consoleLogs.deviceInfo.batterySocTenths as number)
+            : null
+        }
+      />
 
       {telemetry && Object.keys(telemetry.events.summary).length > 0 && (
         <EventBreakdown summary={telemetry.events.summary} />
@@ -65,8 +140,11 @@ export function TelemetryTab({
 
       <div className="grid grid-cols-2 gap-10">
         <div>
-          <SectionHead>Recent events</SectionHead>
-          <div className="mt-3 overflow-auto rounded-xl border border-border max-h-96">
+          <SectionHead>Recent device events</SectionHead>
+          <p className="text-text-2 text-xs mt-1 mb-3">
+            Named BLE events emitted by the strap firmware (e.g. BatteryLevel, StepCount)
+          </p>
+          <div className="overflow-auto rounded-xl border border-border max-h-96">
             <table className="w-full text-sm border-collapse">
               <thead className="sticky top-0 bg-surface-1 z-10">
                 <tr>
@@ -81,7 +159,7 @@ export function TelemetryTab({
                 </tr>
               </thead>
               <tbody>
-                {telemetry?.events.recent.slice(0, 40).map((e, i) => (
+                {(telemetry?.events.recent ?? []).slice(0, 40).map((e, i) => (
                   <tr key={i} className="border-b border-border/50 hover:bg-surface-1">
                     <td className="px-4 py-2.5">{e.eventName}</td>
                     <td className="px-4 py-2.5 font-mono text-text-1 text-xs">
@@ -91,40 +169,24 @@ export function TelemetryTab({
                     <td className="px-4 py-2.5 text-text-1">{formatTime(e.receivedAt)}</td>
                   </tr>
                 ))}
+                {(telemetry?.events.recent ?? []).length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-6 text-text-2 text-sm text-center">
+                      No events yet
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
+
         <div>
-          <SectionHead>Recent samples</SectionHead>
-          <div className="mt-3 overflow-auto rounded-xl border border-border max-h-96">
-            <table className="w-full text-sm border-collapse">
-              <thead className="sticky top-0 bg-surface-1 z-10">
-                <tr>
-                  {["Type", "HR", "Session", "Captured"].map((h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left text-text-2 font-medium text-xs uppercase tracking-wider border-b border-border"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {telemetry?.realtime.recent.slice(0, 40).map((s, i) => (
-                  <tr key={i} className="border-b border-border/50 hover:bg-surface-1">
-                    <td className="px-4 py-2.5">{s.dataType}</td>
-                    <td className="px-4 py-2.5">{s.heartRate ?? "—"}</td>
-                    <td className="px-4 py-2.5 font-mono text-text-1 text-xs">
-                      {s.sessionId.slice(0, 8)}
-                    </td>
-                    <td className="px-4 py-2.5 text-text-1">{formatTime(s.capturedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SectionHead>BLE streaming sessions</SectionHead>
+          <p className="text-text-2 text-xs mt-1 mb-3">
+            Continuous real-time data streams grouped by session (each session = one app connection window)
+          </p>
+          <RealtimeSessions sessions={telemetry?.realtime.sessions ?? {}} recent={telemetry?.realtime.recent ?? []} />
         </div>
       </div>
 
@@ -132,32 +194,71 @@ export function TelemetryTab({
         <>
           <div className="grid grid-cols-2 gap-8 mt-2">
             <Num
-              label="Console logs"
+              label="Console log lines"
               value={telemetry.consoleLogs.totalCount}
-              sub="firmware output lines"
+              sub="firmware stdout captured over BLE — includes boot messages, sensor init, errors"
             />
           </div>
 
           {telemetry.consoleLogs.deviceInfo &&
             Object.keys(telemetry.consoleLogs.deviceInfo).length > 0 && (
               <div>
-                <SectionHead>Device info (from logs)</SectionHead>
+                <SectionHead>Device info (parsed from logs)</SectionHead>
                 <div className="mt-3 grid grid-cols-2 gap-x-8 gap-y-1">
-                  {Object.entries(telemetry.consoleLogs.deviceInfo).map(
-                    ([k, v]) => (
-                      <div key={k} className="flex items-baseline gap-2">
-                        <span className="text-text-2 text-xs">{k}</span>
-                        <span className="text-sm font-medium">{String(v)}</span>
-                      </div>
-                    ),
-                  )}
+                  {Object.entries(telemetry.consoleLogs.deviceInfo).map(([k, v]) => (
+                    <div key={k} className="flex items-baseline gap-2">
+                      <span className="text-text-2 text-xs">{k}</span>
+                      <span className="text-sm font-medium">{String(v)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
           <div>
-            <SectionHead>Recent console logs</SectionHead>
-            <div className="mt-3 overflow-auto rounded-xl border border-border max-h-[32rem]">
+            <div className="flex items-center justify-between flex-wrap gap-3 mb-3">
+              <div>
+                <SectionHead>Console logs</SectionHead>
+                <p className="text-text-2 text-xs mt-1">
+                  Raw firmware output lines — filter by level or search message text
+                </p>
+              </div>
+              <span className="text-text-2 text-xs tabular-nums">
+                {filteredLogs.length} / {telemetry.consoleLogs.recent.length} shown
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <input
+                type="text"
+                value={logSearch}
+                onChange={(e) => setLogSearch(e.target.value)}
+                placeholder="Filter by message..."
+                className="flex-1 min-w-[200px] bg-surface-1 border border-border rounded-lg px-3 py-1.5 text-sm outline-none focus:border-border-strong placeholder:text-text-2"
+              />
+              <div className="flex items-center gap-1.5">
+                {ALL_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => toggleLevel(level)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer transition-colors ${
+                      enabledLevels.has(level)
+                        ? level === "error"
+                          ? "bg-red-soft text-red"
+                          : level === "warn"
+                          ? "bg-yellow-soft text-yellow"
+                          : "bg-surface-2 text-text-0 border border-border-strong"
+                        : "text-text-2 border border-border opacity-40"
+                    }`}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="overflow-auto rounded-xl border border-border max-h-[32rem]">
               <table className="w-full text-sm border-collapse">
                 <thead className="sticky top-0 bg-surface-1 z-10">
                   <tr>
@@ -172,14 +273,14 @@ export function TelemetryTab({
                   </tr>
                 </thead>
                 <tbody>
-                  {telemetry.consoleLogs.recent.map((l, i) => (
+                  {filteredLogs.map((l, i) => (
                     <tr key={i} className="border-b border-border/50 hover:bg-surface-1">
                       <td className="px-4 py-2 w-16">
                         <span
                           className={`text-xs font-semibold px-1.5 py-0.5 rounded ${
-                            l.logLevel === "error"
+                            normaliseLevel(l.logLevel) === "error"
                               ? "bg-red-soft text-red"
-                              : l.logLevel === "warn"
+                              : normaliseLevel(l.logLevel) === "warn"
                               ? "bg-yellow-soft text-yellow"
                               : "text-text-2"
                           }`}
@@ -195,12 +296,147 @@ export function TelemetryTab({
                       </td>
                     </tr>
                   ))}
+                  {filteredLogs.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-8 text-text-2 text-sm text-center">
+                        No logs match the current filters
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+function RealtimeSessions({
+  sessions,
+  recent,
+}: {
+  sessions: Record<string, { dataType: string; count: number; earliest: string; latest: string }>
+  recent: Array<{ dataType: string; heartRate: number | null; sessionId: string; capturedAt: string }>
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const sessionEntries = useMemo(() => {
+    return Object.entries(sessions).sort(
+      (a, b) => new Date(b[1].latest).getTime() - new Date(a[1].latest).getTime(),
+    )
+  }, [sessions])
+
+  const recentBySession = useMemo(() => {
+    const map = new Map<string, typeof recent>()
+    for (const row of recent) {
+      const arr = map.get(row.sessionId) ?? []
+      arr.push(row)
+      map.set(row.sessionId, arr)
+    }
+    return map
+  }, [recent])
+
+  function toggleSession(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  if (sessionEntries.length === 0) {
+    return (
+      <div className="rounded-xl border border-border px-4 py-6 text-text-2 text-sm text-center">
+        No streaming sessions recorded yet
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-2">
+      {sessionEntries.map(([sessionId, meta]) => {
+        const isOpen = expanded.has(sessionId)
+        const elapsedMs =
+          new Date(meta.latest).getTime() - new Date(meta.earliest).getTime()
+        const elapsedSec = Math.round(elapsedMs / 1000)
+        const elapsedLabel =
+          elapsedSec < 60
+            ? `${elapsedSec}s`
+            : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`
+        const sessionRecent = recentBySession.get(sessionId) ?? []
+
+        return (
+          <div
+            key={sessionId}
+            className="rounded-xl border border-border overflow-hidden"
+          >
+            <button
+              type="button"
+              onClick={() => toggleSession(sessionId)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-surface-1 hover:bg-surface-2 transition-colors cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${isOpen ? "bg-green" : "bg-text-2"}`}
+                />
+                <span className="font-mono text-xs text-text-1 truncate">
+                  {sessionId.slice(0, 12)}
+                </span>
+                <span className="text-xs text-text-2 shrink-0">{meta.dataType}</span>
+              </div>
+              <div className="flex items-center gap-4 shrink-0 ml-3">
+                <span className="text-xs text-text-2 tabular-nums">{meta.count} samples</span>
+                <span className="text-xs text-text-2 tabular-nums">{elapsedLabel}</span>
+                <span className="text-xs text-text-2">{formatTime(meta.latest)}</span>
+                <span className="text-text-2 text-xs">{isOpen ? "▲" : "▼"}</span>
+              </div>
+            </button>
+
+            {isOpen && (
+              <div className="border-t border-border">
+                <div className="px-4 py-2 flex gap-6 text-xs text-text-2 bg-surface/50">
+                  <span>Start: {formatTime(meta.earliest)}</span>
+                  <span>Latest: {formatTime(meta.latest)}</span>
+                  <span>Elapsed: {elapsedLabel}</span>
+                  <span>{meta.count} total samples</span>
+                </div>
+                {sessionRecent.length > 0 ? (
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr>
+                        {["Type", "HR", "Captured"].map((h) => (
+                          <th
+                            key={h}
+                            className="px-4 py-2 text-left text-text-2 font-medium text-xs uppercase tracking-wider border-b border-border bg-surface-1"
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessionRecent.slice(0, 20).map((s, i) => (
+                        <tr key={i} className="border-b border-border/50 hover:bg-surface-1">
+                          <td className="px-4 py-2">{s.dataType}</td>
+                          <td className="px-4 py-2">{s.heartRate ?? "—"}</td>
+                          <td className="px-4 py-2 text-text-1">{formatTime(s.capturedAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="px-4 py-3 text-text-2 text-xs">
+                    No recent samples buffered for this session
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -221,7 +457,7 @@ function EventBreakdown({ summary }: { summary: Record<string, number> }) {
   return (
     <div className="space-y-5">
       <div>
-        <SectionHead>Event breakdown</SectionHead>
+        <SectionHead>Event type breakdown</SectionHead>
         <div className="flex flex-wrap gap-x-8 gap-y-2 mt-3">
           {knownEntries.map(([name, count]) => (
             <div key={name} className="flex items-center gap-2">
@@ -236,12 +472,13 @@ function EventBreakdown({ summary }: { summary: Record<string, number> }) {
         <div className="bg-yellow-soft/40 border border-yellow/30 rounded-2xl p-4">
           <div className="flex items-baseline justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <SectionHead>Unknown events</SectionHead>
+              <SectionHead>Unknown event numbers</SectionHead>
               <Pill tone="yellow">needs RE</Pill>
             </div>
             <p className="text-text-2 text-xs">
               {unknownTotal} sample{unknownTotal === 1 ? "" : "s"} across{" "}
-              {unknownEntries.length} event number{unknownEntries.length === 1 ? "" : "s"}
+              {unknownEntries.length} event number{unknownEntries.length === 1 ? "" : "s"} — payloads
+              captured, protocol not yet reverse-engineered
             </p>
           </div>
 
@@ -313,9 +550,6 @@ function BatterySection({
           : "red"
   const tempTone = latestTemp == null ? "neutral" : latestTemp >= 40 ? "yellow" : "neutral"
 
-  // FG SOC comes from the firmware console log as a single tenths int.
-  // It updates rarely (~once per boot/event) so use it as a sanity check
-  // against the much fresher BLE event stream.
   const fgSoc = fgSocTenths != null ? fgSocTenths / 10 : null
   const drift = latestSoc != null && fgSoc != null ? latestSoc - fgSoc : null
 
@@ -338,7 +572,7 @@ function BatterySection({
 
       <div className="grid grid-cols-4 gap-6 mt-3">
         <BatteryStat
-          label="SOC"
+          label="State of charge"
           value={latestSoc != null ? `${latestSoc.toFixed(1)}%` : "—"}
           tone={socTone}
         />
@@ -347,7 +581,7 @@ function BatterySection({
           value={latestVolt != null ? `${(latestVolt / 1000).toFixed(3)} V` : "—"}
         />
         <BatteryStat
-          label="Temp"
+          label="Temperature"
           value={latestTemp != null ? `${latestTemp.toFixed(1)} °C` : "—"}
           tone={tempTone}
         />
@@ -358,17 +592,17 @@ function BatterySection({
       </div>
 
       <div className="flex items-center gap-3 mt-3 text-xs text-text-2">
-        {latestAt ? <span>Latest event {formatTime(latestAt)}</span> : null}
+        {latestAt ? <span>Latest reading {formatTime(latestAt)}</span> : null}
         <span>·</span>
-        <span>{history.count} samples · last {history.hours}h</span>
+        <span>{history.count} readings · last {history.hours}h</span>
         {fgSoc != null ? (
           <>
             <span>·</span>
             <span>
-              Firmware FG SOC {fgSoc.toFixed(1)}%
+              Firmware fuel-gauge SOC {fgSoc.toFixed(1)}%
               {drift != null ? (
                 <span className={Math.abs(drift) > 2 ? "text-yellow ml-1" : "ml-1"}>
-                  (Δ {drift >= 0 ? "+" : ""}{drift.toFixed(1)})
+                  (drift {drift >= 0 ? "+" : ""}{drift.toFixed(1)})
                 </span>
               ) : null}
             </span>
@@ -423,7 +657,9 @@ function BatteryStat({
       <p className="text-text-2 text-xs uppercase tracking-wider">{label}</p>
       <div className="flex items-baseline gap-2 mt-1">
         <p className="text-2xl font-semibold tracking-tight">{value}</p>
-        {tone !== "neutral" ? <Pill tone={tone}>{tone === "green" ? "ok" : tone === "yellow" ? "warn" : "low"}</Pill> : null}
+        {tone !== "neutral" ? (
+          <Pill tone={tone}>{tone === "green" ? "ok" : tone === "yellow" ? "warn" : "low"}</Pill>
+        ) : null}
       </div>
     </div>
   )
@@ -489,7 +725,14 @@ function BatteryChart({
                   minute: "2-digit",
                 })
               }
-              formatter={(value: number) => [`${value.toFixed(dataKey === "volt" ? 0 : 1)}${unit}`, title.split(" ")[0]]}
+              formatter={(value) => {
+                const n = Number(value)
+                if (!Number.isFinite(n)) return ["", ""]
+                return [
+                  `${n.toFixed(dataKey === "volt" ? 0 : 1)}${unit}`,
+                  title.split(" ")[0],
+                ]
+              }}
             />
             <Line
               type="monotone"
