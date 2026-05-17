@@ -1,19 +1,40 @@
 import type { ReactNode } from "react"
 
+export type Status = "ok" | "warn" | "error" | "stale"
+
+const STATUS_BAR: Record<Status, string> = {
+  ok: "border-l-green",
+  warn: "border-l-yellow",
+  error: "border-l-red",
+  stale: "border-l-text-2",
+}
+const STATUS_TEXT: Record<Status, string> = {
+  ok: "text-green",
+  warn: "text-yellow",
+  error: "text-red",
+  stale: "text-text-2",
+}
+
 // Big-number tile used at the top of most tabs.
 export function Num({
   label,
   value,
   sub,
+  status,
 }: {
   label: string
   value: string | number
   sub: string
+  status?: Status
 }) {
+  const bar = status ? `border-l-2 ${STATUS_BAR[status]} pl-3` : ""
+  const valueColor = status ? STATUS_TEXT[status] : ""
   return (
-    <div>
+    <div className={bar}>
       <p className="text-text-2 text-sm">{label}</p>
-      <p className="text-3xl font-semibold tracking-tight mt-1">{value}</p>
+      <p className={`text-3xl font-semibold tracking-tight mt-1 tabular-nums ${valueColor}`}>
+        {value}
+      </p>
       <p className="text-text-2 text-sm mt-0.5">{sub}</p>
     </div>
   )
@@ -29,11 +50,26 @@ export function SectionHead({ children }: { children: ReactNode }) {
 }
 
 // Two-column key/value row with subtle bottom border.
-export function Row({ k, v }: { k: string; v: ReactNode }) {
+export function Row({
+  k,
+  v,
+  dense,
+  highlight,
+}: {
+  k: string
+  v: ReactNode
+  dense?: boolean
+  highlight?: Status
+}) {
+  const padding = dense ? "py-1.5" : "py-2.5"
+  const size = dense ? "text-[13px]" : ""
+  const valueColor = highlight ? STATUS_TEXT[highlight] : ""
   return (
-    <div className="flex items-baseline justify-between py-2.5 border-b border-border/60 gap-4">
+    <div
+      className={`flex items-baseline justify-between ${padding} border-b border-border/60 gap-4 ${size}`}
+    >
       <span className="text-text-2 shrink-0">{k}</span>
-      <span className="text-right max-w-[60%] truncate">{v}</span>
+      <span className={`text-right max-w-[60%] truncate tabular-nums ${valueColor}`}>{v}</span>
     </div>
   )
 }
@@ -56,7 +92,7 @@ export function Pill({
       : "bg-surface-2 text-text-1 border border-border"
   return (
     <span
-      className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-md ${toneClass}`}
+      className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${toneClass}`}
     >
       {children}
     </span>
