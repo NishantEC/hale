@@ -15,6 +15,7 @@ import { Num, Pill, Row, SectionHead } from "../components/primitives"
 import { StatusBadge, type StatusTone } from "../components/StatusBadge"
 import { SyncTrail, type TrailNode } from "../components/SyncTrail"
 import { formatTimestamp, relativeTime } from "../format"
+import { pickTopCorrelationSentence } from "../utils/correlations"
 
 type HomeProps = {
   overview: Overview | null
@@ -124,7 +125,7 @@ export function HomeTab(props: HomeProps) {
   ]
 
   // ── Journal correlation headline ──
-  const topCorrelation = pickTopCorrelation(journalCorrelations)
+  const topCorrelation = pickTopCorrelationSentence(journalCorrelations)
 
   return (
     <div className="space-y-8 max-w-6xl">
@@ -369,23 +370,3 @@ function computeNightStatus(
   }
 }
 
-function pickTopCorrelation(corrs: JournalCorrelation[]): string | null {
-  const ranked = [...corrs]
-    .map((c) => ({
-      c,
-      effect: Math.max(Math.abs(c.avgDeepDelta), Math.abs(c.avgRemDelta), Math.abs(c.avgDurationDelta / 60)),
-    }))
-    .filter((x) => x.effect > 0.3 && x.c.sampleCount >= 3)
-    .sort((a, b) => b.effect - a.effect)
-  if (ranked.length === 0) return null
-  const { c } = ranked[0]
-  const candidates: { metric: string; delta: number; unit: string }[] = [
-    { metric: "deep sleep", delta: c.avgDeepDelta, unit: "min" },
-    { metric: "REM", delta: c.avgRemDelta, unit: "min" },
-    { metric: "sleep duration", delta: c.avgDurationDelta, unit: "min" },
-  ]
-  const top = candidates.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))[0]
-  const direction = top.delta >= 0 ? "more" : "less"
-  const magnitude = Math.abs(Math.round(top.delta))
-  return `On nights tagged "${c.factorTag}", you get ${magnitude} ${top.unit} ${direction} ${top.metric} on average (n=${c.sampleCount}).`
-}

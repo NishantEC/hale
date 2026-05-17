@@ -6,6 +6,7 @@ import type {
 } from "../api"
 import { Pill, SectionHead } from "../components/primitives"
 import { formatNumber } from "../format"
+import { pickTopCorrelationSentence } from "../utils/correlations"
 
 // "Why is today different?" — compares the selected night's features
 // against the user's baseline_profile, ranks deltas by magnitude, and
@@ -133,8 +134,19 @@ export function InsightsTab({
   const headline = ranked.slice(0, 3)
   const rest = ranked.slice(3)
 
+  const correlationHeadline = pickTopCorrelationSentence(journalCorrelations)
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 max-w-6xl">
+      {correlationHeadline && (
+        <div className="bg-surface-raised rounded-2xl px-5 py-4 border border-border">
+          <p className="text-text-2 text-[10px] uppercase tracking-widest font-semibold">
+            Strongest journal correlation
+          </p>
+          <p className="text-text-0 text-[17px] mt-1 leading-snug">{correlationHeadline}</p>
+        </div>
+      )}
+
       <div>
         <div className="flex items-baseline justify-between mb-4">
           <SectionHead>Why is today different?</SectionHead>
