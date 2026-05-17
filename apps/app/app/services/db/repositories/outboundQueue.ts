@@ -83,9 +83,14 @@ export async function claimOutboundBatch(db: NoopDatabase, limit: number, now: n
 
 export async function markOutboundSynced(db: NoopDatabase, ids: string[]): Promise<void> {
   if (ids.length === 0) return
-  for (const id of ids) {
-    await db.delete(outboundQueue).where(eq(outboundQueue.id, id))
-  }
+  // Wrap per-row deletes in ONE transaction — see markRawSensorRecordsSynced
+  // for the rationale. Per-row implicit transactions race against
+  // subscriber cursors on COMMIT.
+  await db.transaction(async (tx) => {
+    for (const id of ids) {
+      await tx.delete(outboundQueue).where(eq(outboundQueue.id, id))
+    }
+  })
 }
 
 export interface FailureKind {
@@ -129,6 +134,60 @@ export async function recordOutboundFailure(
       nextAttemptAt: now + backoffDelayMs(nextAttempts),
     })
     .where(eq(outboundQueue.id, id))
+}
+
+/**
+ * Mark multiple outbound rows as failed in ONE transaction. The drainer
+ * previously called recordOutboundFailure per-row in a tight loop on
+ * upload failure; each call's implicit transaction commit could race
+ * against subscriber cursors and trigger SQLITE_BUSY (the bug seen in
+ * release builds as `[bg-packet-drain] failed [DrizzleError ... COMMIT]`).
+ * All rows in `ids` share the same errorMessage and classification.
+ */
+export async function recordOutboundFailureBatch(
+  db: NoopDatabase,
+  ids: string[],
+  errorMessage: string,
+  classification: FailureKind = { kind: "transient" },
+): Promise<void> {
+  if (ids.length === 0) return
+  const now = Date.now()
+  await db.transaction(async (tx) => {
+    if (classification.kind === "permanent") {
+      // Single bulk update — all matching rows jump to dead-letter.
+      for (const id of ids) {
+        await tx
+          .update(outboundQueue)
+          .set({
+            attempts: MAX_ATTEMPTS_BEFORE_DEAD_LETTER,
+            lastAttemptAt: now,
+            lastError: errorMessage,
+            nextAttemptAt: now,
+          })
+          .where(eq(outboundQueue.id, id))
+      }
+      return
+    }
+    // Transient: need to read current attempts per row, then update.
+    // Still inside the single transaction — selects don't hold cursors
+    // open across commits when scoped to the tx itself.
+    for (const id of ids) {
+      const [current] = await tx
+        .select({ attempts: outboundQueue.attempts })
+        .from(outboundQueue)
+        .where(eq(outboundQueue.id, id))
+      const nextAttempts = (current?.attempts ?? 0) + 1
+      await tx
+        .update(outboundQueue)
+        .set({
+          attempts: nextAttempts,
+          lastAttemptAt: now,
+          lastError: errorMessage,
+          nextAttemptAt: now + backoffDelayMs(nextAttempts),
+        })
+        .where(eq(outboundQueue.id, id))
+    }
+  })
 }
 
 export async function listDeadLetters(db: NoopDatabase) {

@@ -18,6 +18,7 @@ function makeDeps(overrides: Partial<Parameters<typeof runForceUpload>[1]["deps"
     markRawSensorRecordsSynced: jest.fn().mockResolvedValue(undefined),
     queueDepth: jest.fn().mockResolvedValue(0),
     recordOutboundFailure: jest.fn().mockResolvedValue(undefined),
+    recordOutboundFailureBatch: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } as any
 }
@@ -44,7 +45,11 @@ describe("runForceUpload", () => {
       "raw_sensor_records",
       batch.map((row: any) => row.payload),
     )
-    expect(deps.recordOutboundFailure).toHaveBeenCalledTimes(FORCE_UPLOAD_BATCH_SIZE)
+    // Was per-row; now ONE batched call with all FORCE_UPLOAD_BATCH_SIZE ids.
+    expect(deps.recordOutboundFailureBatch).toHaveBeenCalledTimes(1)
+    expect(deps.recordOutboundFailureBatch.mock.calls[0][1]).toHaveLength(
+      FORCE_UPLOAD_BATCH_SIZE,
+    )
     expect(deps.markOutboundSynced).not.toHaveBeenCalled()
     expect(deps.markRawSensorRecordsSynced).not.toHaveBeenCalled()
     expect(progress).toContain("0/2204")
@@ -116,7 +121,9 @@ describe("runForceUpload", () => {
     const tablesPosted = post.mock.calls.map((c) => c[0])
     expect(tablesPosted.sort()).toEqual(["raw_sensor_records", "signal_samples"])
     expect(deps.markOutboundSynced).toHaveBeenCalledTimes(1) // only signal_samples
-    expect(deps.recordOutboundFailure).toHaveBeenCalledTimes(3) // only raw_sensor_records rows
+    // Was per-row; now ONE batched call with 3 raw_sensor_records rows.
+    expect(deps.recordOutboundFailureBatch).toHaveBeenCalledTimes(1)
+    expect(deps.recordOutboundFailureBatch.mock.calls[0][1]).toHaveLength(3)
     expect(result.error).toBe("boom")
     expect(result.uploaded).toBe(2)
   })

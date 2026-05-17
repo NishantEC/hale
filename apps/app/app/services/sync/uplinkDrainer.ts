@@ -9,7 +9,7 @@ import {
   markOutboundSynced,
   oldestPendingAt,
   queueDepth,
-  recordOutboundFailure,
+  recordOutboundFailureBatch,
 } from "../db/repositories/outboundQueue"
 import {
   backfillUnsyncedRawSensorRecords,
@@ -93,11 +93,15 @@ export async function drainOnce(
     } catch (err: any) {
       const transient = isTransientApiError(err)
       const errorMessage = err?.message ?? "unknown error"
-      for (const r of rows) {
-        await recordOutboundFailure(db, r.id, errorMessage, {
-          kind: transient ? "transient" : "permanent",
-        })
-      }
+      // Batched failure update — single transaction across all rows.
+      // Per-row recordOutboundFailure calls were hitting SQLITE_BUSY
+      // on COMMIT in release builds.
+      await recordOutboundFailureBatch(
+        db,
+        rows.map((r) => r.id),
+        errorMessage,
+        { kind: transient ? "transient" : "permanent" },
+      )
       outcome.failed += rows.length
       if (!outcome.error) outcome.error = errorMessage
     }

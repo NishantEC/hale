@@ -111,13 +111,18 @@ export async function backfillUnsyncedRawSensorRecords(
     .orderBy(asc(rawSensorRecords.timestamp))
     .limit(limit)
 
-  for (const row of unsynced) {
-    await enqueueOutbound(db, {
-      tableName: "raw_sensor_records",
-      rowId: row.id,
-      payload: row,
-    })
-  }
+  // Wrap the enqueue loop in ONE transaction — each enqueueOutbound is
+  // an implicit transaction otherwise, and N COMMITs in a row race
+  // against subscriber cursors. Same SQLite race that broke ingest.
+  await db.transaction(async (tx) => {
+    for (const row of unsynced) {
+      await enqueueOutbound(tx, {
+        tableName: "raw_sensor_records",
+        rowId: row.id,
+        payload: row,
+      })
+    }
+  })
   return unsynced.length
 }
 
@@ -146,9 +151,19 @@ export async function markRawSensorRecordsSynced(
   syncedAt: number,
 ): Promise<void> {
   if (ids.length === 0) return
-  for (const id of ids) {
-    await db.update(rawSensorRecords).set({ _syncedAt: syncedAt }).where(eq(rawSensorRecords.id, id))
-  }
+  // Wrap per-row updates in ONE transaction. The previous per-row
+  // implicit-transaction pattern hit SQLITE_BUSY in release builds
+  // because subscriber refetches (useDbQuery) held cursors open across
+  // each COMMIT. Same bug we already fixed for ingestBleRecords; this
+  // is the symmetric fix for the drainer's "mark synced" path.
+  await db.transaction(async (tx) => {
+    for (const id of ids) {
+      await tx
+        .update(rawSensorRecords)
+        .set({ _syncedAt: syncedAt })
+        .where(eq(rawSensorRecords.id, id))
+    }
+  })
 }
 
 export async function getRawSyncBreakdown(db: NoopDatabase): Promise<{

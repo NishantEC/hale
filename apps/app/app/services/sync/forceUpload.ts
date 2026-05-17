@@ -6,6 +6,7 @@ import {
   markOutboundSynced,
   queueDepth,
   recordOutboundFailure,
+  recordOutboundFailureBatch,
 } from "../db/repositories/outboundQueue"
 import {
   backfillUnsyncedRawSensorRecords,
@@ -39,6 +40,7 @@ export interface ForceUploadDependencies {
   markRawSensorRecordsSynced: typeof markRawSensorRecordsSynced
   queueDepth: typeof queueDepth
   recordOutboundFailure: typeof recordOutboundFailure
+  recordOutboundFailureBatch: typeof recordOutboundFailureBatch
 }
 
 export const defaultForceUploadDependencies: ForceUploadDependencies = {
@@ -49,6 +51,7 @@ export const defaultForceUploadDependencies: ForceUploadDependencies = {
   markRawSensorRecordsSynced,
   queueDepth,
   recordOutboundFailure,
+  recordOutboundFailureBatch,
 }
 
 export async function runForceUpload(
@@ -121,9 +124,14 @@ export async function runForceUpload(
         const kind: "transient" | "permanent" = isTransientApiError(err)
           ? "transient"
           : "permanent"
-        for (const row of rows) {
-          await deps.recordOutboundFailure(db, row.id, errorMessage, { kind })
-        }
+        // Batched failure update — see uplinkDrainer for the same fix.
+        // Per-row recordOutboundFailure was hitting SQLITE_BUSY on COMMIT.
+        await deps.recordOutboundFailureBatch(
+          db,
+          rows.map((row) => row.id),
+          errorMessage,
+          { kind },
+        )
       }
     }
 
