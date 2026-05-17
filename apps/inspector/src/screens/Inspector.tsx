@@ -18,9 +18,18 @@ import {
   useTelemetry,
   useTrends,
 } from "../hooks/useInspectorQueries"
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
+import { CommandPalette, type Command } from "../shell/CommandPalette"
+import { HelpModal } from "../shell/HelpModal"
 import { IconRail, type RailTab } from "../shell/IconRail"
 import { TopBar } from "../shell/TopBar"
 import { isAuthError } from "../utils/errors"
+
+function shiftDateIso(iso: string, deltaDays: number): string {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() + deltaDays)
+  return d.toISOString().slice(0, 10)
+}
 
 const OverviewTab = lazy(() => import("../tabs/Overview").then((m) => ({ default: m.OverviewTab })))
 const TrendsTab = lazy(() => import("../tabs/Trends").then((m) => ({ default: m.TrendsTab })))
@@ -110,6 +119,8 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
   const trendsDays = Number(trendsDaysStr) || 30
 
   const [live, setLive] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
 
   const overview = useOverview(token, date)
   const homeView = useHomeView(token, date)
@@ -207,6 +218,138 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
     (q) => q.error && !isAuthError(q.error),
   )?.error
 
+  const commands: Command[] = useMemo(() => {
+    const navCommands: Command[] = RAIL_TABS.map((t) => ({
+      id: `nav-${t.id}`,
+      label: `Go to ${t.label}`,
+      group: "Navigate",
+      shortcut: t.shortcut,
+      run: () => goTab(t.id),
+    }))
+    return [
+      ...navCommands,
+      {
+        id: "refresh",
+        label: "Refresh all data",
+        group: "Actions",
+        shortcut: "R",
+        run: () => onRefresh(),
+      },
+      {
+        id: "run-today",
+        label: `Run pipeline · ${date} only`,
+        group: "Actions",
+        run: () => onRunPipeline({ day: date }),
+      },
+      {
+        id: "run-7d",
+        label: "Run pipeline · last 7 days",
+        group: "Actions",
+        run: () => {
+          const to = new Date()
+          const from = new Date(to.getTime() - 7 * 24 * 60 * 60 * 1000)
+          onRunPipeline({ from: from.toISOString(), to: to.toISOString() })
+        },
+      },
+      {
+        id: "run-30d",
+        label: "Run pipeline · last 30 days",
+        group: "Actions",
+        run: () => {
+          const to = new Date()
+          const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000)
+          onRunPipeline({ from: from.toISOString(), to: to.toISOString() })
+        },
+      },
+      {
+        id: "run-full",
+        label: "Run pipeline · full (last 45 days)",
+        group: "Actions",
+        run: () => onRunPipeline({}),
+      },
+      {
+        id: "seed",
+        label: "Seed demo data (7 nights)",
+        group: "Actions",
+        run: onSeed,
+      },
+      {
+        id: "live",
+        label: live ? "Pause live tail" : "Start live tail",
+        group: "Data",
+        shortcut: "L",
+        run: () => setLive((v) => !v),
+      },
+      {
+        id: "copy-link",
+        label: "Copy permalink to this view",
+        group: "Data",
+        run: () => {
+          void navigator.clipboard.writeText(window.location.href)
+        },
+      },
+      {
+        id: "signout",
+        label: "Sign out",
+        group: "Actions",
+        run: onLogout,
+      },
+      {
+        id: "date-prev",
+        label: "Date · previous day",
+        group: "Date",
+        shortcut: "[",
+        run: () => setDate(shiftDateIso(date, -1)),
+      },
+      {
+        id: "date-next",
+        label: "Date · next day",
+        group: "Date",
+        shortcut: "]",
+        run: () => setDate(shiftDateIso(date, 1)),
+      },
+      {
+        id: "date-today",
+        label: "Date · today",
+        group: "Date",
+        shortcut: "T",
+        run: () => setDate(new Date().toISOString().slice(0, 10)),
+      },
+      {
+        id: "date-yesterday",
+        label: "Date · yesterday",
+        group: "Date",
+        run: () => setDate(shiftDateIso(new Date().toISOString().slice(0, 10), -1)),
+      },
+    ]
+  }, [date, goTab, live, onLogout, onRefresh, onRunPipeline, onSeed, setDate])
+
+  const shortcuts = useMemo(
+    () => ({
+      "mod+k": () => setPaletteOpen(true),
+      "?": () => setHelpOpen(true),
+      r: () => onRefresh(),
+      l: () => setLive((v) => !v),
+      "1": () => goTab("home"),
+      "2": () => goTab("sleep"),
+      "3": () => goTab("pipeline"),
+      "4": () => goTab("raw"),
+      "5": () => goTab("trends"),
+      "6": () => goTab("insights"),
+      "7": () => goTab("telemetry"),
+      "[": () => setDate(shiftDateIso(date, -1)),
+      "]": () => setDate(shiftDateIso(date, 1)),
+      t: () => setDate(new Date().toISOString().slice(0, 10)),
+      escape: () => {
+        setPaletteOpen(false)
+        setHelpOpen(false)
+      },
+    }),
+    [date, goTab, onRefresh, setDate],
+  )
+
+  useKeyboardShortcuts(shortcuts, !paletteOpen)
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       <TopBar
@@ -296,6 +439,13 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
           </div>
         </main>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={commands}
+      />
+      <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>
   )
 }
