@@ -80,7 +80,7 @@ export function RunPipelineMenu({
 
   const variantClass =
     variant === "primary"
-      ? "bg-accent text-white hover:bg-accent/85"
+      ? "bg-primary text-primary-foreground hover:bg-primary/85"
       : "bg-surface-2 border border-border text-text-0 hover:bg-surface-3"
 
   return (
@@ -127,7 +127,7 @@ export function RunPipelineMenu({
                   type="checkbox"
                   checked={force}
                   onChange={(e) => setForce(e.target.checked)}
-                  className="accent-accent"
+                  className="accent-primary"
                 />
                 Force recompute (bypass watermark)
               </label>

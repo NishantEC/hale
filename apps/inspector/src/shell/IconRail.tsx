@@ -53,11 +53,11 @@ export function IconRail({
               }`}
             >
               {isActive && (
-                <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-sm bg-accent" />
+                <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-sm bg-primary" />
               )}
               {t.icon}
               {t.badge != null && t.badge > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 text-[10px] bg-accent text-white rounded-full px-1 min-w-[14px] h-[14px] flex items-center justify-center font-semibold leading-none">
+                <span className="absolute -top-0.5 -right-0.5 text-[10px] bg-primary text-primary-foreground rounded-full px-1 min-w-[14px] h-[14px] flex items-center justify-center font-semibold leading-none">
                   {t.badge > 99 ? "99+" : t.badge}
                 </span>
               )}

@@ -139,7 +139,7 @@ export function PipelineRunDrawer({ run, onClose, onRunPipeline }: Props) {
             onRunPipeline({ day: runDate })
             onClose()
           }}
-          className="w-full px-4 py-2.5 rounded-lg bg-accent-soft border border-accent/30 text-accent text-sm font-semibold hover:bg-accent/20 transition-colors cursor-pointer"
+          className="w-full px-4 py-2.5 rounded-lg bg-accent-soft border border-primary/30 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors cursor-pointer"
         >
           Rerun this date ({runDate})
         </button>

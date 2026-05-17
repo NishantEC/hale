@@ -1,51 +1,142 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-@theme {
-  --color-surface: #09090b;
-  --color-surface-1: #111113;
-  --color-surface-raised: #1c1c1f;
-  --color-surface-2: #18181b;
-  --color-surface-3: #222225;
-  --color-border: rgba(255, 255, 255, 0.10);
-  --color-border-strong: rgba(255, 255, 255, 0.18);
-  --color-text-0: #fafafa;
-  --color-text-1: #a1a1aa;
-  --color-text-2: #7e7e8c;
-  --color-accent: #3b82f6;
-  --color-accent-soft: rgba(59, 130, 246, 0.12);
-  --color-green: #22c55e;
-  --color-green-soft: rgba(34, 197, 94, 0.12);
-  --color-red: #ef4444;
-  --color-red-soft: rgba(239, 68, 68, 0.10);
-  --color-yellow: #eab308;
-  --color-yellow-soft: rgba(234, 179, 8, 0.12);
-  --color-stage-awake: #FE8A73;
-  --color-stage-rem: #3FB1E7;
-  --color-stage-core: #5BA8FF;
-  --color-stage-deep: #7B78D6;
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* shadcn — primary token surface */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* semantic status (StatusBadge, Num, Row, PipelineRunsChart) */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  /* domain — stage colors persist across themes */
+  --color-stage-awake: var(--stage-awake);
+  --color-stage-rem: var(--stage-rem);
+  --color-stage-core: var(--stage-core);
+  --color-stage-deep: var(--stage-deep);
+
+  /* aliases — existing screens keep compiling until Phase 2 sweep */
+  --color-surface: var(--background);
+  --color-surface-1: var(--card);
+  --color-surface-raised: var(--card);
+  --color-surface-2: var(--muted);
+  --color-surface-3: var(--accent);
+  --color-text-0: var(--foreground);
+  --color-text-1: var(--muted-foreground);
+  --color-text-2: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--ring);
+  --color-accent-soft: color-mix(in oklch, var(--primary) 15%, transparent);
+  --color-green: var(--success);
+  --color-green-soft: color-mix(in oklch, var(--success) 15%, transparent);
+  --color-red: var(--destructive);
+  --color-red-soft: color-mix(in oklch, var(--destructive) 15%, transparent);
+  --color-yellow: var(--warning);
+  --color-yellow-soft: color-mix(in oklch, var(--warning) 15%, transparent);
+
   --font-size-dense: 13px;
 }
 
-:root { color-scheme: dark; }
+:root {
+  /* light theme — default */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(0.98 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.6 0.182 252);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.94 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent: oklch(0.92 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.6 0.21 27);
+  --destructive-foreground: oklch(0.985 0 0);
+  --success: oklch(0.6 0.18 145);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.75 0.18 80);
+  --warning-foreground: oklch(0.205 0 0);
+  --border: oklch(0.88 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.78 0 0);
+
+  /* stage colors — same across themes; chosen for AA contrast on both surfaces */
+  --stage-awake: #FE8A73;
+  --stage-rem: #3FB1E7;
+  --stage-core: #5BA8FF;
+  --stage-deep: #7B78D6;
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.18 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.18 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.65 0.182 252);
+  --primary-foreground: oklch(0.145 0 0);
+  --secondary: oklch(0.22 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.24 0 0);
+  --muted-foreground: oklch(0.7 0 0);
+  --accent: oklch(0.28 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.7 0.22 27);
+  --destructive-foreground: oklch(0.145 0 0);
+  --success: oklch(0.7 0.18 145);
+  --success-foreground: oklch(0.145 0 0);
+  --warning: oklch(0.8 0.18 80);
+  --warning-foreground: oklch(0.145 0 0);
+  --border: oklch(0.3 0 0);
+  --input: oklch(0.3 0 0);
+  --ring: oklch(0.4 0 0);
+}
+
 * { box-sizing: border-box; margin: 0; }
+:root { color-scheme: light dark; }
 
 html, body, #root {
   height: 100%;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 15px;
   line-height: 1.55;
-  color: var(--color-text-0);
-  background: var(--color-surface);
+  color: var(--foreground);
+  background: var(--background);
   -webkit-font-smoothing: antialiased;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 12%, transparent); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--foreground) 20%, transparent); }
 
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
   border-radius: 6px;
 }
