@@ -154,6 +154,129 @@ export function Hypnogram({
     onCursorChange?.(null)
   }, [onCursorChange])
 
+  // The SVG <defs> + mask geometry only depends on segments and the
+  // chart-width-derived constants. Memoising lifts the 4× segments.map
+  // work off the cursor-move render path.
+  const defs = useMemo<ReactNode>(() => {
+    if (!containerWidth || !segments.length) return null
+    return (
+      <defs>
+        <linearGradient id="hg" x1="0" y1="0.2" x2="0" y2="0.95">
+          {STAGE_KEYS.map((k) => (
+            <stop
+              key={k}
+              offset={STAGES[k].pos / 4}
+              stopColor={STAGES[k].color}
+              stopOpacity={0.3}
+            />
+          ))}
+        </linearGradient>
+        <mask id="hm">
+          {segments.map((s) => {
+            const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
+            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
+            const width = lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) + BAR_WIDTH
+            return (
+              <rect
+                key={`b${s.id}`}
+                x={left}
+                y={top}
+                width={Math.max(width, 4)}
+                height={BAR_HEIGHT}
+                rx={8}
+                fill="white"
+              />
+            )
+          })}
+          {segments.map((s, i) => {
+            if (i === 0) return null
+            const prev = segments[i - 1]
+            if (prev.type === s.type) return null
+            const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
+            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
+            const lineHeight =
+              (ROW_HEIGHT - BAR_HEIGHT) *
+              Math.abs(STAGES[s.type].pos - STAGES[prev.type].pos)
+            const y =
+              STAGES[prev.type].pos > STAGES[s.type].pos
+                ? top + BAR_HEIGHT / 2
+                : top - lineHeight + BAR_HEIGHT / 2
+            return (
+              <rect
+                key={`lc${s.id}`}
+                x={left}
+                y={y}
+                width={BAR_WIDTH}
+                height={lineHeight}
+                fill="white"
+              />
+            )
+          })}
+          {segments.map((s, i) => {
+            if (i === segments.length - 1) return null
+            const next = segments[i + 1]
+            if (next.type === s.type) return null
+            const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
+            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
+            const barWidth = lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) + BAR_WIDTH
+            const lineHeight =
+              (ROW_HEIGHT - BAR_HEIGHT) *
+              Math.abs(STAGES[s.type].pos - STAGES[next.type].pos)
+            const y =
+              STAGES[next.type].pos > STAGES[s.type].pos
+                ? top + BAR_HEIGHT / 2
+                : top - lineHeight + BAR_HEIGHT / 2
+            return (
+              <rect
+                key={`rc${s.id}`}
+                x={left + barWidth - BAR_WIDTH}
+                y={y}
+                width={BAR_WIDTH}
+                height={lineHeight}
+                fill="white"
+              />
+            )
+          })}
+          {segments.map((s, i) => {
+            const parts: ReactNode[] = []
+            const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
+            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
+            const barWidth = lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) + BAR_WIDTH
+            if (i > 0 && segments[i - 1].type !== s.type && barWidth > 8) {
+              const prevAbove = STAGES[segments[i - 1].type].pos > STAGES[s.type].pos
+              parts.push(
+                <g
+                  key={`cl${s.id}`}
+                  transform={`translate(${left + 1.3}, ${
+                    top - 7.2 + (prevAbove ? BAR_HEIGHT - 1 : 1)
+                  }) rotate(180, 3, 7.5)`}
+                >
+                  <path d={CORNER_TOP} fill="white" />
+                  <path d={CORNER_BOTTOM} fill="white" />
+                </g>,
+              )
+            }
+            if (i < segments.length - 1 && segments[i + 1].type !== s.type && barWidth > 8) {
+              const nextAbove = STAGES[segments[i + 1].type].pos > STAGES[s.type].pos
+              parts.push(
+                <g
+                  key={`cr${s.id}`}
+                  transform={`translate(${left + barWidth - 7.3}, ${
+                    top - 7.2 + (nextAbove ? BAR_HEIGHT - 1 : 1)
+                  })`}
+                >
+                  <path d={CORNER_TOP} fill="white" />
+                  <path d={CORNER_BOTTOM} fill="white" />
+                </g>,
+              )
+            }
+            return parts
+          })}
+        </mask>
+      </defs>
+    )
+  }, [segments, containerWidth, total, ROW_HEIGHT, BAR_HEIGHT, BAR_OFFSET])
+
   if (!segments.length)
     return (
       <p className="text-text-2 py-10 text-center">
@@ -244,140 +367,7 @@ export function Hypnogram({
               height={CHART_HEIGHT}
               style={{ overflow: "visible" }}
             >
-              <defs>
-                <linearGradient id="hg" x1="0" y1="0.2" x2="0" y2="0.95">
-                  {STAGE_KEYS.map((k) => (
-                    <stop
-                      key={k}
-                      offset={STAGES[k].pos / 4}
-                      stopColor={STAGES[k].color}
-                      stopOpacity={0.3}
-                    />
-                  ))}
-                </linearGradient>
-                <mask id="hm">
-                  {segments.map((s) => {
-                    const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-                    const left =
-                      lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
-                    const width =
-                      lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) +
-                      BAR_WIDTH
-                    return (
-                      <rect
-                        key={`b${s.id}`}
-                        x={left}
-                        y={top}
-                        width={Math.max(width, 4)}
-                        height={BAR_HEIGHT}
-                        rx={8}
-                        fill="white"
-                      />
-                    )
-                  })}
-                  {segments.map((s, i) => {
-                    if (i === 0) return null
-                    const prev = segments[i - 1]
-                    if (prev.type === s.type) return null
-                    const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-                    const left =
-                      lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
-                    const lineHeight =
-                      (ROW_HEIGHT - BAR_HEIGHT) *
-                      Math.abs(STAGES[s.type].pos - STAGES[prev.type].pos)
-                    const y =
-                      STAGES[prev.type].pos > STAGES[s.type].pos
-                        ? top + BAR_HEIGHT / 2
-                        : top - lineHeight + BAR_HEIGHT / 2
-                    return (
-                      <rect
-                        key={`lc${s.id}`}
-                        x={left}
-                        y={y}
-                        width={BAR_WIDTH}
-                        height={lineHeight}
-                        fill="white"
-                      />
-                    )
-                  })}
-                  {segments.map((s, i) => {
-                    if (i === segments.length - 1) return null
-                    const next = segments[i + 1]
-                    if (next.type === s.type) return null
-                    const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-                    const left =
-                      lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
-                    const barWidth =
-                      lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) +
-                      BAR_WIDTH
-                    const lineHeight =
-                      (ROW_HEIGHT - BAR_HEIGHT) *
-                      Math.abs(STAGES[s.type].pos - STAGES[next.type].pos)
-                    const y =
-                      STAGES[next.type].pos > STAGES[s.type].pos
-                        ? top + BAR_HEIGHT / 2
-                        : top - lineHeight + BAR_HEIGHT / 2
-                    return (
-                      <rect
-                        key={`rc${s.id}`}
-                        x={left + barWidth - BAR_WIDTH}
-                        y={y}
-                        width={BAR_WIDTH}
-                        height={lineHeight}
-                        fill="white"
-                      />
-                    )
-                  })}
-                  {segments.map((s, i) => {
-                    const parts: ReactNode[] = []
-                    const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-                    const left =
-                      lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
-                    const barWidth =
-                      lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) +
-                      BAR_WIDTH
-                    if (
-                      i > 0 &&
-                      segments[i - 1].type !== s.type &&
-                      barWidth > 8
-                    ) {
-                      const prevAbove =
-                        STAGES[segments[i - 1].type].pos > STAGES[s.type].pos
-                      parts.push(
-                        <g
-                          key={`cl${s.id}`}
-                          transform={`translate(${left + 1.3}, ${
-                            top - 7.2 + (prevAbove ? BAR_HEIGHT - 1 : 1)
-                          }) rotate(180, 3, 7.5)`}
-                        >
-                          <path d={CORNER_TOP} fill="white" />
-                          <path d={CORNER_BOTTOM} fill="white" />
-                        </g>,
-                      )
-                    }
-                    if (
-                      i < segments.length - 1 &&
-                      segments[i + 1].type !== s.type &&
-                      barWidth > 8
-                    ) {
-                      const nextAbove =
-                        STAGES[segments[i + 1].type].pos > STAGES[s.type].pos
-                      parts.push(
-                        <g
-                          key={`cr${s.id}`}
-                          transform={`translate(${left + barWidth - 7.3}, ${
-                            top - 7.2 + (nextAbove ? BAR_HEIGHT - 1 : 1)
-                          })`}
-                        >
-                          <path d={CORNER_TOP} fill="white" />
-                          <path d={CORNER_BOTTOM} fill="white" />
-                        </g>,
-                      )
-                    }
-                    return parts
-                  })}
-                </mask>
-              </defs>
+              {defs}
               <rect
                 x={0}
                 y={0}
