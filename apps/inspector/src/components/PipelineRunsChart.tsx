@@ -12,8 +12,6 @@ import {
 
 import type { PipelineRunRow, PipelineRunsHistory } from "../api"
 
-// Recharts' tooltip content props are awkward to type across versions —
-// the data we need is shaped consistently regardless.
 type TooltipPayloadEntry = {
   dataKey?: string | number
   value?: number
@@ -41,14 +39,7 @@ function describeWindow(run: PipelineRunRow): string {
   return "custom window"
 }
 
-// Stage-timing regression watch.
-// Renders the last N pipeline_runs as stacked bars (one stack per run,
-// segments colored per stage). Skipped runs render as a thin grey bar
-// so the cadence is still visible. A dashed line marks median total
-// duration; bars exceeding 2× median get a red border so regressions
-// jump out.
-
-const STAGE_COLORS: Record<string, string> = {
+export const STAGE_COLORS: Record<string, string> = {
   fetch: "#3FB1E7",
   "sleep-detect": "#1B81FE",
   "activity-detect": "#403EA7",
@@ -63,6 +54,7 @@ function colorFor(stage: string): string {
 
 type BarRow = {
   idx: number
+  runId: string
   label: string
   startedAt: string
   total: number
@@ -71,12 +63,15 @@ type BarRow = {
   windowDescription: string
   detections: number
   isOutlier: boolean
+  pipelineVersion?: string
 } & Record<string, number | string | boolean>
 
 export function PipelineRunsChart({
   history,
+  onRunClick,
 }: {
   history: PipelineRunsHistory | null
+  onRunClick?: (id: string) => void
 }) {
   if (!history || history.runs.length === 0) {
     return (
@@ -86,12 +81,11 @@ export function PipelineRunsChart({
           No runs recorded yet. The pipeline writes a history row each time
           it runs (or skips via the watermark).
         </p>
+        <StaticLegend stageMedians={{}} />
       </div>
     )
   }
 
-  // Newest is index 0 from the API — flip to chronological so the chart
-  // reads left-to-right "older to newer".
   const ordered = [...history.runs].reverse()
   const stageNames = Array.from(
     new Set(
@@ -108,8 +102,10 @@ export function PipelineRunsChart({
   const outlierThreshold = medianTotal * 2
 
   const data: BarRow[] = ordered.map((r, i) => {
+    const version = (r as any).pipelineVersion as string | undefined
     const row: BarRow = {
       idx: i,
+      runId: r.id,
       label: new Date(r.startedAt).toLocaleString(undefined, {
         month: "short",
         day: "numeric",
@@ -123,10 +119,9 @@ export function PipelineRunsChart({
       windowDescription: describeWindow(r),
       detections: r.detections,
       isOutlier: !r.skipped && r.durationMs > outlierThreshold,
+      ...(version ? { pipelineVersion: version } : {}),
     }
     if (r.skipped) {
-      // Show as a small visible bar so the run is still visible on the
-      // axis; use a sentinel "_skipped" stage that renders grey.
       row._skipped = Math.max(50, Math.min(200, medianTotal * 0.1))
     } else if (r.stages) {
       for (const name of stageNames) {
@@ -137,6 +132,12 @@ export function PipelineRunsChart({
     }
     return row
   })
+
+  const handleBarClick = (barData: { runId?: string } | null) => {
+    if (onRunClick && barData?.runId) {
+      onRunClick(barData.runId)
+    }
+  }
 
   return (
     <div>
@@ -153,6 +154,7 @@ export function PipelineRunsChart({
           <BarChart
             data={data}
             margin={{ top: 10, right: 10, left: 0, bottom: 10 }}
+            style={onRunClick ? { cursor: "pointer" } : undefined}
           >
             <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" />
             <XAxis
@@ -194,6 +196,7 @@ export function PipelineRunsChart({
                 stackId="a"
                 fill={colorFor(name)}
                 isAnimationActive={false}
+                onClick={(barData) => handleBarClick(barData as { runId?: string })}
               >
                 {data.map((row, i) => (
                   <Cell
@@ -209,41 +212,62 @@ export function PipelineRunsChart({
               stackId="a"
               fill="rgba(255,255,255,0.18)"
               isAnimationActive={false}
+              onClick={(barData) => handleBarClick(barData as { runId?: string })}
             />
           </BarChart>
         </ResponsiveContainer>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-4 pt-3 border-t border-border">
-          {stageNames.map((name) => (
-            <div key={name} className="flex items-center gap-1.5">
-              <span
-                className="w-2 h-2 rounded-sm"
-                style={{ backgroundColor: colorFor(name) }}
-              />
-              <span className="text-text-1 text-xs">{name}</span>
-              {history.stageMedians[name] != null && (
-                <span className="text-text-2 text-xs">
-                  ({formatDuration(history.stageMedians[name])})
+        {data.some((r) => r.pipelineVersion) && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 pb-2 border-b border-border">
+            {data.map((row) =>
+              row.pipelineVersion ? (
+                <span
+                  key={row.idx}
+                  className="inline-block text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-surface-3 text-text-2 border border-border"
+                  title={`Run ${row.label}`}
+                >
+                  {row.pipelineVersion as string}
                 </span>
-              )}
-            </div>
-          ))}
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-sm bg-white/20" />
-            <span className="text-text-1 text-xs">skipped</span>
+              ) : null,
+            )}
           </div>
-          <div className="flex items-center gap-1.5 ml-auto">
-            <Pill tone="red">2× median</Pill>
-            <span className="text-text-2 text-xs">= regression flag</span>
-          </div>
-        </div>
+        )}
+
+        <StaticLegend stageMedians={history.stageMedians} />
       </div>
     </div>
   )
 }
 
-// Custom tooltip — Recharts' default tooltip can't easily render the
-// window + forced badge, so we render the bar metadata ourselves.
+function StaticLegend({ stageMedians }: { stageMedians: Record<string, number> }) {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-4 pt-3 border-t border-border">
+      {Object.entries(STAGE_COLORS).map(([name, color]) => (
+        <div key={name} className="flex items-center gap-1.5">
+          <span
+            className="w-2 h-2 rounded-sm"
+            style={{ backgroundColor: color }}
+          />
+          <span className="text-text-1 text-xs">{name}</span>
+          {stageMedians[name] != null && (
+            <span className="text-text-2 text-xs">
+              ({formatDuration(stageMedians[name])})
+            </span>
+          )}
+        </div>
+      ))}
+      <div className="flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-sm bg-white/20" />
+        <span className="text-text-1 text-xs">skipped</span>
+      </div>
+      <div className="flex items-center gap-1.5 ml-auto">
+        <Pill tone="red">2× median</Pill>
+        <span className="text-text-2 text-xs">= regression flag</span>
+      </div>
+    </div>
+  )
+}
+
 function RunTooltip(props: ChartTooltipProps) {
   if (!props.active || !props.payload || props.payload.length === 0) return null
   const row = props.payload[0].payload
@@ -273,6 +297,9 @@ function RunTooltip(props: ChartTooltipProps) {
         )}
       </p>
       <p className="text-text-2 text-xs mt-0.5">{row.windowDescription}</p>
+      {row.pipelineVersion && (
+        <p className="text-text-2 text-[10px] font-mono mt-0.5">{row.pipelineVersion as string}</p>
+      )}
       {!row.skipped && stageEntries.length > 0 && (
         <div className="mt-2 pt-2 border-t border-border space-y-0.5">
           {stageEntries.map((s) => (

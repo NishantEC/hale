@@ -432,6 +432,8 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
                   state={pipelineState.data ?? null}
                   results={results.data ?? null}
                   runs={runs.data ?? null}
+                  date={date}
+                  onRunPipeline={onRunPipeline}
                 />
               )}
               {tab === "telemetry" && (
