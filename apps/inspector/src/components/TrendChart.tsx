@@ -1,4 +1,5 @@
 import {
+  Brush,
   CartesianGrid,
   Line,
   LineChart,
@@ -12,11 +13,6 @@ import {
 import type { TrendPoint } from "../api"
 import { SectionHead } from "./primitives"
 
-// One time-series line chart, scaled to the data + a reference line at
-// the mean so you can eyeball "is today above or below my baseline?".
-// Wrapped in ResponsiveContainer so the chart resizes with the layout
-// without us having to wire up our own ResizeObserver.
-
 export function TrendChart({
   title,
   subtitle,
@@ -26,6 +22,11 @@ export function TrendChart({
   decimals = 1,
   formatValue,
   height = 180,
+  compact = false,
+  domain,
+  onDomainChange,
+  cursorMs,
+  onCursorChange,
 }: {
   title: string
   subtitle?: string
@@ -35,6 +36,11 @@ export function TrendChart({
   decimals?: number
   formatValue?: (v: number) => string
   height?: number
+  compact?: boolean
+  domain?: [number, number]
+  onDomainChange?: (d: [number, number]) => void
+  cursorMs?: number | null
+  onCursorChange?: (ms: number | null) => void
 }) {
   const points = data.map((d) => ({
     t: new Date(d.timestamp).getTime(),
@@ -60,8 +66,27 @@ export function TrendChart({
   const fmt = (v: number) =>
     formatValue ? formatValue(v) : v.toFixed(decimals)
 
+  const xDomain: [number | string, number | string] =
+    domain ?? ["dataMin", "dataMax"]
+
+  const startIndex =
+    domain && points.length > 0
+      ? Math.max(0, points.findIndex((p) => p.t >= domain[0]))
+      : undefined
+
+  const endIndex =
+    domain && points.length > 0
+      ? (() => {
+          let last = points.length - 1
+          for (let i = points.length - 1; i >= 0; i--) {
+            if (points[i].t <= domain[1]) { last = i; break }
+          }
+          return last
+        })()
+      : undefined
+
   return (
-    <div className="bg-surface-1 border border-border rounded-2xl p-5">
+    <div className={`bg-surface-1 border border-border rounded-2xl ${compact ? "p-3" : "p-5"}`}>
       <div className="flex items-baseline justify-between mb-1">
         <SectionHead>{title}</SectionHead>
         <div className="text-right">
@@ -89,12 +114,23 @@ export function TrendChart({
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={height}>
-          <LineChart data={points} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+          <LineChart
+            data={points}
+            margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+            onMouseMove={(e) => {
+              if (!onCursorChange) return
+              const ev = e as unknown as { activePayload?: Array<{ payload: { t: number; v: number } }> }
+              if (ev?.activePayload?.[0]) {
+                onCursorChange(ev.activePayload[0].payload.t)
+              }
+            }}
+            onMouseLeave={() => onCursorChange?.(null)}
+          >
             <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" />
             <XAxis
               dataKey="t"
               type="number"
-              domain={["dataMin", "dataMax"]}
+              domain={xDomain}
               tickFormatter={tickFmt}
               tick={{ fill: "var(--color-text-2)", fontSize: 11 }}
               axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
@@ -128,7 +164,7 @@ export function TrendChart({
                 const v = Number(value)
                 return [
                   Number.isFinite(v) ? `${fmt(v)}${unit ?? ""}` : "—",
-                  title,
+                  unit ?? "",
                 ]
               }}
             />
@@ -137,6 +173,14 @@ export function TrendChart({
                 y={mean}
                 stroke="rgba(255,255,255,0.18)"
                 strokeDasharray="3 3"
+              />
+            )}
+            {cursorMs != null && Number.isFinite(cursorMs) && (
+              <ReferenceLine
+                x={cursorMs}
+                stroke="rgba(255,255,255,0.45)"
+                strokeWidth={1}
+                strokeDasharray="4 3"
               />
             )}
             <Line
@@ -148,6 +192,32 @@ export function TrendChart({
               activeDot={{ r: 4 }}
               isAnimationActive={false}
             />
+            {onDomainChange && (
+              <Brush
+                dataKey="t"
+                height={20}
+                stroke="rgba(255,255,255,0.15)"
+                fill="rgba(255,255,255,0.04)"
+                travellerWidth={6}
+                startIndex={startIndex}
+                endIndex={endIndex}
+                onChange={(brushRange) => {
+                  const { startIndex: si, endIndex: ei } = brushRange as {
+                    startIndex: number
+                    endIndex: number
+                  }
+                  if (
+                    si != null &&
+                    ei != null &&
+                    points[si] != null &&
+                    points[ei] != null
+                  ) {
+                    onDomainChange([points[si].t, points[ei].t])
+                  }
+                }}
+                tickFormatter={tickFmt}
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       )}

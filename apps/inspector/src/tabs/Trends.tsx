@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 
 import type { PipelineRunOptions, TrendsView } from "../api"
 import { Num, Pill, SectionHead } from "../components/primitives"
@@ -47,8 +47,12 @@ export function TrendsTab({
 }) {
   const summaries = trends?.summaries
 
-  // Pre-compute delta vs week-ago for the header tiles so we don't repeat
-  // the same arithmetic in JSX.
+  const [compact, setCompact] = useState(false)
+  const [sharedDomain, setSharedDomain] = useState<[number, number] | undefined>(undefined)
+  const [cursorMs, setCursorMs] = useState<number | null>(null)
+
+  const chartHeight = compact ? 90 : 180
+
   const hrvDelta = useMemo(() => {
     if (!summaries?.hrv.current || !summaries?.hrv.weekAgo) return null
     return summaries.hrv.current - summaries.hrv.weekAgo
@@ -59,6 +63,15 @@ export function TrendsTab({
     return summaries.restingHr.current - summaries.restingHr.weekAgo
   }, [summaries])
 
+  const sharedProps = {
+    domain: sharedDomain,
+    onDomainChange: setSharedDomain,
+    cursorMs,
+    onCursorChange: setCursorMs,
+    height: chartHeight,
+    compact,
+  }
+
   return (
     <div className="space-y-10">
       <div className="flex items-center justify-between">
@@ -68,6 +81,16 @@ export function TrendsTab({
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setCompact((c) => !c)}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+              compact
+                ? "bg-surface-3 border-border text-text-0"
+                : "bg-surface-1 border-border text-text-2 hover:text-text-1"
+            }`}
+          >
+            {compact ? "Comfortable" : "Compact"}
+          </button>
           <div className="flex gap-1.5 bg-surface-1 border border-border rounded-lg p-1">
             {RANGE_OPTIONS.map((r) => (
               <button
@@ -100,7 +123,6 @@ export function TrendsTab({
         </div>
       </div>
 
-      {/* Summary tiles */}
       <div>
         <SectionHead>Week-over-week</SectionHead>
         <div className="grid grid-cols-3 gap-8 mt-4">
@@ -142,8 +164,6 @@ export function TrendsTab({
         </div>
       </div>
 
-      {/* Charts grid — two columns. The four "headline" series first
-          (HRV, RHR, duration, recovery) then the supplementary ones. */}
       <div className="grid grid-cols-2 gap-6">
         <TrendChart
           title="HRV (RMSSD)"
@@ -151,6 +171,7 @@ export function TrendsTab({
           data={trends?.hrvTrend ?? []}
           color={CHART_COLORS.hrv}
           unit=" ms"
+          {...sharedProps}
         />
         <TrendChart
           title="Resting HR"
@@ -159,6 +180,7 @@ export function TrendsTab({
           color={CHART_COLORS.rhr}
           unit=" bpm"
           decimals={0}
+          {...sharedProps}
         />
         <TrendChart
           title="Sleep duration"
@@ -166,6 +188,7 @@ export function TrendsTab({
           data={trends?.sleepDurationTrend ?? []}
           color={CHART_COLORS.sleep}
           unit="h"
+          {...sharedProps}
         />
         <TrendChart
           title="Recovery"
@@ -173,17 +196,20 @@ export function TrendsTab({
           data={trends?.recoveryTrend ?? []}
           color={CHART_COLORS.recovery}
           decimals={0}
+          {...sharedProps}
         />
         <TrendChart
           title="Sleep consistency"
           data={trends?.consistencyTrend ?? []}
           color={CHART_COLORS.consistency}
           decimals={0}
+          {...sharedProps}
         />
         <TrendChart
           title="Strain"
           data={trends?.strainTrend ?? []}
           color={CHART_COLORS.strain}
+          {...sharedProps}
         />
         <TrendChart
           title="Respiratory rate"
@@ -191,6 +217,7 @@ export function TrendsTab({
           data={trends?.respiratoryRateTrend ?? []}
           color={CHART_COLORS.resp}
           decimals={1}
+          {...sharedProps}
         />
         <TrendChart
           title="SpO2 average"
@@ -198,11 +225,13 @@ export function TrendsTab({
           color={CHART_COLORS.spo2}
           decimals={1}
           unit="%"
+          {...sharedProps}
         />
         <TrendChart
           title="Stress"
           data={trends?.stressTrend ?? []}
           color={CHART_COLORS.stress}
+          {...sharedProps}
         />
         <TrendChart
           title="Training load"
@@ -210,6 +239,7 @@ export function TrendsTab({
           data={trends?.trainingLoadTrend ?? []}
           color={CHART_COLORS.training}
           decimals={2}
+          {...sharedProps}
         />
       </div>
     </div>
