@@ -21,6 +21,12 @@ type Props = {
   onRewindTs: ActionHandler
   onRewindAck: ActionHandler
   onRewindBare: ActionHandler
+  onProbeRewindSector0: ActionHandler
+  onProbeRewindSector10: ActionHandler
+  onProbeRewindVerbose: ActionHandler
+  onForceTrimRewind: ActionHandler
+  onForceTrimRewindMaverick: ActionHandler
+  onWhoopsiInitThenForceTrim: ActionHandler
 }
 
 export const ActionsCard: FC<Props> = (handlers) => (
@@ -41,6 +47,18 @@ export const ActionsCard: FC<Props> = (handlers) => (
       <Btn label="Rewind ts (4B)" onPress={handlers.onRewindTs} />
       <Btn label="Rewind ack (9B)" onPress={handlers.onRewindAck} />
       <Btn label="Rewind bare (1B)" onPress={handlers.onRewindBare} />
+    </Grid>
+    <SectionLabel text="Rewind diagnostic (8B sector+offset)" />
+    <Grid>
+      <Btn label="Probe→Rewind(0,0)→Probe" onPress={handlers.onProbeRewindSector0} />
+      <Btn label="Probe→Rewind(10,0)→Probe" onPress={handlers.onProbeRewindSector10} />
+      <Btn label="Verbose Rewind(10,0) [5s capture]" onPress={handlers.onProbeRewindVerbose} />
+    </Grid>
+    <SectionLabel text="FORCE_TRIM (the actual rewind cmd per whoopsi)" />
+    <Grid>
+      <Btn label="Force Trim(0,0) → Resync [legacy framing]" onPress={handlers.onForceTrimRewind} danger />
+      <Btn label="Force Trim(0,0) → Resync [Maverick framing]" onPress={handlers.onForceTrimRewindMaverick} danger />
+      <Btn label="WHOOPSI INIT + Force Trim(0,0) [full handshake]" onPress={handlers.onWhoopsiInitThenForceTrim} danger />
     </Grid>
     <SectionLabel text="Recovery" />
     <Grid>

@@ -1,0 +1,9 @@
+.venv/
+.env
+.research/
+harvard_firmware/
+*.zbin
+*.bin
+*.zip
+*.pdf
+__pycache__/

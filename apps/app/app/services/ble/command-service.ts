@@ -1,5 +1,5 @@
 import { PacketType, CommandNumber, WhoopPacket } from './packet-types';
-import { encodeFrame, uint8ArrayToBase64 } from './packet-codec';
+import { encodeFrame, encodeFrameMaverick, uint8ArrayToBase64 } from './packet-codec';
 
 export class CommandService {
   private sequence = 0;
@@ -145,24 +145,14 @@ export class CommandService {
   }
 
   /**
-   * DEAD END as of 2026-05-16. The strap responds (status byte = 0x01)
-   * but does NOT rewind. Cross-referenced with chukfinley/whoopsi
-   * (BLE-protocol decompilation of the official WHOOP Android APK) and
-   * jogolden/whoomp + bWanShiTong/openwhoop:
-   *
-   *   1. Real payload format is [u32_LE sector, u32_LE offset] (8 bytes,
-   *      4-byte aligned), flash-space not time-space. Sector 10 is the
-   *      circular buffer.
-   *   2. The official WHOOP app DEFINES this command but never sends it.
-   *   3. Trim watermark is per-BLE-bond. SetReadPointer cannot expose
-   *      data older than the current bond's trim, regardless of payload.
-   *   4. The whoopsi project's only working recovery mechanism is
-   *      connecting the strap to a DIFFERENT phone (new bond = fresh
-   *      trim watermark; full ~20-day flash re-streams).
-   *
-   * Kept here as a breadcrumb. The three shapes are wrong; don't waste
-   * time iterating on them. If/when we need recovery in production, the
-   * actionable path is a "second device" flow, not this command.
+   * SetReadPointer (cmd 33). Three legacy shapes (ts/ack/bare) were
+   * empirically NOPs (responses came back, but no data flowed). The
+   * canonical format per chukfinley/whoopsi APK decompilation is
+   * [u32_LE sector, u32_LE offset] (8 bytes), exposed below via
+   * `buildSetReadPointerSectorOffset`. Whoopsi notes sector 10 holds
+   * the historical circular buffer; (sector=0, offset=0) and
+   * (sector=10, offset=0) are the two candidates for "rewind to
+   * beginning". Trim watermark may still firmware-block reads past it.
    */
   buildSetReadPointer(
     unixTs: number,
@@ -185,6 +175,120 @@ export class CommandService {
     data[1] = (unixTs >> 8) & 0xff;
     data[2] = (unixTs >> 16) & 0xff;
     data[3] = (unixTs >> 24) & 0xff;
+    return this.buildCommand(CommandNumber.SetReadPointer, data);
+  }
+
+  /**
+   * FORCE_TRIM (cmd 25 / 0x19) — THE actual rewind command per whoopsi
+   * (chukfinley/whoopsi/ble-sync/CLAUDE.md). Payload is 8 bytes of
+   * [sector_u32_LE, offset_u32_LE], 4-byte aligned.
+   *
+   *   (0, 0)                       = rewind trim pointer to start
+   *                                  (only exposes the wrap-around
+   *                                  segment, not the full ~20 day
+   *                                  buffer — partial recovery)
+   *   (0xFEFEFEFE, 0xFEFEFEFE)     = PERMANENTLY consume all data for
+   *                                  this bond. **NEVER SEND THIS.**
+   *                                  Hard-rejected below.
+   *
+   * The "Trim All" sentinel is what locks the user out of recovery
+   * forever; the only undo is unpair+re-pair to create a new bond
+   * identity. We refuse to build a packet matching it.
+   */
+  buildForceTrim(sector: number, offset: number): string {
+    const TRIM_ALL_SENTINEL = 0xfefefefe;
+    if (
+      (sector >>> 0) === TRIM_ALL_SENTINEL ||
+      (offset >>> 0) === TRIM_ALL_SENTINEL
+    ) {
+      throw new Error(
+        "buildForceTrim refused: 0xFEFEFEFE is the TRIM-ALL sentinel and would PERMANENTLY consume all flash data for this bond.",
+      );
+    }
+    const data = new Uint8Array(8);
+    data[0] = sector & 0xff;
+    data[1] = (sector >> 8) & 0xff;
+    data[2] = (sector >> 16) & 0xff;
+    data[3] = (sector >> 24) & 0xff;
+    data[4] = offset & 0xff;
+    data[5] = (offset >> 8) & 0xff;
+    data[6] = (offset >> 16) & 0xff;
+    data[7] = (offset >> 24) & 0xff;
+    return this.buildCommand(CommandNumber.ForceTrim, data);
+  }
+
+  /**
+   * Same payload as buildForceTrim but framed in the Maverick / official-app
+   * style (REVISION byte, routing bytes, header CRC16, 4-byte alignment
+   * padding). FORCE_TRIM in our legacy framing is silently rejected by
+   * Gen4 firmware on this strap — same 8-byte payload via Maverick framing
+   * is whoopsi's working path. Reuses the same TRIM-ALL sentinel guard.
+   */
+  /**
+   * GET_HELLO_EXT (cmd 0x91) — Maverick identity-exchange command that
+   * whoopsi sends as command #2 of its init sequence (right after
+   * ABORT_HISTORICAL_TRANSMITS) on every connect. Returns a payload
+   * containing the strap's serial. Hypothesis: the strap may gate
+   * FORCE_TRIM / SET_READ_POINTER on having seen this exchange recently.
+   *
+   * Payload is [0x01] per whoopsi. We send it Maverick-framed by default
+   * since the response handling assumes that format too.
+   */
+  buildGetHelloExtMaverick(): string {
+    const frame = encodeFrameMaverick(
+      CommandNumber.GetHelloExt,
+      this.nextSequence(),
+      new Uint8Array([0x01]),
+    );
+    return uint8ArrayToBase64(frame);
+  }
+
+  buildForceTrimMaverick(sector: number, offset: number): string {
+    const TRIM_ALL_SENTINEL = 0xfefefefe;
+    if (
+      (sector >>> 0) === TRIM_ALL_SENTINEL ||
+      (offset >>> 0) === TRIM_ALL_SENTINEL
+    ) {
+      throw new Error(
+        "buildForceTrimMaverick refused: 0xFEFEFEFE is the TRIM-ALL sentinel.",
+      );
+    }
+    const params = new Uint8Array(8);
+    params[0] = sector & 0xff;
+    params[1] = (sector >> 8) & 0xff;
+    params[2] = (sector >> 16) & 0xff;
+    params[3] = (sector >> 24) & 0xff;
+    params[4] = offset & 0xff;
+    params[5] = (offset >> 8) & 0xff;
+    params[6] = (offset >> 16) & 0xff;
+    params[7] = (offset >> 24) & 0xff;
+    const frame = encodeFrameMaverick(
+      CommandNumber.ForceTrim,
+      this.nextSequence(),
+      params,
+    );
+    return uint8ArrayToBase64(frame);
+  }
+
+  /**
+   * Canonical SetReadPointer payload per whoopsi: 8 bytes of
+   * [sector_u32_LE, offset_u32_LE], 4-byte aligned. Sector 10 is the
+   * historical circular buffer per whoopsi notes; offset 0 means
+   * "start of that region". The strap's actual reaction (rewind vs.
+   * NOP vs. error) needs to be observed empirically; pair this with
+   * a GetDataRange before+after to detect whether the read pointer
+   * actually moved.
+   */
+  buildSetReadPointerSectorOffset(sector: number, offset: number): string {
+    const data = new Uint8Array(8);
+    data[0] = sector & 0xff;
+    data[1] = (sector >> 8) & 0xff;
+    data[2] = (sector >> 16) & 0xff;
+    data[3] = (sector >> 24) & 0xff;
+    data[4] = offset & 0xff;
+    data[5] = (offset >> 8) & 0xff;
+    data[6] = (offset >> 16) & 0xff;
+    data[7] = (offset >> 24) & 0xff;
     return this.buildCommand(CommandNumber.SetReadPointer, data);
   }
 

@@ -7,6 +7,7 @@ import {
   ConnectionState, WhoopPacket, ScannedDevice,
 } from './packet-types';
 import { PacketAssembler } from './packet-assembler';
+import { base64ToUint8Array } from './packet-codec';
 import { runBackgroundDrain } from '../sync/backgroundSync';
 
 const PREFERRED_DEVICE_KEY = 'noop.preferredDeviceId';
@@ -377,6 +378,19 @@ class WhoopBleManager {
 
   async writeCommand(base64Frame: string): Promise<void> {
     if (!this.device) throw new Error('Not connected');
+    // Decode the base64 to hex so we can see exactly what bytes hit the
+    // wire. Useful for confirming Maverick framing / CRC bytes match
+    // what whoopsi / the official APK send. Comment out the log if
+    // chatty.
+    try {
+      const bytes = base64ToUint8Array(base64Frame);
+      const hex = Array.from(bytes)
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join(' ');
+      console.log(`[bleManager.writeCommand] ${bytes.length}B: ${hex}`);
+    } catch {
+      // ignore decode failures
+    }
     await this.device.writeCharacteristicWithResponseForService(
       WHOOP_SERVICE_UUID,
       CMD_TO_STRAP_UUID,

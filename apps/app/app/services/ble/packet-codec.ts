@@ -46,7 +46,81 @@ export function crc32(data: Uint8Array): number {
 }
 
 // ---------------------------------------------------------------------------
-// Frame encoding
+// CRC-16/MODBUS (poly 0xA001 reflected, init 0xFFFF) — used by whoopsi /
+// official WHOOP Maverick framing for the 8-byte header checksum.
+// ---------------------------------------------------------------------------
+export function crc16Modbus(data: Uint8Array): number {
+  let crc = 0xffff;
+  for (let i = 0; i < data.length; i++) {
+    crc ^= data[i];
+    for (let bit = 0; bit < 8; bit++) {
+      crc = crc & 1 ? (crc >>> 1) ^ 0xa001 : crc >>> 1;
+    }
+  }
+  return crc & 0xffff;
+}
+
+// ---------------------------------------------------------------------------
+// Maverick-style frame encoding — what whoopsi sends and what the official
+// WHOOP app sends per their decompilation of `Po/p.java`. Required by the
+// strap firmware for FORCE_TRIM / SET_READ_POINTER (which silently reject
+// our simpler legacy framing).
+//
+// Layout:
+//   [0]     SOF        = 0xAA
+//   [1]     REVISION   = 0x01
+//   [2-3]   Length     = payloadLen + 4  (LE16; payloadLen includes padding)
+//   [4]     Routing 1  = 0x00
+//   [5]     Routing 2  = 0x01
+//   [6-7]   Header CRC16 MODBUS over bytes 0-5  (LE)
+//   [8]     Cmd Type   = 0x23 for outgoing commands
+//   [9]     Sequence
+//   [10]    Cmd Code
+//   [11+]   Params
+//           Padding to 4-byte alignment of payload (cmd_type + seq + cmd + params + pad)
+//   [end-4] CRC32 (poly 0xEDB88320 reflected) over the entire payload  (LE)
+// ---------------------------------------------------------------------------
+export function encodeFrameMaverick(
+  cmdCode: number,
+  sequence: number,
+  params: Uint8Array,
+): Uint8Array {
+  const rawPayloadLen = 3 + params.length;
+  const paddingNeeded = rawPayloadLen % 4 === 0 ? 0 : 4 - (rawPayloadLen % 4);
+  const payloadLen = rawPayloadLen + paddingNeeded;
+  const lengthField = payloadLen + 4;
+  const totalLen = 8 + payloadLen + 4;
+
+  const frame = new Uint8Array(totalLen);
+  frame[0] = 0xaa; // SOF
+  frame[1] = 0x01; // REVISION
+  frame[2] = lengthField & 0xff;
+  frame[3] = (lengthField >> 8) & 0xff;
+  frame[4] = 0x00; // routing
+  frame[5] = 0x01; // routing
+  const headerCrc = crc16Modbus(frame.subarray(0, 6));
+  frame[6] = headerCrc & 0xff;
+  frame[7] = (headerCrc >> 8) & 0xff;
+
+  frame[8] = 0x23; // CMD_TYPE_COMMAND
+  frame[9] = sequence & 0xff;
+  frame[10] = cmdCode & 0xff;
+  if (params.length > 0) frame.set(params, 11);
+  // Bytes 11+params..11+params+padding-1 are already zero.
+
+  const payloadEnd = 8 + payloadLen;
+  const payload = frame.subarray(8, payloadEnd);
+  const payloadCrc = crc32(payload);
+  frame[payloadEnd] = payloadCrc & 0xff;
+  frame[payloadEnd + 1] = (payloadCrc >>> 8) & 0xff;
+  frame[payloadEnd + 2] = (payloadCrc >>> 16) & 0xff;
+  frame[payloadEnd + 3] = (payloadCrc >>> 24) & 0xff;
+
+  return frame;
+}
+
+// ---------------------------------------------------------------------------
+// Frame encoding (legacy / our format)
 // ---------------------------------------------------------------------------
 export function encodeFrame(packet: WhoopPacket): Uint8Array {
   const payload = new Uint8Array(3 + packet.data.length);

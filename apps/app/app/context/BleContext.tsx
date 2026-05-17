@@ -15,6 +15,8 @@ import { AppState } from "react-native"
 import {
   bleManager,
   CMD_FROM_STRAP_UUID,
+  DATA_FROM_STRAP_UUID,
+  EVENTS_FROM_STRAP_UUID,
   CommandNumber,
   CommandService,
   ConnectionState,
@@ -125,6 +127,27 @@ export type BleContextValue = {
   powerCycleStrap: () => Promise<void>
   probeDataRange: () => Promise<{ raw: number[]; hex: string; decoded: string }>
   rewindAndResync: (unixTs: number, shape: "ts" | "ack" | "bare") => Promise<void>
+  probeRewindProbe: (
+    sector: number,
+    offset: number,
+  ) => Promise<{ before: string; response: string; after: string; movedStart: boolean }>
+  probeRewindVerbose: (
+    sector: number,
+    offset: number,
+    listenMs?: number,
+  ) => Promise<{ packetCount: number; packets: string[] }>
+  forceTrimRewindAndSync: (
+    sector: number,
+    offset: number,
+    framing?: "legacy" | "maverick",
+  ) => Promise<{ before: string; trimResponse: string; after: string; rewound: boolean }>
+  whoopsiInitThenForceTrim: () => Promise<{
+    helloExtResponse: string
+    before: string
+    trimResponse: string
+    after: string
+    rewound: boolean
+  }>
   clearError: () => void
 }
 
@@ -790,6 +813,534 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     )
   }, [])
 
+  // Diagnostic A/B/A flow:
+  //   1. GetDataRange      → log start/end/rollover (whoopsi-decoded)
+  //   2. SetReadPointer    → 8-byte [sector_u32_LE, offset_u32_LE] payload,
+  //                          listen for the strap's CommandResponse
+  //   3. GetDataRange      → compare new start to the old one
+  //
+  // If `start` moved backwards between steps 1 and 3, the SetReadPointer
+  // command had an effect. If it didn't move, the trim watermark is
+  // firmware-enforced regardless of payload format. Decoding follows
+  // chukfinley/whoopsi: response body has a 2-byte [origin_seq, result]
+  // prefix, then start@9..13, end@13..17, rollover@21..25 (u32 LE).
+  const probeRewindProbe = useCallback(
+    async (sector: number, offset: number) => {
+      if (bleManager.connectionState !== "ready") {
+        throw new Error("Connect your WHOOP strap before probing.")
+      }
+
+      const collectResponse = (cmd: number, timeoutMs: number) =>
+        new Promise<{ bytes: number[]; hex: string }>((resolve, reject) => {
+          let settled = false
+          const timer = setTimeout(() => {
+            if (settled) return
+            settled = true
+            unsub()
+            reject(new Error(`No response for cmd ${cmd} within ${timeoutMs}ms`))
+          }, timeoutMs)
+          const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
+            if (settled) return
+            if (
+              packet.type !== PacketType.CommandResponse ||
+              packet.command !== cmd
+            ) {
+              return
+            }
+            settled = true
+            clearTimeout(timer)
+            unsub()
+            const bytes = Array.from(packet.data)
+            const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
+            resolve({ bytes, hex })
+          })
+        })
+
+      const u32 = (bytes: number[], off: number): number | null => {
+        if (off + 4 > bytes.length) return null
+        return (
+          bytes[off] |
+          (bytes[off + 1] << 8) |
+          (bytes[off + 2] << 16) |
+          ((bytes[off + 3] << 24) >>> 0)
+        )
+      }
+
+      // Whoopsi: body starts at packet.data[2] (after [origin_seq, result]).
+      // start@body[9..13], end@body[13..17], rollover@body[21..25].
+      const decodeRange = (bytes: number[]) => {
+        const start = u32(bytes, 11)
+        const end = u32(bytes, 15)
+        const rollover = u32(bytes, 23)
+        return { start, end, rollover }
+      }
+
+      // 1. GetDataRange (before)
+      console.log("[probeRewindProbe] step 1: GetDataRange (before)")
+      const probe1 = collectResponse(CommandNumber.GetDataRange, 3000)
+      await bleManager.writeCommand(commandService.buildGetDataRange())
+      const before = await probe1
+      const beforeRange = decodeRange(before.bytes)
+      console.log(
+        "[probeRewindProbe] before:",
+        "hex=", before.hex,
+        "start=", beforeRange.start,
+        "end=", beforeRange.end,
+        "rollover=", beforeRange.rollover,
+      )
+
+      // 2. SetReadPointer (sector, offset)
+      console.log(
+        "[probeRewindProbe] step 2: SetReadPointer sector=",
+        sector,
+        "offset=",
+        offset,
+      )
+      const probe2 = collectResponse(CommandNumber.SetReadPointer, 2000).catch(
+        (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
+      )
+      await bleManager.writeCommand(
+        commandService.buildSetReadPointerSectorOffset(sector, offset),
+      )
+      const response = await probe2
+      console.log("[probeRewindProbe] response: hex=", response.hex)
+
+      // 3. GetDataRange (after) — settle for 250ms first so the strap
+      //    processes the pointer change.
+      await new Promise((r) => setTimeout(r, 250))
+      console.log("[probeRewindProbe] step 3: GetDataRange (after)")
+      const probe3 = collectResponse(CommandNumber.GetDataRange, 3000)
+      await bleManager.writeCommand(commandService.buildGetDataRange())
+      const after = await probe3
+      const afterRange = decodeRange(after.bytes)
+      console.log(
+        "[probeRewindProbe] after:",
+        "hex=", after.hex,
+        "start=", afterRange.start,
+        "end=", afterRange.end,
+        "rollover=", afterRange.rollover,
+      )
+
+      // Only count BACKWARD movement of `start` as a real rewind. Forward
+      // drift of a few units is normal — the strap is writing new samples
+      // continuously between our two GetDataRange calls. A genuine rewind
+      // would push start substantially lower than its before value.
+      const movedStart =
+        beforeRange.start != null &&
+        afterRange.start != null &&
+        afterRange.start < beforeRange.start
+      console.log(
+        "[probeRewindProbe] VERDICT: read pointer rewound =",
+        movedStart,
+        `(${beforeRange.start} → ${afterRange.start}; forward drift = not a rewind)`,
+      )
+
+      return {
+        before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
+        response: response.hex,
+        after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
+        movedStart,
+      }
+    },
+    [],
+  )
+
+  // VERBOSE probe: subscribe to ALL three "from strap" characteristics
+  // (cmd / events / data), send SetReadPointer, and log EVERY packet
+  // the strap emits over the next `listenMs` window — not just the
+  // CommandResponse for cmd 33. Catches:
+  //   - response coming back via a different cmd number (echo'd as
+  //     something other than 33)
+  //   - response framed as an Event (PacketType 48) instead of a
+  //     CommandResponse (PacketType 36)
+  //   - the strap immediately emitting historical data on the data
+  //     characteristic without an intervening ack
+  //   - any other channel we're not currently listening on
+  // If after this we still see nothing relevant, the command is truly
+  // a no-op on this firmware. If we see SOMETHING, we now know what
+  // channel/shape to handle.
+  const probeRewindVerbose = useCallback(
+    async (sector: number, offset: number, listenMs = 5000) => {
+      if (bleManager.connectionState !== "ready") {
+        throw new Error("Connect your WHOOP strap before probing.")
+      }
+
+      const captured: Array<{
+        ch: "cmd" | "events" | "data"
+        type: number
+        seq: number
+        cmd: number
+        len: number
+        hexHead: string
+        atMsAfterSend: number | null
+      }> = []
+
+      const labelType = (t: number) => {
+        switch (t) {
+          case PacketType.Command:
+            return `Command(${t})`
+          case PacketType.CommandResponse:
+            return `CommandResponse(${t})`
+          case PacketType.RealtimeData:
+            return `RealtimeData(${t})`
+          case PacketType.RealtimeRawData:
+            return `RealtimeRawData(${t})`
+          case PacketType.HistoricalData:
+            return `HistoricalData(${t})`
+          case PacketType.Event:
+            return `Event(${t})`
+          case PacketType.Metadata:
+            return `Metadata(${t})`
+          case PacketType.ConsoleLogs:
+            return `ConsoleLogs(${t})`
+          case PacketType.RealtimeIMUStream:
+            return `RealtimeIMUStream(${t})`
+          case PacketType.HistoricalIMUStream:
+            return `HistoricalIMUStream(${t})`
+          default:
+            return `Type(${t})`
+        }
+      }
+
+      let sentAt: number | null = null
+
+      const handler = (ch: "cmd" | "events" | "data") => (packet: WhoopPacket) => {
+        const data = Array.from(packet.data)
+        const head = data
+          .slice(0, Math.min(32, data.length))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join(" ")
+        captured.push({
+          ch,
+          type: packet.type,
+          seq: packet.sequence,
+          cmd: packet.command,
+          len: data.length,
+          hexHead: head,
+          atMsAfterSend: sentAt == null ? null : Date.now() - sentAt,
+        })
+      }
+
+      const unsubCmd = bleManager.onPacket(CMD_FROM_STRAP_UUID, handler("cmd"))
+      const unsubEvents = bleManager.onPacket(EVENTS_FROM_STRAP_UUID, handler("events"))
+      const unsubData = bleManager.onPacket(DATA_FROM_STRAP_UUID, handler("data"))
+
+      try {
+        console.log(
+          "[probeRewindVerbose] starting capture, sending SetReadPointer sector=",
+          sector,
+          "offset=",
+          offset,
+        )
+        sentAt = Date.now()
+        await bleManager.writeCommand(
+          commandService.buildSetReadPointerSectorOffset(sector, offset),
+        )
+        await new Promise((r) => setTimeout(r, listenMs))
+      } finally {
+        unsubCmd()
+        unsubEvents()
+        unsubData()
+      }
+
+      const lines = captured.map(
+        (p, i) =>
+          `[${String(i).padStart(3, "0")}] +${
+            p.atMsAfterSend == null ? "??" : p.atMsAfterSend
+          }ms  ${p.ch.padEnd(6)} ${labelType(p.type).padEnd(24)} seq=${p.seq
+            .toString()
+            .padStart(3)} cmd=${p.cmd.toString().padStart(3)} len=${p.len
+            .toString()
+            .padStart(4)}  ${p.hexHead}`,
+      )
+      console.log(
+        `[probeRewindVerbose] CAPTURED ${captured.length} packets in ${listenMs}ms:`,
+      )
+      for (const line of lines) console.log(line)
+
+      return { packetCount: captured.length, packets: lines }
+    },
+    [],
+  )
+
+  // Run whoopsi's full init sequence (ABORT_HISTORICAL → GET_HELLO_EXT
+  // [Maverick] → GET_BATTERY_LEVEL → GET_EXTENDED_BATTERY_INFO) and
+  // then attempt FORCE_TRIM(0, 0) in Maverick framing. Hypothesis: the
+  // strap may gate sensitive commands behind seeing the Maverick-framed
+  // identity exchange first.
+  const whoopsiInitThenForceTrim = useCallback(async () => {
+    if (bleManager.connectionState !== "ready") {
+      throw new Error("Connect your WHOOP strap first.")
+    }
+
+    const collectResponse = (cmd: number, timeoutMs: number) =>
+      new Promise<{ bytes: number[]; hex: string }>((resolve, reject) => {
+        let settled = false
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          unsub()
+          reject(new Error(`No response for cmd ${cmd} within ${timeoutMs}ms`))
+        }, timeoutMs)
+        const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
+          if (settled) return
+          if (
+            packet.type !== PacketType.CommandResponse ||
+            packet.command !== cmd
+          ) {
+            return
+          }
+          settled = true
+          clearTimeout(timer)
+          unsub()
+          const bytes = Array.from(packet.data)
+          const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
+          resolve({ bytes, hex })
+        })
+      })
+
+    const u32 = (bytes: number[], off: number): number | null => {
+      if (off + 4 > bytes.length) return null
+      return (
+        bytes[off] |
+        (bytes[off + 1] << 8) |
+        (bytes[off + 2] << 16) |
+        ((bytes[off + 3] << 24) >>> 0)
+      )
+    }
+    const decodeRange = (bytes: number[]) => ({
+      start: u32(bytes, 11),
+      end: u32(bytes, 15),
+      rollover: u32(bytes, 23),
+    })
+
+    // Step 0: ABORT_HISTORICAL_TRANSMITS (matches whoopsi init step 1)
+    console.log("[whoopsiInitThenForceTrim] step 0: ABORT_HISTORICAL_TRANSMITS")
+    await bleManager
+      .writeCommand(commandService.buildAbortHistoricalTransmits())
+      .catch(() => {})
+    await new Promise((r) => setTimeout(r, 200))
+
+    // Step 1: GET_HELLO_EXT in Maverick framing (the identity exchange
+    // we've been missing)
+    console.log("[whoopsiInitThenForceTrim] step 1: GET_HELLO_EXT (Maverick)")
+    const helloProbe = collectResponse(CommandNumber.GetHelloExt, 3000).catch(
+      (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
+    )
+    await bleManager.writeCommand(commandService.buildGetHelloExtMaverick())
+    const helloRsp = await helloProbe
+    console.log(
+      "[whoopsiInitThenForceTrim] GET_HELLO_EXT response (len=",
+      helloRsp.bytes.length,
+      "): hex=",
+      helloRsp.hex,
+    )
+
+    // Step 2: battery queries (matches whoopsi init steps 3-4)
+    console.log("[whoopsiInitThenForceTrim] step 2: battery info")
+    await bleManager
+      .writeCommand(commandService.buildGetBatteryLevel())
+      .catch(() => {})
+    await new Promise((r) => setTimeout(r, 200))
+    await bleManager
+      .writeCommand(commandService.buildGetExtendedBatteryInfo())
+      .catch(() => {})
+    await new Promise((r) => setTimeout(r, 500))
+
+    // Step 3: GetDataRange BEFORE
+    console.log("[whoopsiInitThenForceTrim] step 3: GetDataRange (before)")
+    const probe1 = collectResponse(CommandNumber.GetDataRange, 3000)
+    await bleManager.writeCommand(commandService.buildGetDataRange())
+    const before = await probe1
+    const beforeRange = decodeRange(before.bytes)
+    console.log(
+      "[whoopsiInitThenForceTrim] before:",
+      "start=", beforeRange.start,
+      "end=", beforeRange.end,
+      "rollover=", beforeRange.rollover,
+    )
+
+    // Step 4: FORCE_TRIM(0, 0) in Maverick framing
+    console.log("[whoopsiInitThenForceTrim] step 4: FORCE_TRIM(0,0) Maverick")
+    const trimProbe = collectResponse(CommandNumber.ForceTrim, 3000).catch(
+      (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
+    )
+    await bleManager.writeCommand(commandService.buildForceTrimMaverick(0, 0))
+    const trimRsp = await trimProbe
+    console.log("[whoopsiInitThenForceTrim] FORCE_TRIM response: hex=", trimRsp.hex)
+
+    // Step 5: GetDataRange AFTER
+    await new Promise((r) => setTimeout(r, 1500))
+    console.log("[whoopsiInitThenForceTrim] step 5: GetDataRange (after)")
+    const probe3 = collectResponse(CommandNumber.GetDataRange, 3000)
+    await bleManager.writeCommand(commandService.buildGetDataRange())
+    const after = await probe3
+    const afterRange = decodeRange(after.bytes)
+    console.log(
+      "[whoopsiInitThenForceTrim] after:",
+      "start=", afterRange.start,
+      "end=", afterRange.end,
+      "rollover=", afterRange.rollover,
+    )
+
+    const rewound =
+      beforeRange.start != null &&
+      afterRange.start != null &&
+      afterRange.start < beforeRange.start
+    console.log(
+      "[whoopsiInitThenForceTrim] VERDICT: rewound =",
+      rewound,
+      `(${beforeRange.start} → ${afterRange.start})`,
+    )
+
+    if (rewound) {
+      console.log("[whoopsiInitThenForceTrim] Rewind succeeded — triggering syncNow")
+      await syncNow()
+    }
+
+    return {
+      helloExtResponse: helloRsp.hex,
+      before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
+      trimResponse: trimRsp.hex,
+      after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
+      rewound,
+    }
+  }, [syncNow])
+
+  // FORCE_TRIM(0, 0) recovery flow per chukfinley/whoopsi smart-sync.
+  // Sequence:
+  //   1. GET_DATA_RANGE  → log start/end/rollover
+  //   2. FORCE_TRIM(0,0) → rewind trim pointer (the actual rewind cmd)
+  //   3. GET_DATA_RANGE  → see if start moved BACKWARDS
+  //   4. If start moved backwards, call syncNow to pull whatever
+  //      additional data is now reachable
+  // Per whoopsi, FORCE_TRIM(0,0) only exposes the wrap-around segment,
+  // not the full buffer — partial recovery, not total. Still strictly
+  // better than nothing.
+  const forceTrimRewindAndSync = useCallback(
+    async (sector: number, offset: number, framing: "legacy" | "maverick" = "legacy") => {
+      if (bleManager.connectionState !== "ready") {
+        throw new Error("Connect your WHOOP strap before forcing trim.")
+      }
+
+      const collectResponse = (cmd: number, timeoutMs: number) =>
+        new Promise<{ bytes: number[]; hex: string }>((resolve, reject) => {
+          let settled = false
+          const timer = setTimeout(() => {
+            if (settled) return
+            settled = true
+            unsub()
+            reject(new Error(`No response for cmd ${cmd} within ${timeoutMs}ms`))
+          }, timeoutMs)
+          const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
+            if (settled) return
+            if (
+              packet.type !== PacketType.CommandResponse ||
+              packet.command !== cmd
+            ) {
+              return
+            }
+            settled = true
+            clearTimeout(timer)
+            unsub()
+            const bytes = Array.from(packet.data)
+            const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
+            resolve({ bytes, hex })
+          })
+        })
+
+      const u32 = (bytes: number[], off: number): number | null => {
+        if (off + 4 > bytes.length) return null
+        return (
+          bytes[off] |
+          (bytes[off + 1] << 8) |
+          (bytes[off + 2] << 16) |
+          ((bytes[off + 3] << 24) >>> 0)
+        )
+      }
+      const decodeRange = (bytes: number[]) => ({
+        start: u32(bytes, 11),
+        end: u32(bytes, 15),
+        rollover: u32(bytes, 23),
+      })
+
+      // Step 1: GetDataRange BEFORE
+      console.log("[forceTrimRewindAndSync] step 1: GetDataRange (before)")
+      const probe1 = collectResponse(CommandNumber.GetDataRange, 3000)
+      await bleManager.writeCommand(commandService.buildGetDataRange())
+      const before = await probe1
+      const beforeRange = decodeRange(before.bytes)
+      console.log(
+        "[forceTrimRewindAndSync] before:",
+        "start=", beforeRange.start,
+        "end=", beforeRange.end,
+        "rollover=", beforeRange.rollover,
+      )
+
+      // Step 2: FORCE_TRIM(sector, offset) in either legacy or Maverick framing
+      console.log(
+        "[forceTrimRewindAndSync] step 2: FORCE_TRIM sector=",
+        sector,
+        "offset=",
+        offset,
+        "framing=",
+        framing,
+      )
+      const probe2 = collectResponse(CommandNumber.ForceTrim, 3000).catch(
+        (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
+      )
+      const cmdBytes =
+        framing === "maverick"
+          ? commandService.buildForceTrimMaverick(sector, offset)
+          : commandService.buildForceTrim(sector, offset)
+      await bleManager.writeCommand(cmdBytes)
+      const trimResponse = await probe2
+      console.log("[forceTrimRewindAndSync] FORCE_TRIM response: hex=", trimResponse.hex)
+
+      // Step 3: settle then GetDataRange AFTER
+      await new Promise((r) => setTimeout(r, 1500))
+      console.log("[forceTrimRewindAndSync] step 3: GetDataRange (after)")
+      const probe3 = collectResponse(CommandNumber.GetDataRange, 3000)
+      await bleManager.writeCommand(commandService.buildGetDataRange())
+      const after = await probe3
+      const afterRange = decodeRange(after.bytes)
+      console.log(
+        "[forceTrimRewindAndSync] after:",
+        "start=", afterRange.start,
+        "end=", afterRange.end,
+        "rollover=", afterRange.rollover,
+      )
+
+      // Backward movement = real rewind. Forward drift is just the
+      // strap continuing to write samples between our calls.
+      const rewound =
+        beforeRange.start != null &&
+        afterRange.start != null &&
+        afterRange.start < beforeRange.start
+      console.log(
+        "[forceTrimRewindAndSync] VERDICT: rewound =",
+        rewound,
+        `(${beforeRange.start} → ${afterRange.start})`,
+      )
+
+      // Step 4: if rewind worked, sync to pull the freshly-exposed data
+      if (rewound) {
+        console.log("[forceTrimRewindAndSync] Rewind succeeded — triggering syncNow")
+        await syncNow()
+      } else {
+        console.log("[forceTrimRewindAndSync] No rewind — skipping syncNow")
+      }
+
+      return {
+        before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
+        trimResponse: trimResponse.hex,
+        after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
+        rewound,
+      }
+    },
+    [syncNow],
+  )
+
   // Recovery: rewind the strap's read pointer to `unixTs` then trigger a
   // normal sync. The strap re-streams everything in flash from that point
   // forward, caught by the new durable-ACK + batched-ingest path. `shape`
@@ -1202,6 +1753,10 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       powerCycleStrap,
       probeDataRange,
       rewindAndResync,
+      probeRewindProbe,
+      probeRewindVerbose,
+      forceTrimRewindAndSync,
+      whoopsiInitThenForceTrim,
       clearError,
     }),
     [
@@ -1227,6 +1782,10 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       powerCycleStrap,
       probeDataRange,
       rewindAndResync,
+      probeRewindProbe,
+      probeRewindVerbose,
+      forceTrimRewindAndSync,
+      whoopsiInitThenForceTrim,
       clearError,
     ],
   )

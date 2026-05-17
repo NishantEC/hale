@@ -42,6 +42,7 @@ export enum CommandNumber {
   SetReadPointer = 33,
   GetDataRange = 34,
   GetHelloHarvard = 35,
+  GetHelloExt = 145, // 0x91 — Maverick identity exchange; whoopsi sends this on every connect
   SetScheduledAlarm = 66,
   GetScheduledAlarm = 67,
   RunAlarm = 68,

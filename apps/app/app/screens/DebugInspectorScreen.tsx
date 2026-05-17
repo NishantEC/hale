@@ -26,7 +26,7 @@ import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 export const DebugInspectorScreen: FC = () => {
   const { colors } = LOCAL_THEME
   const { selectedDate, refreshDashboard } = useDashboard()
-  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange, rewindAndResync } = useBle()
+  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange, rewindAndResync, probeRewindProbe, probeRewindVerbose, forceTrimRewindAndSync, whoopsiInitThenForceTrim } = useBle()
 
   // Earliest timestamp confirmed in the GetDataRange response (offset 35
   // of the 69-byte payload): 2026-05-05 23:25:47 UTC. The strap reports
@@ -213,6 +213,114 @@ export const DebugInspectorScreen: FC = () => {
     [refreshDashboard, refreshInspector, rewindAndResync],
   )
 
+  const handleProbeRewindProbe = useCallback(
+    async (sector: number, offset: number) => {
+      setError(null)
+      setBanner(`A/B/A: GetDataRange → SetReadPointer(${sector},${offset}) → GetDataRange…`)
+      try {
+        const result = await probeRewindProbe(sector, offset)
+        const verdict = result.movedStart
+          ? "✓ READ POINTER MOVED"
+          : "✗ no movement"
+        Alert.alert(
+          `Probe (sector=${sector}, offset=${offset})`,
+          `BEFORE:\n${result.before}\n\nSetReadPointer response:\n${result.response}\n\nAFTER:\n${result.after}\n\n${verdict}`,
+        )
+        setBanner(
+          `${verdict} — ${result.before} → ${result.after}`,
+        )
+      } catch (e: any) {
+        setError(`Probe failed: ${e?.message ?? "unknown error"}`)
+      }
+    },
+    [probeRewindProbe],
+  )
+
+  const handleForceTrimRewindWithFraming = useCallback(
+    (framing: "legacy" | "maverick") => {
+      Alert.alert(
+        `FORCE_TRIM(0, 0) [${framing}]?`,
+        `Sends WHOOP cmd 25 with payload (sector=0, offset=0) in ${framing} framing, then re-syncs if the read pointer moves. Per whoopsi, this only exposes the wrap-around segment of flash. The dangerous 0xFEFEFEFE 'Trim All' sentinel is hard-rejected.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Force Trim",
+            style: "destructive",
+            onPress: async () => {
+              setError(null)
+              setBanner(`Probe → FORCE_TRIM(0,0) [${framing}] → Probe → Sync (if rewound)…`)
+              try {
+                const result = await forceTrimRewindAndSync(0, 0, framing)
+                const verdict = result.rewound ? "✓ REWOUND, syncing" : "✗ no movement"
+                Alert.alert(
+                  `FORCE_TRIM(0, 0) [${framing}]`,
+                  `BEFORE:\n${result.before}\n\nFORCE_TRIM response:\n${result.trimResponse}\n\nAFTER:\n${result.after}\n\n${verdict}`,
+                )
+                setBanner(`${verdict} — ${result.before} → ${result.after}`)
+              } catch (e: any) {
+                setError(`FORCE_TRIM failed: ${e?.message ?? "unknown error"}`)
+              }
+            },
+          },
+        ],
+      )
+    },
+    [forceTrimRewindAndSync],
+  )
+
+  const handleForceTrimRewind = useCallback(
+    () => handleForceTrimRewindWithFraming("legacy"),
+    [handleForceTrimRewindWithFraming],
+  )
+  const handleForceTrimRewindMaverick = useCallback(
+    () => handleForceTrimRewindWithFraming("maverick"),
+    [handleForceTrimRewindWithFraming],
+  )
+
+  const handleWhoopsiInitThenForceTrim = useCallback(() => {
+    Alert.alert(
+      "Whoopsi full init + FORCE_TRIM?",
+      "Mimics whoopsi's complete connect+sync init sequence end-to-end: ABORT_HISTORICAL → GET_HELLO_EXT (Maverick) → battery → GET_DATA_RANGE → FORCE_TRIM(0,0) → GET_DATA_RANGE. Triggers syncNow on backward cursor movement. Hypothesis: strap gates FORCE_TRIM behind the Maverick identity handshake we've been skipping.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Run",
+          style: "destructive",
+          onPress: async () => {
+            setError(null)
+            setBanner("Running whoopsi init + FORCE_TRIM…")
+            try {
+              const result = await whoopsiInitThenForceTrim()
+              const verdict = result.rewound ? "✓ REWOUND, syncing" : "✗ no movement"
+              Alert.alert(
+                "Whoopsi init + FORCE_TRIM result",
+                `GET_HELLO_EXT response:\n${result.helloExtResponse}\n\nBEFORE:\n${result.before}\n\nFORCE_TRIM response:\n${result.trimResponse}\n\nAFTER:\n${result.after}\n\n${verdict}`,
+              )
+              setBanner(`${verdict} — ${result.before} → ${result.after}`)
+            } catch (e: any) {
+              setError(`Whoopsi init failed: ${e?.message ?? "unknown error"}`)
+            }
+          },
+        },
+      ],
+    )
+  }, [whoopsiInitThenForceTrim])
+
+  const handleProbeRewindVerbose = useCallback(async () => {
+    setError(null)
+    setBanner("Verbose probe: capturing all packets for 5s after SetReadPointer(10,0)…")
+    try {
+      const result = await probeRewindVerbose(10, 0, 5000)
+      // Show packet count in banner; the full per-packet table is in
+      // Metro logs (one console.log per packet for easy copy/paste).
+      setBanner(
+        `Verbose capture done: ${result.packetCount} packets in 5s. See Metro logs for the table.`,
+      )
+    } catch (e: any) {
+      setError(`Verbose probe failed: ${e?.message ?? "unknown error"}`)
+    }
+  }, [probeRewindVerbose])
+
   const handleProbeDataRange = useCallback(async () => {
     setError(null)
     setBanner("Probing strap data range…")
@@ -290,6 +398,12 @@ export const DebugInspectorScreen: FC = () => {
           onRewindTs={() => handleRewind("ts")}
           onRewindAck={() => handleRewind("ack")}
           onRewindBare={() => handleRewind("bare")}
+          onProbeRewindSector0={() => handleProbeRewindProbe(0, 0)}
+          onProbeRewindSector10={() => handleProbeRewindProbe(10, 0)}
+          onProbeRewindVerbose={handleProbeRewindVerbose}
+          onForceTrimRewind={handleForceTrimRewind}
+          onForceTrimRewindMaverick={handleForceTrimRewindMaverick}
+          onWhoopsiInitThenForceTrim={handleWhoopsiInitThenForceTrim}
         />
 
         {isLoading && !overview ? (
