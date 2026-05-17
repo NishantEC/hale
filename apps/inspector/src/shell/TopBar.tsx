@@ -2,6 +2,7 @@ import { useMemo } from "react"
 
 import type { PipelineRunOptions, PipelineState } from "../api"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
+import { ThemeToggle } from "../components/ThemeToggle"
 import { relativeTime } from "../format"
 import { TOP_BAR_HEIGHT } from "./tokens"
 
@@ -132,6 +133,8 @@ export function TopBar({
           />
           {live ? "Live" : "Off"}
         </button>
+
+        <ThemeToggle />
 
         <span className="text-text-2 text-xs tabular-nums">
           {lastRefreshedAt ? `Refreshed ${relativeTime(lastRefreshedAt)}` : "—"}
