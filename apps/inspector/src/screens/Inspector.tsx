@@ -31,7 +31,7 @@ function shiftDateIso(iso: string, deltaDays: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-const OverviewTab = lazy(() => import("../tabs/Overview").then((m) => ({ default: m.OverviewTab })))
+const HomeTab = lazy(() => import("../tabs/Home").then((m) => ({ default: m.HomeTab })))
 const TrendsTab = lazy(() => import("../tabs/Trends").then((m) => ({ default: m.TrendsTab })))
 const InsightsTab = lazy(() => import("../tabs/Insights").then((m) => ({ default: m.InsightsTab })))
 const SleepTab = lazy(() => import("../tabs/Sleep").then((m) => ({ default: m.SleepTab })))
@@ -386,10 +386,17 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
           <div className="px-8 py-6">
             <Suspense fallback={<div className="text-text-2 text-sm">Loading…</div>}>
               {(tab === "home" || tab === "overview") && (
-                <OverviewTab
+                <HomeTab
                   overview={overview.data ?? null}
                   homeView={homeView.data ?? null}
                   sleepView={sleepView.data ?? null}
+                  sleep={sleep.data ?? null}
+                  pipelineState={pipelineState.data ?? null}
+                  baseline={results.data?.results.baselineProfile ?? null}
+                  trends={trends.data ?? null}
+                  journalCorrelations={results.data?.results.journalCorrelations ?? []}
+                  date={date}
+                  onRunPipeline={onRunPipeline}
                 />
               )}
               {tab === "trends" && (

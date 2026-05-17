@@ -22,11 +22,8 @@ const STAGES = {
 } as const
 const STAGE_KEYS = ["awake", "rem", "core", "deep"] as const
 
-const CHART_HEIGHT = 260
+const DEFAULT_CHART_HEIGHT = 260
 const MARGIN = 16
-const ROW_HEIGHT = (CHART_HEIGHT - MARGIN) / 4
-const BAR_HEIGHT = ROW_HEIGHT * 0.45
-const BAR_OFFSET = BAR_HEIGHT * 0.8
 const BAR_WIDTH = 2
 const DASH_HEIGHT = 3
 
@@ -75,9 +72,16 @@ function lerp(v: number, a: number, b: number, c: number, d: number): number {
 
 export function Hypnogram({
   epochs,
+  height = DEFAULT_CHART_HEIGHT,
 }: {
   epochs: Array<{ timestamp: string; stage: string }>
+  height?: number
 }) {
+  const CHART_HEIGHT = height
+  const ROW_HEIGHT = (CHART_HEIGHT - MARGIN) / 4
+  const BAR_HEIGHT = ROW_HEIGHT * 0.45
+  const BAR_OFFSET = BAR_HEIGHT * 0.8
+
   const ref = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
   const [cursor, setCursor] = useState<{
