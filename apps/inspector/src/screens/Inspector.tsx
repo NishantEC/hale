@@ -23,7 +23,7 @@ import { CommandPalette, type Command } from "../shell/CommandPalette"
 import { HelpModal } from "../shell/HelpModal"
 import { IconRail, type RailTab } from "../shell/IconRail"
 import { TopBar } from "../shell/TopBar"
-import { isAuthError } from "../utils/errors"
+import { NetworkError, ServerError, isAuthError } from "../utils/errors"
 
 function shiftDateIso(iso: string, deltaDays: number): string {
   const d = new Date(`${iso}T00:00:00`)
@@ -377,9 +377,7 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
         <main className="flex-1 overflow-y-auto">
           {firstError && (
             <div className="px-8 pt-4">
-              <p className="text-sm text-red bg-red-soft rounded-lg px-4 py-2.5">
-                {firstError instanceof Error ? firstError.message : String(firstError)}
-              </p>
+              <ErrorBanner error={firstError} onRetry={onRefresh} apiHost={API_BASE_URL} />
             </div>
           )}
 
@@ -455,6 +453,44 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
         commands={commands}
       />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+    </div>
+  )
+}
+
+function ErrorBanner({
+  error,
+  onRetry,
+  apiHost,
+}: {
+  error: unknown
+  onRetry: () => void
+  apiHost: string
+}) {
+  let title = "Could not load data"
+  let detail: string = error instanceof Error ? error.message : String(error)
+  if (error instanceof NetworkError) {
+    title = "Could not reach the backend"
+    detail = `Check that the server at ${apiHost.replace(/^https?:\/\//, "")} is running.`
+  } else if (error instanceof ServerError && error.status >= 500) {
+    title = "Backend returned an error"
+  }
+  return (
+    <div
+      role="alert"
+      className="flex items-start gap-3 text-sm bg-red-soft border border-red/40 rounded-lg px-4 py-3"
+    >
+      <span className="w-2 h-2 rounded-full bg-red mt-1.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-red">{title}</p>
+        <p className="text-text-1 mt-0.5">{detail}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="text-red font-semibold text-sm hover:underline cursor-pointer shrink-0"
+      >
+        Retry
+      </button>
     </div>
   )
 }
