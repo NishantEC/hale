@@ -2,6 +2,8 @@
 // noop backend's debug + views endpoints — all bearer-authenticated via
 // a token obtained from /api/auth/sign-in/email.
 
+import { AuthError, NetworkError, ParseError, ServerError } from "./utils/errors";
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3009";
 
@@ -18,25 +20,41 @@ function authHeaders(token: string): HeadersInit {
 async function parseJson<T>(res: Response): Promise<T> {
   const text = await res.text();
   if (!res.ok) {
-    // Try to lift a useful message out of the JSON envelope; fall back
-    // to the raw text or HTTP status.
+    if (res.status === 401) throw new AuthError("Session expired or invalid token");
+    let msg = `${res.status} ${res.statusText}`;
     try {
       const j = JSON.parse(text);
-      throw new Error(j.message ?? j.error ?? `${res.status} ${res.statusText}`);
+      msg = j.message ?? j.error ?? msg;
     } catch {
-      throw new Error(text || `${res.status} ${res.statusText}`);
+      if (text) msg = text;
     }
+    throw new ServerError(msg, res.status);
   }
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch (e) {
+    throw new ParseError(e instanceof Error ? e.message : "Could not parse JSON");
+  }
+}
+
+async function safeFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (e) {
+    if (e instanceof TypeError) {
+      throw new NetworkError(e.message);
+    }
+    throw e;
+  }
 }
 
 export async function apiGet<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, { headers: authHeaders(token) });
+  const res = await safeFetch(`${API_BASE_URL}${path}`, { headers: authHeaders(token) });
   return parseJson<T>(res);
 }
 
 export async function apiPost<T>(path: string, token: string): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await safeFetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers: authHeaders(token),
   });
@@ -48,7 +66,7 @@ export async function apiPost<T>(path: string, token: string): Promise<T> {
 export type AuthResult = { token: string; email: string };
 
 export async function signIn(email: string, password: string): Promise<AuthResult> {
-  const res = await fetch(`${API_BASE_URL}/api/auth/sign-in/email`, {
+  const res = await safeFetch(`${API_BASE_URL}/api/auth/sign-in/email`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -65,7 +83,7 @@ export async function signUp(
   password: string,
   name?: string,
 ): Promise<AuthResult> {
-  const res = await fetch(`${API_BASE_URL}/api/auth/sign-up/email`, {
+  const res = await safeFetch(`${API_BASE_URL}/api/auth/sign-up/email`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -77,10 +95,13 @@ export async function signUp(
   return { token: data.token, email };
 }
 
+// Token lives in sessionStorage so it dies with the tab. This avoids the
+// "logged in forever after a backend rotation" footgun. Email persists in
+// localStorage as a UX nicety for the sign-in form.
 export const tokenStorage = {
-  get: () => localStorage.getItem(TOKEN_KEY) ?? "",
-  set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  clear: () => localStorage.removeItem(TOKEN_KEY),
+  get: () => sessionStorage.getItem(TOKEN_KEY) ?? "",
+  set: (token: string) => sessionStorage.setItem(TOKEN_KEY, token),
+  clear: () => sessionStorage.removeItem(TOKEN_KEY),
 };
 
 export const emailStorage = {
