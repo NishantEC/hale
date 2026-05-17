@@ -73,9 +73,13 @@ function lerp(v: number, a: number, b: number, c: number, d: number): number {
 export function Hypnogram({
   epochs,
   height = DEFAULT_CHART_HEIGHT,
+  cursorMs,
+  onCursorChange,
 }: {
   epochs: Array<{ timestamp: string; stage: string }>
   height?: number
+  cursorMs?: number | null
+  onCursorChange?: (ms: number | null) => void
 }) {
   const CHART_HEIGHT = height
   const ROW_HEIGHT = (CHART_HEIGHT - MARGIN) / 4
@@ -90,9 +94,21 @@ export function Hypnogram({
     durationMin: number
     from: string
     to: string
+    nowLabel: string
   } | null>(null)
   const segments = useMemo(() => buildSegments(epochs), [epochs])
   const total = epochs.length
+
+  const firstEpochMs = epochs[0] ? Date.parse(epochs[0].timestamp) : null
+  const lastEpochMs = epochs[epochs.length - 1] ? Date.parse(epochs[epochs.length - 1].timestamp) : null
+  const totalMs = firstEpochMs != null && lastEpochMs != null ? lastEpochMs - firstEpochMs : 0
+
+  // External cursor (from cross-chart controller) → x position in this chart.
+  const externalX =
+    cursorMs != null && firstEpochMs != null && lastEpochMs != null && containerWidth > 0 &&
+    cursorMs >= firstEpochMs && cursorMs <= lastEpochMs
+      ? ((cursorMs - firstEpochMs) / Math.max(1, totalMs)) * containerWidth
+      : null
 
   useEffect(() => {
     const el = ref.current
@@ -116,6 +132,8 @@ export function Hypnogram({
           ? segments[0]
           : segments[segments.length - 1])
       const durationMin = seg.toMin - seg.fromMin
+      const nowEpoch = epochs[Math.max(0, Math.min(Math.floor(min), epochs.length - 1))]
+      const nowMs = nowEpoch ? Date.parse(nowEpoch.timestamp) : null
       setCursor({
         x,
         seg,
@@ -124,10 +142,17 @@ export function Hypnogram({
         to: epochs[Math.min(seg.toMin, epochs.length - 1)]
           ? formatTime(epochs[Math.min(seg.toMin, epochs.length - 1)].timestamp)
           : "",
+        nowLabel: nowEpoch ? formatTime(nowEpoch.timestamp) : "",
       })
+      if (nowMs != null) onCursorChange?.(nowMs)
     },
-    [containerWidth, segments, total, epochs],
+    [containerWidth, segments, total, epochs, onCursorChange],
   )
+
+  const onMouseLeave = useCallback(() => {
+    setCursor(null)
+    onCursorChange?.(null)
+  }, [onCursorChange])
 
   if (!segments.length)
     return (
@@ -155,7 +180,7 @@ export function Hypnogram({
           borderRight: "1px solid rgba(255,255,255,0.12)",
         }}
         onMouseMove={onMouseMove}
-        onMouseLeave={() => setCursor(null)}
+        onMouseLeave={onMouseLeave}
       >
         {containerWidth > 0 && (
           <>
@@ -388,6 +413,19 @@ export function Hypnogram({
               )
             })}
 
+            {externalX != null && cursor == null && (
+              <div
+                className="absolute top-0 pointer-events-none"
+                style={{
+                  left: externalX,
+                  width: 1.5,
+                  height: CHART_HEIGHT,
+                  backgroundColor: "var(--color-accent)",
+                  opacity: 0.6,
+                }}
+              />
+            )}
+
             {cursor && (
               <>
                 <div
@@ -407,7 +445,10 @@ export function Hypnogram({
                     top: 8,
                   }}
                 >
-                  <p className="text-text-1 text-xs uppercase tracking-wider">
+                  <p className="text-text-0 text-sm font-semibold tabular-nums">
+                    {cursor.nowLabel}
+                  </p>
+                  <p className="text-text-1 text-xs uppercase tracking-wider mt-1">
                     {cursor.seg.type === "awake"
                       ? "Awake"
                       : `${STAGES[cursor.seg.type].label} sleep`}
@@ -418,7 +459,7 @@ export function Hypnogram({
                     </span>
                     <span className="text-text-2 text-xs"> min</span>
                   </p>
-                  <p className="text-text-2 text-xs">
+                  <p className="text-text-2 text-xs tabular-nums">
                     {cursor.from} – {cursor.to}
                   </p>
                 </div>

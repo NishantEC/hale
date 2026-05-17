@@ -12,37 +12,39 @@ import {
 } from "recharts"
 
 import type { RawRecords, SleepNight } from "../api"
+import { lttb } from "../utils/lttb"
 import { SectionHead } from "./primitives"
 
 // Heart-rate timeline for the selected day with sleep windows overlaid.
 //
-// Inputs:
-// - `raw.rows` from /debug/raw-records (we use the timestamp + heartRate
-//   fields; non-positive HR values are dropped as "no skin contact" /
-//   junk sentinels).
-// - `sleep.selectedDetection.bedtime / wakeTime` for the overlay band.
-//   The chart spans the full calendar day's data, not just the sleep
-//   window, so you can see the HR shape leading into and out of sleep.
-//
-// At default fetch (limit=200) the chart is sparse. The parent should
-// bump the limit when the user is on the Sleep tab — see App.tsx wiring.
+// Downsamples to ~500 points via LTTB so the chart stays at 60fps during
+// hover even on 5000-sample fetches. `cursorMs` + `onCursorChange` opt
+// the chart into the Sleep tab's cross-chart scrub controller.
+
+const DOWNSAMPLE_THRESHOLD = 500
 
 export function DayTimeline({
   raw,
   sleep,
+  cursorMs,
+  onCursorChange,
 }: {
   raw: RawRecords | null
   sleep: SleepNight | null
+  cursorMs?: number | null
+  onCursorChange?: (ms: number | null) => void
 }) {
   const points = useMemo(() => {
     if (!raw) return []
-    return raw.rows
+    const all = raw.rows
       .map((r) => ({
-        t: new Date(r.timestamp).getTime(),
-        hr: r.heartRate > 0 ? r.heartRate : null,
+        x: new Date(r.timestamp).getTime(),
+        y: r.heartRate,
       }))
-      .filter((p): p is { t: number; hr: number } => p.hr != null)
-      .sort((a, b) => a.t - b.t)
+      .filter((p) => p.y > 0)
+      .sort((a, b) => a.x - b.x)
+    const sampled = lttb(all, DOWNSAMPLE_THRESHOLD)
+    return sampled.map((p) => ({ t: p.x, hr: p.y }))
   }, [raw])
 
   const bedtime = sleep?.selectedDetection?.bedtime
@@ -56,30 +58,38 @@ export function DayTimeline({
   const maxT = points.length > 0 ? points[points.length - 1].t : null
 
   const tickFmt = (ts: number) =>
-    new Date(ts).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+    new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+
+  // Show external cursor only if within this chart's time range.
+  const externalCursor =
+    cursorMs != null && minT != null && maxT != null && cursorMs >= minT && cursorMs <= maxT
+      ? cursorMs
+      : null
 
   return (
     <div>
       <div className="flex items-baseline justify-between mb-3">
         <SectionHead>Day timeline · HR + sleep overlay</SectionHead>
         <span className="text-text-2 text-xs">
-          {points.length} HR samples
+          {raw ? `${raw.count} raw · ${points.length} after downsample` : "—"}
         </span>
       </div>
-      <div className="bg-surface-1 border border-border rounded-2xl p-4">
+      <div
+        className="bg-surface-1 border border-border rounded-2xl p-4"
+        onMouseLeave={() => onCursorChange?.(null)}
+      >
         {points.length === 0 ? (
           <div className="flex items-center justify-center text-text-2 text-sm h-44">
-            No raw samples for this day — sync from the strap or bump the
-            limit on /debug/raw-records.
+            No raw samples for this day. The strap may not have been worn or data hasn't synced.
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={220}>
             <LineChart
               data={points}
               margin={{ top: 10, right: 12, left: -8, bottom: 0 }}
+              onMouseMove={(s) => {
+                if (s.activeLabel != null) onCursorChange?.(Number(s.activeLabel))
+              }}
             >
               <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" />
               <XAxis
@@ -93,7 +103,7 @@ export function DayTimeline({
               />
               <YAxis
                 domain={["dataMin - 5", "dataMax + 5"]}
-                tickFormatter={(v) => `${Math.round(v)}`}
+                tickFormatter={(v) => `${Math.round(Number(v))}`}
                 tick={{ fill: "var(--color-text-2)", fontSize: 11 }}
                 axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
                 tickLine={false}
@@ -155,6 +165,9 @@ export function DayTimeline({
                   stroke="rgba(63, 177, 231, 0.6)"
                   strokeDasharray="2 4"
                 />
+              )}
+              {externalCursor != null && (
+                <ReferenceLine x={externalCursor} stroke="var(--color-accent)" strokeWidth={1} />
               )}
               <Line
                 type="monotone"
