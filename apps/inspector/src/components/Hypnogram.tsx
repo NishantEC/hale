@@ -279,7 +279,7 @@ export function Hypnogram({
 
   if (!segments.length)
     return (
-      <p className="text-text-2 py-10 text-center">
+      <p className="text-muted-foreground py-10 text-center">
         No epoch timeline available.
       </p>
     )
@@ -323,7 +323,7 @@ export function Hypnogram({
                   />
                 )}
                 <span
-                  className="absolute text-text-2 pointer-events-none"
+                  className="absolute text-muted-foreground pointer-events-none"
                   style={{ fontSize: 11, left: 5, top: 5 }}
                 >
                   {STAGES[key].label}
@@ -410,7 +410,7 @@ export function Hypnogram({
                   left: externalX,
                   width: 1.5,
                   height: CHART_HEIGHT,
-                  backgroundColor: "var(--color-accent)",
+                  backgroundColor: "var(--primary)",
                   opacity: 0.6,
                 }}
               />
@@ -429,16 +429,16 @@ export function Hypnogram({
                   }}
                 />
                 <div
-                  className="absolute pointer-events-none bg-surface-2 rounded-xl px-3 py-2.5 border border-border-strong shadow-lg"
+                  className="absolute pointer-events-none bg-muted rounded-xl px-3 py-2.5 border border-ring shadow-lg"
                   style={{
                     left: Math.max(0, Math.min(cursor.x - 70, containerWidth - 150)),
                     top: 8,
                   }}
                 >
-                  <p className="text-text-0 text-sm font-semibold tabular-nums">
+                  <p className="text-foreground text-sm font-semibold tabular-nums">
                     {cursor.nowLabel}
                   </p>
-                  <p className="text-text-1 text-xs uppercase tracking-wider mt-1">
+                  <p className="text-muted-foreground text-xs uppercase tracking-wider mt-1">
                     {cursor.seg.type === "awake"
                       ? "Awake"
                       : `${STAGES[cursor.seg.type].label} sleep`}
@@ -447,9 +447,9 @@ export function Hypnogram({
                     <span className="text-xl font-semibold">
                       {cursor.durationMin}
                     </span>
-                    <span className="text-text-2 text-xs"> min</span>
+                    <span className="text-muted-foreground text-xs"> min</span>
                   </p>
-                  <p className="text-text-2 text-xs tabular-nums">
+                  <p className="text-muted-foreground text-xs tabular-nums">
                     {cursor.from} – {cursor.to}
                   </p>
                 </div>
@@ -460,7 +460,7 @@ export function Hypnogram({
       </div>
       <div className="flex justify-between mt-2 px-0.5">
         {hours.map((h, i) => (
-          <span key={i} className="text-text-2 text-xs">
+          <span key={i} className="text-muted-foreground text-xs">
             {String(h).padStart(2, "0")}:00
           </span>
         ))}

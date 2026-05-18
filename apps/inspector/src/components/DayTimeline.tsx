@@ -70,16 +70,16 @@ export function DayTimeline({
     <div>
       <div className="flex items-baseline justify-between mb-3">
         <SectionHead>Day timeline · HR + sleep overlay</SectionHead>
-        <span className="text-text-2 text-xs">
+        <span className="text-muted-foreground text-xs">
           {raw ? `${raw.count} raw · ${points.length} after downsample` : "—"}
         </span>
       </div>
       <div
-        className="bg-surface-1 border border-border rounded-2xl p-4"
+        className="bg-card border border-border rounded-2xl p-4"
         onMouseLeave={() => onCursorChange?.(null)}
       >
         {points.length === 0 ? (
-          <div className="flex items-center justify-center text-text-2 text-sm h-44">
+          <div className="flex items-center justify-center text-muted-foreground text-sm h-44">
             No raw samples for this day. The strap may not have been worn or data hasn't synced.
           </div>
         ) : (
@@ -97,21 +97,21 @@ export function DayTimeline({
                 type="number"
                 domain={[minT ?? "dataMin", maxT ?? "dataMax"]}
                 tickFormatter={tickFmt}
-                tick={{ fill: "var(--color-text-2)", fontSize: 11 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
                 axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
                 tickLine={false}
               />
               <YAxis
                 domain={["dataMin - 5", "dataMax + 5"]}
                 tickFormatter={(v) => `${Math.round(Number(v))}`}
-                tick={{ fill: "var(--color-text-2)", fontSize: 11 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
                 axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
                 tickLine={false}
                 width={42}
                 label={{
                   value: "bpm",
                   position: "insideTopLeft",
-                  fill: "var(--color-text-2)",
+                  fill: "var(--muted-foreground)",
                   fontSize: 10,
                   dx: 8,
                   dy: -6,
@@ -119,8 +119,8 @@ export function DayTimeline({
               />
               <Tooltip
                 contentStyle={{
-                  background: "var(--color-surface-2)",
-                  border: "1px solid var(--color-border-strong)",
+                  background: "var(--muted)",
+                  border: "1px solid var(--ring)",
                   borderRadius: 12,
                   fontSize: 13,
                 }}
@@ -167,7 +167,7 @@ export function DayTimeline({
                 />
               )}
               {externalCursor != null && (
-                <ReferenceLine x={externalCursor} stroke="var(--color-accent)" strokeWidth={1} />
+                <ReferenceLine x={externalCursor} stroke="var(--primary)" strokeWidth={1} />
               )}
               <Line
                 type="monotone"

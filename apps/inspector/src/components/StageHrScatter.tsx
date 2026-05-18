@@ -88,7 +88,7 @@ export function StageHrScatter({
     return (
       <div>
         <SectionHead>Stage × HR scatter</SectionHead>
-        <div className="mt-3 bg-surface-1 border border-border rounded-2xl p-6 text-text-2 text-sm">
+        <div className="mt-3 bg-card border border-border rounded-2xl p-6 text-muted-foreground text-sm">
           Need both an epoch timeline and raw HR samples to plot. Try running the pipeline for
           this date and/or sync the strap.
         </div>
@@ -100,11 +100,11 @@ export function StageHrScatter({
     <div>
       <div className="flex items-baseline justify-between mb-3">
         <SectionHead>Stage × HR scatter</SectionHead>
-        <span className="text-text-2 text-xs">
+        <span className="text-muted-foreground text-xs">
           {points.length} epoch×HR pairs · expect HR to drop from Awake to Deep
         </span>
       </div>
-      <div className="bg-surface-1 border border-border rounded-2xl p-4">
+      <div className="bg-card border border-border rounded-2xl p-4">
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ top: 10, right: 16, left: 16, bottom: 8 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" />
@@ -114,13 +114,13 @@ export function StageHrScatter({
               name="HR"
               unit="bpm"
               domain={["dataMin - 3", "dataMax + 3"]}
-              tick={{ fill: "var(--color-text-2)", fontSize: 11 }}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
               tickLine={false}
               label={{
                 value: "Heart rate (bpm)",
                 position: "insideBottom",
-                fill: "var(--color-text-2)",
+                fill: "var(--muted-foreground)",
                 fontSize: 11,
                 dy: 10,
               }}
@@ -131,7 +131,7 @@ export function StageHrScatter({
               domain={[-0.5, 3.5]}
               ticks={[0, 1, 2, 3]}
               tickFormatter={(v) => STAGE_ORDER[v]?.toUpperCase() ?? ""}
-              tick={{ fill: "var(--color-text-2)", fontSize: 11 }}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
               tickLine={false}
               width={56}
@@ -140,8 +140,8 @@ export function StageHrScatter({
             <Tooltip
               cursor={{ stroke: "rgba(255,255,255,0.15)" }}
               contentStyle={{
-                background: "var(--color-surface-2)",
-                border: "1px solid var(--color-border-strong)",
+                background: "var(--muted)",
+                border: "1px solid var(--ring)",
                 borderRadius: 12,
                 fontSize: 13,
               }}

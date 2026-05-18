@@ -157,7 +157,7 @@ export function PipelineRunsChart({
             <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" />
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--color-text-2)", fontSize: 10 }}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
               axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
               tickLine={false}
               interval="preserveStartEnd"
@@ -165,7 +165,7 @@ export function PipelineRunsChart({
             />
             <YAxis
               tickFormatter={(v) => `${Math.round(v / 1000)}s`}
-              tick={{ fill: "var(--color-text-2)", fontSize: 11 }}
+              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
               tickLine={false}
               width={50}
@@ -182,7 +182,7 @@ export function PipelineRunsChart({
                 label={{
                   value: "median",
                   position: "right",
-                  fill: "var(--color-text-2)",
+                  fill: "var(--muted-foreground)",
                   fontSize: 10,
                 }}
               />
@@ -221,7 +221,7 @@ export function PipelineRunsChart({
               row.pipelineVersion ? (
                 <span
                   key={row.idx}
-                  className="inline-block text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-surface-3 text-text-2 border border-border"
+                  className="inline-block text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent text-muted-foreground border border-border"
                   title={`Run ${row.label}`}
                 >
                   {row.pipelineVersion as string}
@@ -246,9 +246,9 @@ function StaticLegend({ stageMedians }: { stageMedians: Record<string, number> }
             className="w-2 h-2 rounded-sm"
             style={{ backgroundColor: color }}
           />
-          <span className="text-text-1 text-xs">{name}</span>
+          <span className="text-muted-foreground text-xs">{name}</span>
           {stageMedians[name] != null && (
-            <span className="text-text-2 text-xs">
+            <span className="text-muted-foreground text-xs">
               ({formatDuration(stageMedians[name])})
             </span>
           )}
@@ -256,11 +256,11 @@ function StaticLegend({ stageMedians }: { stageMedians: Record<string, number> }
       ))}
       <div className="flex items-center gap-1.5">
         <span className="w-2 h-2 rounded-sm bg-white/20" />
-        <span className="text-text-1 text-xs">skipped</span>
+        <span className="text-muted-foreground text-xs">skipped</span>
       </div>
       <div className="flex items-center gap-1.5 ml-auto">
         <Pill tone="red">2× median</Pill>
-        <span className="text-text-2 text-xs">= regression flag</span>
+        <span className="text-muted-foreground text-xs">= regression flag</span>
       </div>
     </div>
   )
@@ -283,9 +283,9 @@ function RunTooltip(props: ChartTooltipProps) {
       color: p.color ?? "#888",
     }))
   return (
-    <div className="bg-surface-2 border border-border-strong rounded-xl p-3 shadow-2xl min-w-[220px]">
-      <p className="text-text-0 text-sm font-semibold">{row.label}</p>
-      <p className="text-text-2 text-xs">
+    <div className="bg-muted border border-ring rounded-xl p-3 shadow-2xl min-w-[220px]">
+      <p className="text-foreground text-sm font-semibold">{row.label}</p>
+      <p className="text-muted-foreground text-xs">
         {row.skipped ? "skipped — no new input" : formatDuration(row.total)}
         {row.forced && (
           <>
@@ -294,9 +294,9 @@ function RunTooltip(props: ChartTooltipProps) {
           </>
         )}
       </p>
-      <p className="text-text-2 text-xs mt-0.5">{row.windowDescription}</p>
+      <p className="text-muted-foreground text-xs mt-0.5">{row.windowDescription}</p>
       {row.pipelineVersion && (
-        <p className="text-text-2 text-[10px] font-mono mt-0.5">{row.pipelineVersion as string}</p>
+        <p className="text-muted-foreground text-[10px] font-mono mt-0.5">{row.pipelineVersion as string}</p>
       )}
       {!row.skipped && stageEntries.length > 0 && (
         <div className="mt-2 pt-2 border-t border-border space-y-0.5">
@@ -306,8 +306,8 @@ function RunTooltip(props: ChartTooltipProps) {
                 className="w-2 h-2 rounded-sm shrink-0"
                 style={{ backgroundColor: s.color }}
               />
-              <span className="text-text-1 flex-1">{s.name}</span>
-              <span className="text-text-0 font-medium">
+              <span className="text-muted-foreground flex-1">{s.name}</span>
+              <span className="text-foreground font-medium">
                 {formatDuration(s.value)}
               </span>
             </div>

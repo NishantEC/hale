@@ -156,7 +156,7 @@ export function TrendChart({
               <Tooltip
                 contentStyle={{
                   background: "var(--color-muted)",
-                  border: "1px solid var(--color-border)",
+                  border: "1px solid var(--border)",
                   borderRadius: 12,
                   fontSize: 13,
                 }}

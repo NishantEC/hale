@@ -36,24 +36,8 @@
   --color-stage-core: var(--stage-core);
   --color-stage-deep: var(--stage-deep);
 
-  /* aliases — existing screens keep compiling until Phase 2 sweep */
-  --color-surface: var(--background);
-  --color-surface-1: var(--card);
-  --color-surface-raised: var(--card);
-  --color-surface-2: var(--muted);
-  --color-surface-3: var(--accent);
-  --color-text-0: var(--foreground);
-  --color-text-1: var(--muted-foreground);
-  --color-text-2: var(--muted-foreground);
+  /* border-color utility (shadcn components reference border-border) */
   --color-border: var(--border);
-  --color-border-strong: var(--ring);
-  --color-accent-soft: color-mix(in oklch, var(--primary) 15%, transparent);
-  --color-green: var(--success);
-  --color-green-soft: color-mix(in oklch, var(--success) 15%, transparent);
-  --color-red: var(--destructive);
-  --color-red-soft: color-mix(in oklch, var(--destructive) 15%, transparent);
-  --color-yellow: var(--warning);
-  --color-yellow-soft: color-mix(in oklch, var(--warning) 15%, transparent);
 
   --font-size-dense: 13px;
 
