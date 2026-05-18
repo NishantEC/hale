@@ -20,8 +20,8 @@ import {
 } from "../components/ui/accordion"
 import { Badge } from "../components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
-import { Input } from "../components/ui/input"
 import { ScrollArea } from "../components/ui/scroll-area"
+import * as TagsInput from "@diceui/tags-input"
 import {
   Table,
   TableBody,
@@ -106,7 +106,7 @@ export function TelemetryTab({
     return () => clearTimeout(id)
   }, [pausedMs])
 
-  const [logSearch, setLogSearch] = useState("")
+  const [logTerms, setLogTerms] = useState<string[]>([])
   const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(new Set(ALL_LEVELS))
 
   function handleLevelChange(values: string[]) {
@@ -116,19 +116,21 @@ export function TelemetryTab({
 
   const filteredLogs = useMemo(() => {
     const logs = telemetry?.consoleLogs?.recent ?? []
-    const needle = logSearch.trim().toLowerCase()
+    const needles = logTerms.map((t) => t.toLowerCase()).filter(Boolean)
     return logs.filter((l) => {
       const level = normaliseLevel(l.logLevel)
       if (!enabledLevels.has(level)) return false
-      if (needle && !l.message.toLowerCase().includes(needle)) return false
+      const message = l.message.toLowerCase()
+      // AND filter: every term must match somewhere in the message.
+      for (const n of needles) if (!message.includes(n)) return false
       return true
     })
-  }, [telemetry?.consoleLogs?.recent, logSearch, enabledLevels])
+  }, [telemetry?.consoleLogs?.recent, logTerms, enabledLevels])
 
   const liveMarqueeLogs = useMemo(() => {
-    if (!live || logSearch.trim()) return []
+    if (!live || logTerms.length > 0) return []
     return (telemetry?.consoleLogs?.recent ?? []).slice(-10)
-  }, [live, logSearch, telemetry?.consoleLogs?.recent])
+  }, [live, logTerms, telemetry?.consoleLogs?.recent])
 
   return (
     <div className="space-y-6">
@@ -303,13 +305,29 @@ export function TelemetryTab({
                 </Badge>
               </div>
               <div className="flex flex-wrap items-center gap-2 mt-3">
-                <Input
-                  type="text"
-                  value={logSearch}
-                  onChange={(e) => setLogSearch(e.target.value)}
-                  placeholder="Filter messages..."
-                  className="flex-1 min-w-[200px] h-8 text-sm"
-                />
+                <TagsInput.Root
+                  value={logTerms}
+                  onValueChange={setLogTerms}
+                  addOnPaste
+                  className="flex-1 min-w-[240px] min-h-8 flex flex-wrap items-center gap-1 px-2 py-1 rounded-md bg-background border border-input focus-within:ring-2 focus-within:ring-ring/40 focus-within:border-ring"
+                >
+                  {logTerms.map((term) => (
+                    <TagsInput.Item
+                      key={term}
+                      value={term}
+                      className="inline-flex items-center gap-1 h-6 px-2 rounded bg-muted text-foreground text-xs font-mono data-[highlighted]:bg-primary data-[highlighted]:text-primary-foreground"
+                    >
+                      <TagsInput.ItemText>{term}</TagsInput.ItemText>
+                      <TagsInput.ItemDelete className="opacity-60 hover:opacity-100">
+                        ×
+                      </TagsInput.ItemDelete>
+                    </TagsInput.Item>
+                  ))}
+                  <TagsInput.Input
+                    placeholder={logTerms.length === 0 ? "Filter messages — Enter to add a term" : ""}
+                    className="flex-1 min-w-[120px] bg-transparent outline-none text-sm placeholder:text-muted-foreground h-6"
+                  />
+                </TagsInput.Root>
                 <ToggleGroup
                   type="multiple"
                   variant="outline"

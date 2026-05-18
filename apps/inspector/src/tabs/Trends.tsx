@@ -7,6 +7,7 @@ import { TrendChart } from "../components/TrendChart"
 import { Badge } from "../components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Label } from "../components/ui/label"
+import { Sortable, SortableContent, SortableItem } from "../components/ui/sortable"
 import { Switch } from "../components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
 import { formatNumber } from "../format"
@@ -31,6 +32,60 @@ const CHART_COLORS = {
   resp: "#f472b6",
   stress: "#ef4444",
   training: "#94a3b8",
+} as const
+
+type ChartDef = {
+  id: string
+  title: string
+  subtitle?: string
+  dataKey: keyof Pick<
+    TrendsView,
+    | "hrvTrend"
+    | "restingHrTrend"
+    | "sleepDurationTrend"
+    | "recoveryTrend"
+    | "consistencyTrend"
+    | "strainTrend"
+    | "respiratoryRateTrend"
+    | "spo2Trend"
+    | "stressTrend"
+    | "trainingLoadTrend"
+  >
+  colorKey: keyof typeof CHART_COLORS
+  unit?: string
+  decimals?: number
+}
+
+const CHART_DEFS: ChartDef[] = [
+  { id: "hrv", title: "HRV (RMSSD)", subtitle: "autonomic balance", dataKey: "hrvTrend", colorKey: "hrv", unit: " ms" },
+  { id: "rhr", title: "Resting HR", subtitle: "lower is generally better", dataKey: "restingHrTrend", colorKey: "rhr", unit: " bpm", decimals: 0 },
+  { id: "sleep", title: "Sleep duration", subtitle: "hours per night", dataKey: "sleepDurationTrend", colorKey: "sleep", unit: "h" },
+  { id: "recovery", title: "Recovery", subtitle: "daily balance score", dataKey: "recoveryTrend", colorKey: "recovery", decimals: 0 },
+  { id: "consistency", title: "Sleep consistency", dataKey: "consistencyTrend", colorKey: "consistency", decimals: 0 },
+  { id: "strain", title: "Strain", dataKey: "strainTrend", colorKey: "strain" },
+  { id: "resp", title: "Respiratory rate", subtitle: "breaths/min during sleep", dataKey: "respiratoryRateTrend", colorKey: "resp", decimals: 1 },
+  { id: "spo2", title: "SpO2 average", dataKey: "spo2Trend", colorKey: "spo2", decimals: 1, unit: "%" },
+  { id: "stress", title: "Stress", dataKey: "stressTrend", colorKey: "stress" },
+  { id: "training", title: "Training load", subtitle: "acute:chronic ratio — sweet spot 0.8–1.3", dataKey: "trainingLoadTrend", colorKey: "training", decimals: 2 },
+]
+
+const ORDER_KEY = "noop.trendsChartOrder"
+
+function loadChartOrder(): ChartDef[] {
+  if (typeof window === "undefined") return CHART_DEFS
+  try {
+    const stored = localStorage.getItem(ORDER_KEY)
+    if (!stored) return CHART_DEFS
+    const ids = JSON.parse(stored) as string[]
+    if (!Array.isArray(ids)) return CHART_DEFS
+    const byId = new Map(CHART_DEFS.map((c) => [c.id, c]))
+    const ordered = ids.map((id) => byId.get(id)).filter((c): c is ChartDef => c != null)
+    // Append any newly-added charts not yet in the stored order
+    for (const c of CHART_DEFS) if (!ids.includes(c.id)) ordered.push(c)
+    return ordered.length === CHART_DEFS.length ? ordered : CHART_DEFS
+  } catch {
+    return CHART_DEFS
+  }
 }
 
 function trendBadge(trend: "improving" | "declining" | "stable" | null) {
@@ -69,6 +124,7 @@ export function TrendsTab({
   const [compact, setCompact] = useState(false)
   const [sharedDomain, setSharedDomain] = useState<[number, number] | undefined>(undefined)
   const [cursorMs, setCursorMs] = useState<number | null>(null)
+  const [chartOrder, setChartOrder] = useState<ChartDef[]>(() => loadChartOrder())
 
   const chartHeight = compact ? 90 : 180
   const cardPadding = compact ? "py-3" : undefined
@@ -210,85 +266,35 @@ export function TrendsTab({
         </div>
       </div>
 
-      {/* Chart grid */}
-      <div className="grid grid-cols-2 gap-6">
-        <TrendChart
-          title="HRV (RMSSD)"
-          subtitle="autonomic balance"
-          data={trends?.hrvTrend ?? []}
-          color={CHART_COLORS.hrv}
-          unit=" ms"
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Resting HR"
-          subtitle="lower is generally better"
-          data={trends?.restingHrTrend ?? []}
-          color={CHART_COLORS.rhr}
-          unit=" bpm"
-          decimals={0}
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Sleep duration"
-          subtitle="hours per night"
-          data={trends?.sleepDurationTrend ?? []}
-          color={CHART_COLORS.sleep}
-          unit="h"
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Recovery"
-          subtitle="daily balance score"
-          data={trends?.recoveryTrend ?? []}
-          color={CHART_COLORS.recovery}
-          decimals={0}
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Sleep consistency"
-          data={trends?.consistencyTrend ?? []}
-          color={CHART_COLORS.consistency}
-          decimals={0}
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Strain"
-          data={trends?.strainTrend ?? []}
-          color={CHART_COLORS.strain}
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Respiratory rate"
-          subtitle="breaths/min during sleep"
-          data={trends?.respiratoryRateTrend ?? []}
-          color={CHART_COLORS.resp}
-          decimals={1}
-          {...sharedProps}
-        />
-        <TrendChart
-          title="SpO2 average"
-          data={trends?.spo2Trend ?? []}
-          color={CHART_COLORS.spo2}
-          decimals={1}
-          unit="%"
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Stress"
-          data={trends?.stressTrend ?? []}
-          color={CHART_COLORS.stress}
-          {...sharedProps}
-        />
-        <TrendChart
-          title="Training load"
-          subtitle="acute:chronic ratio — sweet spot 0.8–1.3"
-          data={trends?.trainingLoadTrend ?? []}
-          color={CHART_COLORS.training}
-          decimals={2}
-          {...sharedProps}
-        />
-      </div>
+      {/* Chart grid — drag-reorderable via DiceUI Sortable */}
+      <Sortable
+        value={chartOrder}
+        onValueChange={(next) => {
+          const ids = next.map((c) => c.id)
+          setChartOrder(next)
+          localStorage.setItem(ORDER_KEY, JSON.stringify(ids))
+        }}
+        orientation="mixed"
+        getItemValue={(item) => item.id}
+      >
+        <SortableContent className="grid grid-cols-2 gap-6">
+          {chartOrder.map((c) => (
+            <SortableItem key={c.id} value={c.id} asChild>
+              <div className="cursor-grab active:cursor-grabbing">
+                <TrendChart
+                  title={c.title}
+                  subtitle={c.subtitle}
+                  data={trends?.[c.dataKey] ?? []}
+                  color={CHART_COLORS[c.colorKey]}
+                  unit={c.unit}
+                  decimals={c.decimals}
+                  {...sharedProps}
+                />
+              </div>
+            </SortableItem>
+          ))}
+        </SortableContent>
+      </Sortable>
     </div>
   )
 }
