@@ -1,30 +1,53 @@
 import { useState } from "react"
-import type { FormEvent } from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import * as z from "zod"
 import { AlertCircle } from "lucide-react"
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 
 import { API_BASE_URL, emailStorage, signIn, signUp, tokenStorage } from "../api"
 import { Logo } from "../components/Logo"
 
+const schema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+})
+
+type FormValues = z.infer<typeof schema>
+
 export function SignIn({ onAuthed }: { onAuthed: (token: string) => void }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin")
-  const [email, setEmail] = useState(emailStorage.get)
-  const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
+  const form = useForm<FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      email: emailStorage.get() ?? "",
+      password: "",
+    },
+  })
+
+  const onSubmit = async (data: FormValues) => {
     setBusy(true)
     setError(null)
     try {
       const result =
-        mode === "signin" ? await signIn(email, password) : await signUp(email, password)
+        mode === "signin"
+          ? await signIn(data.email, data.password)
+          : await signUp(data.email, data.password)
       tokenStorage.set(result.token)
       emailStorage.set(result.email)
       onAuthed(result.token)
@@ -55,32 +78,48 @@ export function SignIn({ onAuthed }: { onAuthed: (token: string) => void }) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="space-y-4" onSubmit={submit}>
-            <div className="space-y-1.5">
-              <Label htmlFor="signin-email">Email</Label>
-              <Input
-                id="signin-email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                placeholder="you@example.com"
-                autoComplete="email"
+          <Form {...form}>
+            <form className="space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="email"
+                        placeholder="you@example.com"
+                        autoComplete="email"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="signin-password">Password</Label>
-              <Input
-                id="signin-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="password"
+                        autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
-            </div>
-            <Button type="submit" className="w-full" disabled={busy} aria-busy={busy}>
-              {busy ? "Working..." : mode === "signin" ? "Sign in" : "Create account"}
-            </Button>
-          </form>
+              <Button type="submit" className="w-full" disabled={busy} aria-busy={busy}>
+                {busy ? "Working..." : mode === "signin" ? "Sign in" : "Create account"}
+              </Button>
+            </form>
+          </Form>
 
           <Button
             type="button"
