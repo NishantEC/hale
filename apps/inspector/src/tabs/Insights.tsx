@@ -7,13 +7,6 @@ import type {
 import { SectionHead } from "../components/primitives"
 import { AnimatedShinyText } from "../components/magicui/animated-shiny-text"
 import { Alert, AlertTitle, AlertDescription } from "../components/ui/alert"
-import { Badge } from "../components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../components/ui/card"
 import {
   Accordion,
   AccordionContent,
@@ -255,70 +248,66 @@ export function InsightsTab({
   const correlationHeadline = pickTopCorrelationSentence(journalCorrelations)
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-10">
       {correlationHeadline && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">
-              Strongest journal correlation
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AnimatedShinyText className="text-foreground text-[17px] leading-snug mx-0 max-w-none">
+        <section className="rule-strong pt-4">
+          <p className="eyebrow text-[var(--vermillion)] mb-3">
+            strongest journal correlation
+          </p>
+          <blockquote className="font-display text-[1.5rem] leading-snug max-w-[640px] text-foreground">
+            <AnimatedShinyText className="text-inherit leading-inherit max-w-none">
               {correlationHeadline}
             </AnimatedShinyText>
-          </CardContent>
-        </Card>
+          </blockquote>
+        </section>
       )}
 
-      {/* Delta tiles — "why is today different?" */}
-      <div>
-        <div className="flex items-baseline justify-between mb-4">
-          <SectionHead>Why is today different?</SectionHead>
-          {baseline ? (
-            <span className="text-muted-foreground text-xs uppercase tracking-wider">
-              baseline · {baseline.nightsUsed} nights
-            </span>
-          ) : (
-            <Badge variant="secondary" title="baseline accumulates over the first 14 nights of sleep data">
-              baseline not yet warmed up — needs 14 nights
-            </Badge>
-          )}
-        </div>
+      {/* Chapter 01 — Why is today different? */}
+      <section>
+        <SectionHead
+          n={1}
+          kicker="The night's vitals versus your personal baseline."
+          meta={
+            baseline ? `baseline · ${baseline.nightsUsed} nights` : "baseline · warming up"
+          }
+        >
+          Why is today different?
+        </SectionHead>
         {!sleep?.selectedNightFeature ? (
-          <Alert>
+          <Alert className="mt-6">
             <AlertTitle>No night selected</AlertTitle>
             <AlertDescription>
               No night selected for this date — nothing to compare yet.
             </AlertDescription>
           </Alert>
         ) : (
-          <>
-            <div className="grid grid-cols-3 gap-4">
+          <div className="mt-6 space-y-6">
+            <div className="grid grid-cols-3 gap-x-8 gap-y-6">
               {headline.map((c) => (
                 <DeltaTile key={c.label} card={c} />
               ))}
             </div>
             {rest.length > 0 && (
-              <div className="grid grid-cols-3 gap-4 mt-4">
+              <div className="grid grid-cols-3 gap-x-8 gap-y-6">
                 {rest.map((c) => (
                   <DeltaTile key={c.label} card={c} compact />
                 ))}
               </div>
             )}
-          </>
+          </div>
         )}
-      </div>
+      </section>
 
-      {/* Week-over-week direction */}
-      <div>
-        <div className="flex items-baseline justify-between mb-4">
-          <SectionHead>Week-over-week direction</SectionHead>
-          <span className="text-muted-foreground text-xs">
-            from /views/trends summaries
-          </span>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
+      {/* Chapter 02 — Week-over-week direction */}
+      <section>
+        <SectionHead
+          n={2}
+          kicker="Where each metric is heading compared to the previous seven days."
+          meta="/views/trends"
+        >
+          Week-over-week direction
+        </SectionHead>
+        <div className="mt-6 grid grid-cols-3 gap-x-8 gap-y-6">
           <DirectionCard
             label="HRV"
             current={trends?.summaries.hrv.current ?? null}
@@ -347,45 +336,60 @@ export function InsightsTab({
             decimals={1}
           />
         </div>
-      </div>
+      </section>
 
-      {/* Journal correlations accordion */}
-      <div>
-        <div className="flex items-baseline justify-between mb-4">
-          <SectionHead>Journal factor correlations</SectionHead>
-          <span className="text-muted-foreground text-xs">
-            from /debug/pipeline-results
-          </span>
-        </div>
+      {/* Chapter 03 — Journal correlations */}
+      <section>
+        <SectionHead
+          n={3}
+          kicker="Tags from the journal joined with the nights that followed."
+          meta="/debug/pipeline-results"
+        >
+          Journal factor correlations
+        </SectionHead>
         {journalCorrelations.length === 0 ? (
-          <Alert>
+          <Alert className="mt-6">
             <AlertTitle>No correlations yet</AlertTitle>
             <AlertDescription>
               No journal entries yet, or fewer than 3 samples per factor — correlations require at least 3 matched nights per factor tag before they appear. Log a few nights' factors in the app and this will populate.
             </AlertDescription>
           </Alert>
         ) : (
-          <Card className="py-0 gap-0">
+          <div className="mt-6">
             <Accordion type="single" collapsible>
               {journalCorrelations.map((c) => {
                 const top = topDelta(c)
                 const topTone =
-                  top.value > 0 ? "bg-success/15 text-success border-transparent" : "bg-warning/15 text-warning border-transparent"
+                  top.value > 0
+                    ? "border-[var(--sage)] text-[var(--sage)]"
+                    : "border-[var(--vermillion)] text-[var(--vermillion)]"
                 return (
-                  <AccordionItem key={c.factorTag} value={c.factorTag}>
-                    <AccordionTrigger className="px-4 hover:no-underline">
-                      <div className="flex items-center gap-3 flex-1 min-w-0">
-                        <span className="font-medium text-sm truncate">{c.factorTag}</span>
-                        <Badge variant="secondary" className="shrink-0 text-xs">
+                  <AccordionItem
+                    key={c.factorTag}
+                    value={c.factorTag}
+                    className="rule-hair-b last:border-b-0"
+                  >
+                    <AccordionTrigger className="hover:no-underline py-3">
+                      <div className="flex items-center gap-4 flex-1 min-w-0">
+                        <span className="font-display text-lg leading-none tracking-tight truncate">
+                          {c.factorTag}
+                        </span>
+                        <span className="eyebrow text-muted-foreground shrink-0 tabular-nums">
                           {c.sampleCount} nights
-                        </Badge>
-                        <Badge className={cn("shrink-0 text-xs", topTone)}>
-                          {top.label} {top.value > 0 ? "+" : ""}{top.value.toFixed(1)}
-                        </Badge>
+                        </span>
+                        <span
+                          className={cn(
+                            "ml-auto shrink-0 eyebrow border px-2 py-0.5 tabular-nums",
+                            topTone,
+                          )}
+                        >
+                          {top.label} {top.value > 0 ? "+" : ""}
+                          {top.value.toFixed(1)}
+                        </span>
                       </div>
                     </AccordionTrigger>
-                    <AccordionContent className="px-4">
-                      <div className="grid grid-cols-3 gap-x-6 gap-y-1 pt-1">
+                    <AccordionContent>
+                      <div className="grid grid-cols-3 gap-x-8 gap-y-3 pt-1 pb-2">
                         <CorrelationDeltaRow
                           label="Deep sleep"
                           value={c.avgDeepDelta}
@@ -409,9 +413,9 @@ export function InsightsTab({
                 )
               })}
             </Accordion>
-          </Card>
+          </div>
         )}
-      </div>
+      </section>
     </div>
   )
 }
@@ -419,67 +423,64 @@ export function InsightsTab({
 // ── Delta tile ────────────────────────────────────────────────────────────────
 
 function DeltaTile({ card, compact }: { card: DeltaCard; compact?: boolean }) {
-  const borderClass =
-    card.tone === "good"
-      ? "border-success/40"
-      : card.tone === "bad"
-      ? "border-warning/40"
-      : "border-border"
-
   const deltaTextClass =
     card.tone === "good"
-      ? "text-success"
+      ? "text-[var(--sage)]"
       : card.tone === "bad"
-      ? "text-warning"
+      ? "text-[var(--vermillion)]"
       : "text-muted-foreground"
 
   const def = METRIC_DEFS[card.label]
 
   return (
-    <Card className={cn("gap-3", borderClass, compact ? "" : "min-h-32")}>
-      <CardHeader className="pb-0">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            <p className="text-muted-foreground text-xs uppercase tracking-wider truncate">
-              {card.label}
-            </p>
-            {def && <InfoButton def={def} />}
-          </div>
-          {card.tone === "good" && (
-            <Badge className="bg-success/15 text-success border-transparent shrink-0">good</Badge>
-          )}
-          {card.tone === "bad" && (
-            <Badge className="bg-warning/15 text-warning border-transparent shrink-0">below baseline</Badge>
-          )}
+    <div className="rule-strong pt-3 flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className="eyebrow text-muted-foreground truncate">{card.label}</p>
+          {def && <InfoButton def={def} />}
         </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold tracking-tight">
-            {formatNumber(card.current, 1)}
+        {card.tone === "good" && (
+          <span className="eyebrow text-[var(--sage)] border border-[var(--sage)] px-1.5 py-0.5 shrink-0">
+            good
           </span>
-          <span className="text-muted-foreground text-sm">{card.unit}</span>
-        </div>
-        <p className="text-muted-foreground text-xs mt-1">
-          baseline {formatNumber(card.baseline, 1)}
-          {card.delta != null && (
-            <>
-              {" · "}
-              <span className={deltaTextClass}>
-                {card.delta > 0 ? "+" : ""}
-                {card.delta.toFixed(1)}
-                {card.pctOfBaseline != null && (
-                  <> ({card.pctOfBaseline > 0 ? "+" : ""}{card.pctOfBaseline.toFixed(0)}%)</>
-                )}
-              </span>
-            </>
-          )}
-        </p>
-        {!compact && (
-          <p className="text-muted-foreground text-xs mt-2 leading-snug">{card.hint}</p>
         )}
-      </CardContent>
-    </Card>
+        {card.tone === "bad" && (
+          <span className="eyebrow text-[var(--vermillion)] border border-[var(--vermillion)] px-1.5 py-0.5 shrink-0">
+            below
+          </span>
+        )}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-display-tight text-[2.25rem] leading-none tabular-nums tracking-tight">
+          {formatNumber(card.current, 1)}
+        </span>
+        <span className="font-mono text-xs text-muted-foreground">{card.unit}</span>
+      </div>
+      <p className="text-xs text-muted-foreground tabular-nums">
+        baseline {formatNumber(card.baseline, 1)}
+        {card.delta != null && (
+          <>
+            {" · "}
+            <span className={cn("font-mono", deltaTextClass)}>
+              {card.delta > 0 ? "+" : ""}
+              {card.delta.toFixed(1)}
+              {card.pctOfBaseline != null && (
+                <>
+                  {" ("}
+                  {card.pctOfBaseline > 0 ? "+" : ""}
+                  {card.pctOfBaseline.toFixed(0)}%)
+                </>
+              )}
+            </span>
+          </>
+        )}
+      </p>
+      {!compact && (
+        <p className="text-xs text-muted-foreground leading-snug italic mt-1">
+          {card.hint}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -505,41 +506,53 @@ function DirectionCard({
   const delta = current != null && weekAgo != null ? current - weekAgo : null
   const def = DIRECTION_DEFS[label]
 
-  const trendBadge = () => {
+  const trendPill = () => {
     if (trend === "improving")
-      return <Badge className="bg-success/15 text-success border-transparent">improving</Badge>
+      return (
+        <span className="eyebrow text-[var(--sage)] border border-[var(--sage)] px-1.5 py-0.5">
+          improving
+        </span>
+      )
     if (trend === "declining")
-      return <Badge className="bg-warning/15 text-warning border-transparent">declining</Badge>
+      return (
+        <span className="eyebrow text-[var(--vermillion)] border border-[var(--vermillion)] px-1.5 py-0.5">
+          declining
+        </span>
+      )
     if (trend === "stable")
-      return <Badge variant="secondary">stable</Badge>
+      return (
+        <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+          stable
+        </span>
+      )
     if (trend == null && direction !== "neutral")
-      return <Badge variant="outline">not enough data</Badge>
+      return (
+        <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+          insufficient
+        </span>
+      )
     return null
   }
 
   return (
-    <Card className="gap-2">
-      <CardHeader className="pb-0">
-        <div className="flex items-center gap-1.5">
-          <p className="text-muted-foreground text-xs uppercase tracking-wider">{label}</p>
-          {def && <InfoButton def={def} />}
-        </div>
-      </CardHeader>
-      <CardContent className="pt-0">
-        <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold tracking-tight">
-            {formatNumber(current, decimals)}
-          </span>
-          <span className="text-muted-foreground text-sm">{unit}</span>
-        </div>
-        <p className="text-muted-foreground text-xs mt-1">
-          {delta != null
-            ? `${delta > 0 ? "+" : ""}${delta.toFixed(decimals)}${unit} vs week ago`
-            : "—"}
-        </p>
-        <div className="mt-2">{trendBadge()}</div>
-      </CardContent>
-    </Card>
+    <div className="rule-strong pt-3 flex flex-col gap-2">
+      <div className="flex items-center gap-1.5">
+        <p className="eyebrow text-muted-foreground">{label}</p>
+        {def && <InfoButton def={def} />}
+      </div>
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-display-tight text-[2.25rem] leading-none tabular-nums tracking-tight">
+          {formatNumber(current, decimals)}
+        </span>
+        <span className="font-mono text-xs text-muted-foreground">{unit}</span>
+      </div>
+      <p className="text-xs text-muted-foreground tabular-nums font-mono">
+        {delta != null
+          ? `${delta > 0 ? "+" : ""}${delta.toFixed(decimals)}${unit} vs week ago`
+          : "—"}
+      </p>
+      <div className="mt-1">{trendPill()}</div>
+    </div>
   )
 }
 
@@ -561,18 +574,20 @@ function CorrelationDeltaRow({
   if (!Number.isFinite(value)) {
     return (
       <div className="flex flex-col gap-0.5">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <span className="text-xs text-muted-foreground">—</span>
+        <span className="eyebrow text-muted-foreground">{label}</span>
+        <span className="text-sm text-muted-foreground font-mono">—</span>
       </div>
     )
   }
   const scaled = value * scale
-  const tone = scaled > 0 ? "text-success" : "text-warning"
+  const tone = scaled > 0 ? "text-[var(--sage)]" : "text-[var(--vermillion)]"
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className={cn("text-sm font-medium", tone)}>
-        {scaled > 0 ? "+" : ""}{scaled.toFixed(decimals)}{unit}
+      <span className="eyebrow text-muted-foreground">{label}</span>
+      <span className={cn("font-mono text-sm tabular-nums", tone)}>
+        {scaled > 0 ? "+" : ""}
+        {scaled.toFixed(decimals)}
+        {unit}
       </span>
     </div>
   )

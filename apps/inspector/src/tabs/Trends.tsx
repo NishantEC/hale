@@ -1,17 +1,14 @@
 import { useMemo, useState } from "react"
 
 import type { PipelineRunOptions, TrendsView } from "../api"
-import { Num, SectionHead } from "../components/primitives"
+import { SectionHead } from "../components/primitives"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { TrendChart } from "../components/TrendChart"
-import { Badge } from "../components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Label } from "../components/ui/label"
 import { Sortable, SortableContent, SortableItem } from "../components/ui/sortable"
 import { Switch } from "../components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
 import { formatNumber } from "../format"
-import { cn } from "@/lib/utils"
 
 const RANGE_OPTIONS = [
   { days: 7, label: "Last 7 days", short: "7d" },
@@ -22,16 +19,16 @@ const RANGE_OPTIONS = [
 ] as const
 
 const CHART_COLORS = {
-  hrv: "#3FB1E7",
-  rhr: "#FE8A73",
-  sleep: "#403EA7",
-  recovery: "#22c55e",
-  consistency: "#1B81FE",
-  strain: "#eab308",
-  spo2: "#a78bfa",
-  resp: "#f472b6",
-  stress: "#ef4444",
-  training: "#94a3b8",
+  hrv: "#3A4F6B",
+  rhr: "#C0392B",
+  sleep: "#1B2D4A",
+  recovery: "#5F6B4E",
+  consistency: "#4A5D7A",
+  strain: "#B57F2A",
+  spo2: "#7B5E3F",
+  resp: "#A0577A",
+  stress: "#A23B2D",
+  training: "#6B5F52",
 } as const
 
 type ChartDef = {
@@ -91,19 +88,27 @@ function loadChartOrder(): ChartDef[] {
 function trendBadge(trend: "improving" | "declining" | "stable" | null) {
   if (trend === "improving")
     return (
-      <Badge className="bg-success/15 text-success border-transparent hover:bg-success/20">
+      <span className="eyebrow text-[var(--sage)] border border-[var(--sage)] px-1.5 py-0.5">
         improving
-      </Badge>
+      </span>
     )
   if (trend === "declining")
     return (
-      <Badge className="bg-warning/15 text-warning border-transparent hover:bg-warning/20">
+      <span className="eyebrow text-[var(--vermillion)] border border-[var(--vermillion)] px-1.5 py-0.5">
         declining
-      </Badge>
+      </span>
     )
   if (trend === "stable")
-    return <Badge variant="secondary">stable</Badge>
-  return <Badge variant="secondary">—</Badge>
+    return (
+      <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+        stable
+      </span>
+    )
+  return (
+    <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+      —
+    </span>
+  )
 }
 
 export function TrendsTab({
@@ -127,7 +132,6 @@ export function TrendsTab({
   const [chartOrder, setChartOrder] = useState<ChartDef[]>(() => loadChartOrder())
 
   const chartHeight = compact ? 90 : 180
-  const cardPadding = compact ? "py-3" : undefined
 
   const hrvDelta = useMemo(() => {
     if (!summaries?.hrv.current || !summaries?.hrv.weekAgo) return null
@@ -148,153 +152,166 @@ export function TrendsTab({
   }
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      {/* Header row */}
-      <div className="flex items-center justify-between">
-        <p className="text-muted-foreground text-sm">
-          {trends?.dataPoints ?? 0} nights in the last {rangeDays} days
-        </p>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Switch
-              id="compact-toggle"
-              checked={compact}
-              onCheckedChange={setCompact}
+    <div className="space-y-10">
+      {/* Cover — masthead with range controls */}
+      <SectionHead
+        n="00"
+        kicker={`${trends?.dataPoints ?? 0} nights in the last ${rangeDays} days. Hover any chart for exact values; drag a chart to reorder.`}
+        meta={
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <Switch
+                id="compact-toggle"
+                checked={compact}
+                onCheckedChange={setCompact}
+                size="sm"
+              />
+              <Label
+                htmlFor="compact-toggle"
+                className="eyebrow text-muted-foreground cursor-pointer"
+              >
+                compact
+              </Label>
+            </div>
+            <ToggleGroup
+              type="single"
+              variant="outline"
               size="sm"
+              value={String(rangeDays)}
+              onValueChange={(v) => v && onRangeChange(Number(v))}
+            >
+              {RANGE_OPTIONS.map((r) => (
+                <ToggleGroupItem
+                  key={r.days}
+                  value={String(r.days)}
+                  aria-label={r.label}
+                >
+                  {r.short}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+            <RunPipelineMenu
+              busy={busy}
+              variant="ghost"
+              label="rerun"
+              onRun={onRunPipeline}
+              presets={[
+                {
+                  kind: "lastDays",
+                  days: rangeDays,
+                  label: `Rerun last ${rangeDays} days`,
+                },
+                { kind: "full", label: "Rerun full (45d)" },
+              ]}
             />
-            <Label htmlFor="compact-toggle" className="text-xs text-muted-foreground cursor-pointer">
-              Compact
-            </Label>
           </div>
+        }
+      >
+        Trends
+      </SectionHead>
 
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            value={String(rangeDays)}
-            onValueChange={(v) => v && onRangeChange(Number(v))}
-          >
-            {RANGE_OPTIONS.map((r) => (
-              <ToggleGroupItem key={r.days} value={String(r.days)} aria-label={r.label}>
-                {r.short}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-
-          <RunPipelineMenu
-            busy={busy}
-            variant="secondary"
-            label="Rerun"
-            onRun={onRunPipeline}
-            presets={[
-              {
-                kind: "lastDays",
-                days: rangeDays,
-                label: `Rerun last ${rangeDays} days`,
-              },
-              { kind: "full", label: "Rerun full (45d)" },
-            ]}
+      {/* Chapter 01 — Week over week summary */}
+      <section>
+        <SectionHead n={1} kicker="The three signals at a glance.">
+          Week over week
+        </SectionHead>
+        <div className="mt-6 grid grid-cols-3 gap-x-8 gap-y-6">
+          <SummaryStat
+            label="HRV (RMSSD)"
+            value={formatNumber(summaries?.hrv.current, 1)}
+            sub={
+              hrvDelta != null
+                ? `${hrvDelta > 0 ? "+" : ""}${hrvDelta.toFixed(1)} vs week ago`
+                : "—"
+            }
+            trend={summaries?.hrv.trend ?? null}
+          />
+          <SummaryStat
+            label="Resting HR"
+            value={formatNumber(summaries?.restingHr.current, 0)}
+            sub={
+              rhrDelta != null
+                ? `${rhrDelta > 0 ? "+" : ""}${rhrDelta.toFixed(0)} bpm vs week ago`
+                : "—"
+            }
+            trend={summaries?.restingHr.trend ?? null}
+          />
+          <SummaryStat
+            label="Sleep avg"
+            value={
+              summaries?.sleepDuration.avgHours != null
+                ? `${formatNumber(summaries.sleepDuration.avgHours, 1)}h`
+                : "—"
+            }
+            sub={`${summaries?.sleepDuration.nights ?? 0} nights`}
           />
         </div>
-      </div>
+      </section>
 
-      {/* Summary cards */}
-      <div>
-        <SectionHead>Week-over-week</SectionHead>
-        <div className="grid grid-cols-3 gap-4 mt-4">
-          <Card className={cn("gap-3", cardPadding)}>
-            <CardHeader className="px-5 pb-0 pt-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                HRV (RMSSD)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-5 pb-0">
-              <Num
-                label="HRV (RMSSD)"
-                value={formatNumber(summaries?.hrv.current, 1)}
-                sub={
-                  hrvDelta != null
-                    ? `${hrvDelta > 0 ? "+" : ""}${hrvDelta.toFixed(1)} vs week ago`
-                    : "—"
-                }
-              />
-              <div className="mt-2">{trendBadge(summaries?.hrv.trend ?? null)}</div>
-            </CardContent>
-          </Card>
-
-          <Card className={cn("gap-3", cardPadding)}>
-            <CardHeader className="px-5 pb-0 pt-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                Resting HR
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-5 pb-0">
-              <Num
-                label="Resting HR"
-                value={formatNumber(summaries?.restingHr.current, 0)}
-                sub={
-                  rhrDelta != null
-                    ? `${rhrDelta > 0 ? "+" : ""}${rhrDelta.toFixed(0)} bpm vs week ago`
-                    : "—"
-                }
-              />
-              <div className="mt-2">{trendBadge(summaries?.restingHr.trend ?? null)}</div>
-            </CardContent>
-          </Card>
-
-          <Card className={cn("gap-3", cardPadding)}>
-            <CardHeader className="px-5 pb-0 pt-0">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                Sleep avg
-              </CardTitle>
-              <CardDescription>
-                {summaries?.sleepDuration.nights ?? 0} nights
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="px-5 pb-0">
-              <Num
-                label="Sleep avg"
-                value={
-                  summaries?.sleepDuration.avgHours != null
-                    ? `${formatNumber(summaries.sleepDuration.avgHours, 1)}h`
-                    : "—"
-                }
-                sub={`${summaries?.sleepDuration.nights ?? 0} nights`}
-              />
-            </CardContent>
-          </Card>
+      {/* Chapter 02 — Small multiples */}
+      <section>
+        <SectionHead
+          n={2}
+          kicker="Drag any chart to reorder. The order is yours, persisted to localStorage."
+        >
+          Small multiples
+        </SectionHead>
+        <div className="mt-6">
+          <Sortable
+            value={chartOrder}
+            onValueChange={(next) => {
+              const ids = next.map((c) => c.id)
+              setChartOrder(next)
+              localStorage.setItem(ORDER_KEY, JSON.stringify(ids))
+            }}
+            orientation="mixed"
+            getItemValue={(item) => item.id}
+          >
+            <SortableContent className="grid grid-cols-2 gap-x-8 gap-y-8">
+              {chartOrder.map((c) => (
+                <SortableItem key={c.id} value={c.id} asChild>
+                  <div className="cursor-grab active:cursor-grabbing">
+                    <TrendChart
+                      title={c.title}
+                      subtitle={c.subtitle}
+                      data={trends?.[c.dataKey] ?? []}
+                      color={CHART_COLORS[c.colorKey]}
+                      unit={c.unit}
+                      decimals={c.decimals}
+                      {...sharedProps}
+                    />
+                  </div>
+                </SortableItem>
+              ))}
+            </SortableContent>
+          </Sortable>
         </div>
-      </div>
+      </section>
+    </div>
+  )
+}
 
-      {/* Chart grid — drag-reorderable via DiceUI Sortable */}
-      <Sortable
-        value={chartOrder}
-        onValueChange={(next) => {
-          const ids = next.map((c) => c.id)
-          setChartOrder(next)
-          localStorage.setItem(ORDER_KEY, JSON.stringify(ids))
-        }}
-        orientation="mixed"
-        getItemValue={(item) => item.id}
-      >
-        <SortableContent className="grid grid-cols-2 gap-6">
-          {chartOrder.map((c) => (
-            <SortableItem key={c.id} value={c.id} asChild>
-              <div className="cursor-grab active:cursor-grabbing">
-                <TrendChart
-                  title={c.title}
-                  subtitle={c.subtitle}
-                  data={trends?.[c.dataKey] ?? []}
-                  color={CHART_COLORS[c.colorKey]}
-                  unit={c.unit}
-                  decimals={c.decimals}
-                  {...sharedProps}
-                />
-              </div>
-            </SortableItem>
-          ))}
-        </SortableContent>
-      </Sortable>
+function SummaryStat({
+  label,
+  value,
+  sub,
+  trend,
+}: {
+  label: string
+  value: string | number
+  sub?: string
+  trend?: "improving" | "declining" | "stable" | null
+}) {
+  return (
+    <div className="rule-strong pt-3 flex flex-col gap-2">
+      <p className="eyebrow text-muted-foreground">{label}</p>
+      <span className="font-display-tight text-[2.5rem] leading-none tabular-nums tracking-tight">
+        {value}
+      </span>
+      {sub && (
+        <p className="text-xs text-muted-foreground tabular-nums font-mono">{sub}</p>
+      )}
+      <div className="mt-1">{trendBadge(trend ?? null)}</div>
     </div>
   )
 }
