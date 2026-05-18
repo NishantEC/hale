@@ -15,16 +15,88 @@ import {
   CardTitle,
 } from "../components/ui/card"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "../components/ui/table"
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "../components/ui/accordion"
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "../components/ui/hover-card"
+import { Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { formatNumber } from "../format"
 import { pickTopCorrelationSentence } from "../utils/correlations"
+
+// ── Metric definition map ────────────────────────────────────────────────────
+
+type MetricDef = { name: string; definition: string; range: string; interpretation: string }
+
+const METRIC_DEFS: Record<string, MetricDef> = {
+  "HRV (RMSSD)": {
+    name: "HRV — RMSSD",
+    definition:
+      "Root Mean Square of Successive Differences between adjacent RR intervals. Reflects parasympathetic (rest-and-digest) nervous system tone measured during the last sleep stage before waking.",
+    range: "Typical adult range 20–80 ms; highly individual.",
+    interpretation:
+      "Higher than your personal baseline signals good autonomic recovery. A sustained drop often precedes illness or overtraining.",
+  },
+  "Resting HR": {
+    name: "Resting Heart Rate",
+    definition:
+      "Average heart rate during the lowest-activity window of sleep, typically the deepest NREM stage. Captured from the wrist sensor.",
+    range: "Healthy adults: 40–80 bpm.",
+    interpretation:
+      "Lower is generally better. An elevated RHR (+5–10 bpm above baseline) is an early signal of incomplete recovery, illness, or cardiovascular stress.",
+  },
+  SDNN: {
+    name: "SDNN",
+    definition:
+      "Standard Deviation of all Normal-to-Normal RR intervals across the entire sleep recording. Reflects both short- and long-term HRV including circadian rhythm contributions.",
+    range: "Typical range 40–150 ms; varies widely with age and fitness.",
+    interpretation:
+      "Complements RMSSD. SDNN captures slower oscillations (thermoregulation, respiration) that RMSSD misses. A higher value with stable RMSSD suggests good circadian entrainment.",
+  },
+  "Sleep duration": {
+    name: "Sleep Duration",
+    definition:
+      "Total time from sleep onset to final wake, as detected by the algorithm. Includes all stages (NREM light, NREM deep, REM).",
+    range: "Recommended: 7–9 h for adults.",
+    interpretation:
+      "Compare to your sleep plan target in the Planner tab. Chronic short sleep (<6 h) suppresses immune function and HRV. Oversleeping (>10 h) may indicate ongoing sleep debt payback.",
+  },
+}
+
+const DIRECTION_DEFS: Record<string, MetricDef> = {
+  HRV: {
+    name: "HRV — Weekly Trend",
+    definition:
+      "7-day rolling average of nightly RMSSD compared to the prior 7-day window.",
+    range: "No universal threshold — trend direction relative to your own baseline matters most.",
+    interpretation:
+      "Improving = autonomic recovery is trending positively. Declining = consider reducing training load or investigating sleep quality.",
+  },
+  "Resting HR": {
+    name: "Resting Heart Rate — Weekly Trend",
+    definition:
+      "7-day rolling average of nightly resting HR versus the previous 7-day window.",
+    range: "40–80 bpm is typical; trend direction is the key signal.",
+    interpretation:
+      "Declining (lower) trend is favorable. A rising trend sustained for 3+ days warrants attention.",
+  },
+  "Avg sleep duration": {
+    name: "Average Sleep Duration",
+    definition:
+      "Mean nightly sleep duration over the current 7-day window.",
+    range: "Adults: 7–9 h per night.",
+    interpretation:
+      "Reflects whether recent sleep quantity is adequate. No trend comparison is shown — use the Planner for target-based tracking.",
+  },
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 type DeltaTone = "good" | "bad" | "neutral"
 
@@ -64,7 +136,7 @@ function buildDeltas(
   const diff = (cur: number | null, base: number | null) =>
     cur != null && base != null ? cur - base : null
 
-  const cards: DeltaCard[] = [
+  return [
     {
       label: "HRV (RMSSD)",
       unit: " ms",
@@ -118,9 +190,47 @@ function buildDeltas(
       hint: "Compare to your sleep plan target — see the planner.",
     },
   ]
-
-  return cards
 }
+
+// ── Top-delta badge value for a correlation row ──────────────────────────────
+
+function topDelta(c: JournalCorrelation): { label: string; value: number } {
+  const candidates = [
+    { label: "deep", value: c.avgDeepDelta },
+    { label: "REM", value: c.avgRemDelta },
+    { label: "dur", value: c.avgDurationDelta },
+  ]
+  return candidates.reduce((a, b) =>
+    Math.abs(b.value) > Math.abs(a.value) ? b : a,
+  )
+}
+
+// ── InfoButton (shared HoverCard trigger) ────────────────────────────────────
+
+function InfoButton({ def }: { def: MetricDef }) {
+  return (
+    <HoverCard openDelay={150}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <Info className="size-3.5" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-80">
+        <h4 className="text-sm font-semibold mb-2">{def.name}</h4>
+        <p className="text-xs text-muted-foreground">{def.definition}</p>
+        <p className="text-xs text-muted-foreground mt-2">
+          <span className="font-semibold text-foreground">Range:</span> {def.range}
+        </p>
+        <p className="text-xs text-muted-foreground mt-1">{def.interpretation}</p>
+      </HoverCardContent>
+    </HoverCard>
+  )
+}
+
+// ── Main tab ─────────────────────────────────────────────────────────────────
 
 export function InsightsTab({
   sleep,
@@ -161,6 +271,7 @@ export function InsightsTab({
         </Card>
       )}
 
+      {/* Delta tiles — "why is today different?" */}
       <div>
         <div className="flex items-baseline justify-between mb-4">
           <SectionHead>Why is today different?</SectionHead>
@@ -169,7 +280,9 @@ export function InsightsTab({
               baseline · {baseline.nightsUsed} nights
             </span>
           ) : (
-            <Badge variant="secondary">baseline not yet warmed up</Badge>
+            <Badge variant="secondary" title="baseline accumulates over the first 14 nights of sleep data">
+              baseline not yet warmed up — needs 14 nights
+            </Badge>
           )}
         </div>
         {!sleep?.selectedNightFeature ? (
@@ -197,6 +310,7 @@ export function InsightsTab({
         )}
       </div>
 
+      {/* Week-over-week direction */}
       <div>
         <div className="flex items-baseline justify-between mb-4">
           <SectionHead>Week-over-week direction</SectionHead>
@@ -235,6 +349,7 @@ export function InsightsTab({
         </div>
       </div>
 
+      {/* Journal correlations accordion */}
       <div>
         <div className="flex items-baseline justify-between mb-4">
           <SectionHead>Journal factor correlations</SectionHead>
@@ -246,48 +361,62 @@ export function InsightsTab({
           <Alert>
             <AlertTitle>No correlations yet</AlertTitle>
             <AlertDescription>
-              No journal entries yet, or not enough samples per factor to draw a
-              correlation. Log a few nights' factors in the app and this will
-              populate.
+              No journal entries yet, or fewer than 3 samples per factor — correlations require at least 3 matched nights per factor tag before they appear. Log a few nights' factors in the app and this will populate.
             </AlertDescription>
           </Alert>
         ) : (
-          <Card className="gap-0 py-0">
-            <CardHeader className="px-0 pt-0 pb-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {["Factor", "Samples", "Δ Deep min", "Δ REM min", "Δ Duration h"].map(
-                      (h) => (
-                        <TableHead
-                          key={h}
-                          className="text-xs uppercase tracking-wider text-muted-foreground"
-                        >
-                          {h}
-                        </TableHead>
-                      ),
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {journalCorrelations.map((c) => (
-                    <TableRow key={c.factorTag}>
-                      <TableCell className="font-medium">{c.factorTag}</TableCell>
-                      <TableCell className="text-muted-foreground">{c.sampleCount}</TableCell>
-                      <DeltaCell value={c.avgDeepDelta} higherBetter />
-                      <DeltaCell value={c.avgRemDelta} higherBetter />
-                      <DeltaCell value={c.avgDurationDelta} higherBetter />
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardHeader>
+          <Card className="py-0 gap-0">
+            <Accordion type="single" collapsible>
+              {journalCorrelations.map((c) => {
+                const top = topDelta(c)
+                const topTone =
+                  top.value > 0 ? "bg-success/15 text-success border-transparent" : "bg-warning/15 text-warning border-transparent"
+                return (
+                  <AccordionItem key={c.factorTag} value={c.factorTag}>
+                    <AccordionTrigger className="px-4 hover:no-underline">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <span className="font-medium text-sm truncate">{c.factorTag}</span>
+                        <Badge variant="secondary" className="shrink-0 text-xs">
+                          {c.sampleCount} nights
+                        </Badge>
+                        <Badge className={cn("shrink-0 text-xs", topTone)}>
+                          {top.label} {top.value > 0 ? "+" : ""}{top.value.toFixed(1)}
+                        </Badge>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="px-4">
+                      <div className="grid grid-cols-3 gap-x-6 gap-y-1 pt-1">
+                        <CorrelationDeltaRow
+                          label="Deep sleep"
+                          value={c.avgDeepDelta}
+                          unit=" min"
+                        />
+                        <CorrelationDeltaRow
+                          label="REM sleep"
+                          value={c.avgRemDelta}
+                          unit=" min"
+                        />
+                        <CorrelationDeltaRow
+                          label="Duration"
+                          value={c.avgDurationDelta}
+                          unit="h"
+                          scale={1 / 60}
+                          decimals={2}
+                        />
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                )
+              })}
+            </Accordion>
           </Card>
         )}
       </div>
     </div>
   )
 }
+
+// ── Delta tile ────────────────────────────────────────────────────────────────
 
 function DeltaTile({ card, compact }: { card: DeltaCard; compact?: boolean }) {
   const borderClass =
@@ -304,16 +433,23 @@ function DeltaTile({ card, compact }: { card: DeltaCard; compact?: boolean }) {
       ? "text-warning"
       : "text-muted-foreground"
 
+  const def = METRIC_DEFS[card.label]
+
   return (
     <Card className={cn("gap-2", borderClass, compact ? "" : "min-h-32")}>
       <CardHeader className="pb-0">
-        <div className="flex items-baseline justify-between">
-          <p className="text-muted-foreground text-xs uppercase tracking-wider">{card.label}</p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-muted-foreground text-xs uppercase tracking-wider truncate">
+              {card.label}
+            </p>
+            {def && <InfoButton def={def} />}
+          </div>
           {card.tone === "good" && (
-            <Badge className="bg-success/15 text-success border-transparent">good</Badge>
+            <Badge className="bg-success/15 text-success border-transparent shrink-0">good</Badge>
           )}
           {card.tone === "bad" && (
-            <Badge className="bg-warning/15 text-warning border-transparent">below baseline</Badge>
+            <Badge className="bg-warning/15 text-warning border-transparent shrink-0">below baseline</Badge>
           )}
         </div>
       </CardHeader>
@@ -347,6 +483,8 @@ function DeltaTile({ card, compact }: { card: DeltaCard; compact?: boolean }) {
   )
 }
 
+// ── Direction card ────────────────────────────────────────────────────────────
+
 function DirectionCard({
   label,
   current,
@@ -365,6 +503,7 @@ function DirectionCard({
   decimals: number
 }) {
   const delta = current != null && weekAgo != null ? current - weekAgo : null
+  const def = DIRECTION_DEFS[label]
 
   const trendBadge = () => {
     if (trend === "improving")
@@ -381,7 +520,10 @@ function DirectionCard({
   return (
     <Card className="gap-2">
       <CardHeader className="pb-0">
-        <p className="text-muted-foreground text-xs uppercase tracking-wider">{label}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="text-muted-foreground text-xs uppercase tracking-wider">{label}</p>
+          {def && <InfoButton def={def} />}
+        </div>
       </CardHeader>
       <CardContent className="pt-0">
         <div className="flex items-baseline gap-2">
@@ -401,20 +543,37 @@ function DirectionCard({
   )
 }
 
-function DeltaCell({
+// ── Accordion delta row ───────────────────────────────────────────────────────
+
+function CorrelationDeltaRow({
+  label,
   value,
-  higherBetter,
+  unit,
+  scale = 1,
+  decimals = 1,
 }: {
+  label: string
   value: number
-  higherBetter: boolean
+  unit: string
+  scale?: number
+  decimals?: number
 }) {
-  if (!Number.isFinite(value))
-    return <TableCell className="text-muted-foreground">—</TableCell>
-  const tone = value > 0 === higherBetter ? "text-success" : "text-warning"
+  if (!Number.isFinite(value)) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="text-xs text-muted-foreground">—</span>
+      </div>
+    )
+  }
+  const scaled = value * scale
+  const tone = scaled > 0 ? "text-success" : "text-warning"
   return (
-    <TableCell className={cn("font-medium", tone)}>
-      {value > 0 ? "+" : ""}
-      {value.toFixed(2)}
-    </TableCell>
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className={cn("text-sm font-medium", tone)}>
+        {scaled > 0 ? "+" : ""}{scaled.toFixed(decimals)}{unit}
+      </span>
+    </div>
   )
 }
