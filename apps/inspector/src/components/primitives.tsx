@@ -1,65 +1,57 @@
 import type { ReactNode } from "react"
-
 import { cn } from "@/lib/utils"
 
+export type AccentKey = "cyan" | "magenta" | "lime" | "amber"
 export type Status = "ok" | "warn" | "error" | "stale"
 
+const ACCENT_TEXT: Record<AccentKey, string> = {
+  cyan: "text-[var(--accent-cyan)]",
+  magenta: "text-[var(--accent-magenta)]",
+  lime: "text-[var(--accent-lime)]",
+  amber: "text-[var(--accent-amber)]",
+}
+
 const STATUS_DOT: Record<Status, string> = {
-  ok: "bg-[var(--sage)]",
-  warn: "bg-[var(--warning)]",
-  error: "bg-[var(--vermillion)]",
+  ok: "bg-[var(--accent-lime)]",
+  warn: "bg-[var(--accent-amber)]",
+  error: "bg-[var(--accent-magenta)]",
   stale: "bg-muted-foreground",
 }
+
 const STATUS_TEXT: Record<Status, string> = {
-  ok: "text-[var(--sage)]",
-  warn: "text-[var(--warning)]",
-  error: "text-[var(--vermillion)]",
+  ok: "text-[var(--accent-lime)]",
+  warn: "text-[var(--accent-amber)]",
+  error: "text-[var(--accent-magenta)]",
   stale: "text-muted-foreground",
 }
 
-/**
- * Chapter head — numbered, ruled, small-caps eyebrow.
- * Used at the top of every page section. The number gives the page
- * the rhythm of a printed report.
- */
 export function SectionHead({
-  n,
-  kicker,
   children,
   meta,
   className,
 }: {
-  n?: string | number
-  kicker?: ReactNode
   children: ReactNode
   meta?: ReactNode
   className?: string
+  /** @deprecated removed in Pulse rebuild; stripped in Task 5. */
+  n?: string | number
+  /** @deprecated removed in Pulse rebuild; stripped in Task 5. */
+  kicker?: ReactNode
 }) {
   return (
-    <header className={cn("rule-strong pt-3", className)}>
-      <div className="flex items-baseline justify-between gap-6">
-        <div className="flex items-baseline gap-3 min-w-0">
-          {n != null && (
-            <span className="eyebrow text-muted-foreground tabular-nums shrink-0">
-              {typeof n === "number" ? String(n).padStart(2, "0") : n}
-            </span>
-          )}
-          <h2 className="font-display text-h2 leading-tight tracking-tight truncate">
-            {children}
-          </h2>
-        </div>
-        {meta && <span className="eyebrow text-muted-foreground shrink-0">{meta}</span>}
-      </div>
-      {kicker && (
-        <p className="text-sm text-muted-foreground mt-1.5 max-w-prose">{kicker}</p>
+    <header className={cn("flex items-baseline justify-between gap-4 mb-3", className)}>
+      <h2 className="text-sm font-semibold tracking-tight text-foreground">
+        {children}
+      </h2>
+      {meta && (
+        <span className="font-mono text-xs text-muted-foreground tabular-nums">
+          {meta}
+        </span>
       )}
     </header>
   )
 }
 
-/**
- * Eyebrow — small-caps mono label. Stands above a stat or sits next to a status dot.
- */
 export function Eyebrow({
   children,
   status,
@@ -70,60 +62,80 @@ export function Eyebrow({
   className?: string
 }) {
   return (
-    <p className={cn("eyebrow text-muted-foreground flex items-center gap-1.5", className)}>
-      {status && <span className={cn("w-1.5 h-1.5 rounded-full", STATUS_DOT[status])} />}
+    <p className={cn("eyebrow flex items-center gap-1.5", className)}>
+      {status && <span className={cn("size-1.5 rounded-full", STATUS_DOT[status])} />}
       {children}
     </p>
   )
 }
 
-/**
- * Hero stat — serif display number. Used for HRV, recovery, sleep duration, etc.
- * The serif gives weight without needing chrome.
- */
+export type Delta = { kind: "up" | "down" | "same"; text: ReactNode }
+
+export function DeltaChip({ kind, children }: { kind: Delta["kind"]; children: ReactNode }) {
+  const cls = {
+    up: "bg-[rgba(187,255,56,0.12)] text-[var(--accent-lime)]",
+    down: "bg-[rgba(255,45,110,0.12)] text-[var(--accent-magenta)]",
+    same: "bg-white/[0.04] text-muted-foreground",
+  }[kind]
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[11px] font-semibold tabular-nums",
+        cls,
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
 export function Stat({
   label,
   value,
   sub,
-  status,
   unit,
-  size = "lg",
+  accent,
+  delta,
+  status,
+  size = "md",
   className,
 }: {
   label: string
   value: string | number
   sub?: ReactNode
-  status?: Status
   unit?: string
+  accent?: AccentKey
+  delta?: Delta | null
+  status?: Status
   size?: "lg" | "md" | "sm"
   className?: string
 }) {
+  const valueColor = accent ? ACCENT_TEXT[accent] : "text-foreground"
   const valueClass =
     size === "lg"
-      ? "font-display-tight text-[3rem] leading-[0.95]"
+      ? "text-[2rem] leading-none"
       : size === "md"
-      ? "font-display-tight text-[2rem] leading-[0.95]"
-      : "font-display-tight text-[1.5rem] leading-[0.95]"
+      ? "text-[1.625rem] leading-none"
+      : "text-[1.25rem] leading-none"
   return (
     <div className={cn("flex flex-col gap-2", className)}>
       <Eyebrow status={status}>{label}</Eyebrow>
       <div className="flex items-baseline gap-1.5">
-        <span className={cn(valueClass, "tabular-nums")}>{value}</span>
+        <span className={cn(valueClass, valueColor, "font-bold tabular-nums tracking-tight")}>
+          {value}
+        </span>
         {unit && (
-          <span className="font-mono text-sm text-muted-foreground tabular-nums">
-            {unit}
-          </span>
+          <span className="font-mono text-xs text-muted-foreground">{unit}</span>
         )}
       </div>
-      {sub && <p className="text-xs text-muted-foreground tabular-nums">{sub}</p>}
+      {delta && <DeltaChip kind={delta.kind}>{delta.text}</DeltaChip>}
+      {sub && !delta && (
+        <p className="text-xs text-muted-foreground font-mono tabular-nums">{sub}</p>
+      )}
     </div>
   )
 }
 
-/**
- * Field line — single key-value entry separated from siblings by hairline.
- * Use inside a Sheet for spec-sheet-style data.
- */
 export function FieldLine({
   k,
   v,
@@ -155,36 +167,6 @@ export function FieldLine({
   )
 }
 
-/**
- * Sheet — replaces Card. Chrome-less, ruled.
- *
- * Variants:
- *  - "ruled"  (default): thick top rule, no fill. Pure typographic section.
- *  - "tinted": warm-tan tinted block for sidebar-style content.
- *  - "plate":  warm-white card (used for nested charts or modals only).
- */
-export function Sheet({
-  variant = "ruled",
-  className,
-  children,
-  ...props
-}: React.ComponentProps<"section"> & { variant?: "ruled" | "tinted" | "plate" }) {
-  const variantClass =
-    variant === "tinted"
-      ? "bg-[var(--muted)] px-5 py-5"
-      : variant === "plate"
-      ? "bg-card px-5 py-5"
-      : "pt-3"
-  return (
-    <section data-slot="sheet" className={cn(variantClass, className)} {...props}>
-      {children}
-    </section>
-  )
-}
-
-/**
- * Marginalia — small footnote-style annotation, set in mono. Used in spaces between sections.
- */
 export function Marginalia({
   children,
   className,
@@ -199,9 +181,6 @@ export function Marginalia({
   )
 }
 
-/**
- * Status pill — tonal, small-caps. Tighter than a Badge.
- */
 export function Pill({
   tone,
   children,
@@ -209,19 +188,19 @@ export function Pill({
   tone: "green" | "yellow" | "red" | "neutral"
   children: ReactNode
 }) {
-  const toneClass =
+  const cls =
     tone === "green"
-      ? "text-[var(--sage)] border-[var(--sage)]"
+      ? "bg-[rgba(187,255,56,0.12)] text-[var(--accent-lime)]"
       : tone === "yellow"
-      ? "text-[var(--warning)] border-[var(--warning)]"
+      ? "bg-[rgba(255,164,43,0.14)] text-[var(--accent-amber)]"
       : tone === "red"
-      ? "text-[var(--vermillion)] border-[var(--vermillion)]"
-      : "text-muted-foreground border-[var(--border)]"
+      ? "bg-[rgba(255,45,110,0.12)] text-[var(--accent-magenta)]"
+      : "bg-white/[0.04] text-muted-foreground"
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 eyebrow px-2 py-0.5 border",
-        toneClass,
+        "inline-flex items-center gap-1.5 eyebrow px-2 py-0.5 rounded-full",
+        cls,
       )}
     >
       {children}
@@ -229,10 +208,6 @@ export function Pill({
   )
 }
 
-/* ---- Backward-compatibility shims for legacy call sites ---- */
-
-/** @deprecated use Stat */
+/* Legacy aliases — keep prior call sites working. */
 export const Num = Stat
-
-/** @deprecated use FieldLine */
 export const Row = FieldLine
