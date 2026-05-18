@@ -1,4 +1,4 @@
-export const TOP_BAR_HEIGHT = 56
-export const RAIL_WIDTH = 56
-export const PAGE_PADDING_X = 32
-export const PAGE_PADDING_Y = 24
+export const MASTHEAD_HEIGHT = 64
+export const TABSTRIP_HEIGHT = 44
+export const PAGE_PADDING_X = 48
+export const PAGE_PADDING_Y = 32

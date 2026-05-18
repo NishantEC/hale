@@ -23,13 +23,17 @@ export function RunPipelineMenu({
   presets,
   onRun,
   variant = "default",
+  size = "sm",
   label = "Pipeline",
+  className,
 }: {
   busy: boolean
   presets: Preset[]
   onRun: (opts: PipelineRunOptions) => void | Promise<void>
-  variant?: "default" | "secondary"
+  variant?: "default" | "secondary" | "ghost" | "outline" | "link" | "destructive"
+  size?: "default" | "xs" | "sm" | "lg" | "icon"
   label?: string
+  className?: string
 }) {
   const [force, setForce] = useState(false)
 
@@ -45,15 +49,20 @@ export function RunPipelineMenu({
     return { ...base, from: p.from, to: p.to }
   }
 
+  const ghostClass =
+    variant === "ghost"
+      ? "eyebrow text-muted-foreground hover:text-foreground hover:bg-transparent"
+      : ""
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant={variant}
-          size="sm"
+          size={size}
           disabled={busy}
           aria-busy={busy}
-          className="cursor-pointer"
+          className={`cursor-pointer ${ghostClass} ${className ?? ""}`}
         >
           {busy ? "..." : label}
         </Button>

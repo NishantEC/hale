@@ -1,14 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Google Fonts CSS API — resolves to the right woff2 subset per UA. */
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap");
+/* Field Manual — Fraunces (variable serif, opticals), IBM Plex Sans, IBM Plex Mono */
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
+  --color-paper-foreground: var(--paper-foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -31,6 +33,10 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
 
+  --color-vermillion: var(--vermillion);
+  --color-sage: var(--sage);
+  --color-ink: var(--ink);
+
   --color-stage-awake: var(--stage-awake);
   --color-stage-rem: var(--stage-rem);
   --color-stage-core: var(--stage-core);
@@ -38,24 +44,31 @@
 
   --color-border: var(--border);
   --color-hairline: var(--hairline);
+  --color-rule: var(--rule);
 
   --font-sans:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono:
-    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --font-display:
+    "Fraunces", "Times New Roman", Georgia, serif;
   --font-prose:
-    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 
-  /* type scale — strict tiers, no in-betweens */
-  --text-display: 3.5rem;       /* 56px — hero numbers */
+  /* Editorial type scale — Fraunces display + Plex body */
+  --text-masthead: 4.5rem;      /* 72px — masthead / cover */
+  --text-masthead-line: 0.95;
+  --text-display: 3rem;         /* 48px — hero numbers */
   --text-display-line: 1;
-  --text-h1: 1.875rem;          /* 30px — page headings */
-  --text-h2: 1.375rem;          /* 22px — section heads */
+  --text-chapter: 2.25rem;      /* 36px — chapter heads */
+  --text-chapter-line: 1.05;
+  --text-h1: 1.625rem;          /* 26px — page heads */
+  --text-h2: 1.25rem;           /* 20px — subhead */
   --text-h3: 1rem;              /* 16px — subsection */
   --text-body: 0.9375rem;       /* 15px — body */
   --text-sm: 0.8125rem;         /* 13px — secondary */
-  --text-xs: 0.6875rem;         /* 11px — labels */
-  --font-size-dense: 13px;
+  --text-xs: 0.75rem;           /* 12px — caption */
+  --text-eyebrow: 0.6875rem;    /* 11px — small-caps labels */
 
   --animate-marquee: marquee var(--duration) infinite linear;
   --animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
@@ -90,67 +103,92 @@
 }
 
 :root {
-  /* LIGHT — refined operator. Page is paper white, card is true white. */
-  --background: oklch(0.985 0.002 250);
-  --foreground: oklch(0.15 0.018 255);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.018 255);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.018 255);
-  --primary: oklch(0.46 0.2 285);
-  --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.004 250);
-  --secondary-foreground: oklch(0.22 0.02 255);
-  --muted: oklch(0.96 0.004 250);
-  --muted-foreground: oklch(0.48 0.018 255);
-  --accent: oklch(0.94 0.005 250);
-  --accent-foreground: oklch(0.22 0.02 255);
-  --destructive: oklch(0.55 0.2 25);
-  --destructive-foreground: oklch(0.99 0 0);
-  --success: oklch(0.55 0.13 145);
-  --success-foreground: oklch(0.99 0 0);
-  --warning: oklch(0.68 0.15 70);
-  --warning-foreground: oklch(0.15 0.018 255);
+  /* LIGHT — cream paper, ink, vermillion accent. Field manual. */
+  --paper: #F4EFE6;
+  --paper-foreground: #1B1714;
+  --background: #F4EFE6;
+  --foreground: #1B1714;
+  --ink: #1B1714;
 
-  /* borders — practically invisible, used sparingly */
-  --border: oklch(0 0 0 / 0.06);
-  --hairline: oklch(0 0 0 / 0.04);
-  --input: oklch(0 0 0 / 0.1);
-  --ring: oklch(0.46 0.2 285);
+  /* No raised cards — surfaces equal paper. Where we need a fill (modal, popover) it lifts to plain warm white. */
+  --card: #FCFAF5;
+  --card-foreground: #1B1714;
+  --popover: #FCFAF5;
+  --popover-foreground: #1B1714;
 
-  --stage-awake: #FE8A73;
-  --stage-rem: #3FB1E7;
-  --stage-core: #5BA8FF;
-  --stage-deep: #7B78D6;
+  --vermillion: #C0392B;
+  --sage: #5F6B4E;
+
+  --primary: #1B1714;          /* primary CTA = ink button on cream */
+  --primary-foreground: #F4EFE6;
+  --secondary: #E9E2D3;        /* warm tan */
+  --secondary-foreground: #1B1714;
+  --muted: #E9E2D3;
+  --muted-foreground: #6B5F52; /* warm taupe */
+  --accent: #E9E2D3;
+  --accent-foreground: #1B1714;
+  --destructive: #C0392B;
+  --destructive-foreground: #F4EFE6;
+  --success: #5F6B4E;
+  --success-foreground: #F4EFE6;
+  --warning: #B57F2A;
+  --warning-foreground: #1B1714;
+
+  /* Rules — hairlines for separators. Thicker top-of-section rule via .rule-strong utility. */
+  --border: rgba(27, 23, 20, 0.14);
+  --hairline: rgba(27, 23, 20, 0.08);
+  --rule: rgba(27, 23, 20, 0.85);
+  --input: rgba(27, 23, 20, 0.22);
+  --ring: #C0392B;
+
+  /* Sleep stage colors — toned down to fit cream paper */
+  --stage-awake: #C0392B;
+  --stage-rem: #2E7BBF;
+  --stage-core: #6B8FBF;
+  --stage-deep: #4A4880;
 }
 
 .dark {
-  /* DARK — deep blue-black page, lifted-slate card. Borders barely there. */
-  --background: oklch(0.13 0.018 255);
-  --foreground: oklch(0.97 0.005 250);
-  --card: oklch(0.175 0.022 255);
-  --card-foreground: oklch(0.97 0.005 250);
-  --popover: oklch(0.2 0.025 255);
-  --popover-foreground: oklch(0.97 0.005 250);
-  --primary: oklch(0.7 0.18 285);
-  --primary-foreground: oklch(0.13 0.018 255);
-  --secondary: oklch(0.22 0.022 255);
-  --secondary-foreground: oklch(0.97 0.005 250);
-  --muted: oklch(0.22 0.022 255);
-  --muted-foreground: oklch(0.66 0.012 250);
-  --accent: oklch(0.25 0.025 255);
-  --accent-foreground: oklch(0.97 0.005 250);
-  --destructive: oklch(0.68 0.22 25);
-  --destructive-foreground: oklch(0.13 0.018 255);
-  --success: oklch(0.72 0.14 145);
-  --success-foreground: oklch(0.13 0.018 255);
-  --warning: oklch(0.78 0.15 75);
-  --warning-foreground: oklch(0.13 0.018 255);
+  /* DARK — ink black page, warm cream ink. The same paper, inverted. */
+  --paper: #0F0D0B;
+  --paper-foreground: #E8E2D3;
+  --background: #0F0D0B;
+  --foreground: #E8E2D3;
+  --ink: #E8E2D3;
 
-  --border: oklch(1 0 0 / 0.06);
-  --hairline: oklch(1 0 0 / 0.04);
-  --input: oklch(1 0 0 / 0.1);
-  --ring: oklch(0.7 0.18 285);
+  --card: #191714;
+  --card-foreground: #E8E2D3;
+  --popover: #191714;
+  --popover-foreground: #E8E2D3;
+
+  --vermillion: #E5604F;
+  --sage: #93A382;
+
+  --primary: #E8E2D3;
+  --primary-foreground: #0F0D0B;
+  --secondary: #25201B;
+  --secondary-foreground: #E8E2D3;
+  --muted: #25201B;
+  --muted-foreground: #9C9384;
+  --accent: #25201B;
+  --accent-foreground: #E8E2D3;
+  --destructive: #E5604F;
+  --destructive-foreground: #0F0D0B;
+  --success: #93A382;
+  --success-foreground: #0F0D0B;
+  --warning: #D9A24F;
+  --warning-foreground: #0F0D0B;
+
+  --border: rgba(232, 226, 211, 0.14);
+  --hairline: rgba(232, 226, 211, 0.08);
+  --rule: rgba(232, 226, 211, 0.9);
+  --input: rgba(232, 226, 211, 0.22);
+  --ring: #E5604F;
+
+  --stage-awake: #E5604F;
+  --stage-rem: #6FA8D5;
+  --stage-core: #8AAACD;
+  --stage-deep: #8A87C2;
 }
 
 * { box-sizing: border-box; margin: 0; }
@@ -166,28 +204,73 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "ss01" 1, "cv11" 1;
+  font-feature-settings: "ss01" 1, "cv01" 1, "cv11" 1;
 }
 
-/* Mono for data — numbers, timestamps, code. Hand-applied via font-mono utility. */
+/* Subtle paper grain — only on the page background, never on overlays. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.09  0 0 0 0 0.08  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: multiply;
+}
+.dark body::before {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.9  0 0 0 0 0.88  0 0 0 0 0.83  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: screen;
+}
+#root { position: relative; z-index: 1; }
+
+/* Display + mono hand-applied. */
+.font-display {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 96, "SOFT" 0;
+  letter-spacing: -0.015em;
+}
+.font-display-tight {
+  font-family: var(--font-display);
+  font-variation-settings: "opsz" 144, "SOFT" 0;
+  letter-spacing: -0.025em;
+}
 .font-mono,
 code,
 kbd,
 samp,
 pre {
   font-family: var(--font-mono);
-  font-feature-settings: "calt" 0, "liga" 0;
+  font-feature-settings: "calt" 0, "liga" 0, "zero" 1;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* Small-caps eyebrow — used for section labels, masthead metadata, kicker text. */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-eyebrow);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+/* Rules — replace card chrome. */
+.rule-strong { border-top: 1.5px solid var(--rule); }
+.rule-hair { border-top: 1px solid var(--hairline); }
+.rule-hair-b { border-bottom: 1px solid var(--hairline); }
+.rule-double {
+  border-top: 1px solid var(--rule);
+  box-shadow: 0 3px 0 -2px var(--rule);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 10%, transparent); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--foreground) 18%, transparent); }
+::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 14%, transparent); }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--foreground) 24%, transparent); }
 
 :focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: 6px;
+  outline: 1.5px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: 0;
 }
 
 button:focus:not(:focus-visible),
@@ -199,4 +282,10 @@ input:focus:not(:focus-visible),
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
+}
+
+/* Editorial selection. */
+::selection {
+  background: var(--vermillion);
+  color: var(--paper);
 }

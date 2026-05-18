@@ -18,12 +18,6 @@ import { StatusBadge, type StatusTone } from "../components/StatusBadge"
 import { SyncTrail, type TrailNode } from "../components/SyncTrail"
 import { AnimatedShinyText } from "@/components/magicui/animated-shiny-text"
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
@@ -211,68 +205,68 @@ export function HomeTab(props: HomeProps) {
   const topCorrelation = pickTopCorrelationSentence(journalCorrelations)
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      {/* Hero status row */}
-      <div className="grid grid-cols-3 gap-5">
+    <div className="space-y-10">
+      {/* Hero status row — three Field Manual status notes side by side */}
+      <section className="grid grid-cols-3 gap-8">
         <StatusBadge tone={pipeline.tone} label={pipeline.label} detail={pipeline.detail} action={pipeline.action} size="lg" />
         <StatusBadge tone={strap.tone} label={strap.label} detail={strap.detail} size="lg" />
         <StatusBadge tone={night.tone} label={night.label} detail={night.detail} action={night.action} size="lg" />
-      </div>
+      </section>
 
-      {/* Last night — hypnogram */}
+      {/* Chapter 01 — Hypnogram */}
       <section>
-        <div className="flex items-baseline justify-between">
-          <SectionHead>
-            Last night ·{" "}
-            <span className="font-mono tabular-nums font-medium">
-              {formatDate(sleep?.selectedNightDate ?? date)}
-            </span>
-          </SectionHead>
-          {detection?.confidence != null && (
-            <span className="text-muted-foreground text-xs">
-              confidence {(detection.confidence * 100).toFixed(0)}%
-            </span>
-          )}
-        </div>
-        <div className="mt-5">
+        <SectionHead
+          n={1}
+          kicker={
+            detection
+              ? `${detection.durationHours.toFixed(1)}h sleep · ${detection.bedtime ? new Date(detection.bedtime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "?"} bed → ${detection.wakeTime ? new Date(detection.wakeTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "?"} wake`
+              : undefined
+          }
+          meta={
+            detection?.confidence != null
+              ? `confidence ${(detection.confidence * 100).toFixed(0)}%`
+              : undefined
+          }
+        >
+          The night of{" "}
+          <span className="font-display italic">
+            {formatDate(sleep?.selectedNightDate ?? date)}
+          </span>
+        </SectionHead>
+        <div className="mt-6">
           {sleep?.epochTimeline && sleep.epochTimeline.length > 0 ? (
-            <Card>
-              <CardContent>
-                <Hypnogram epochs={sleep.epochTimeline} height={140} />
-              </CardContent>
-            </Card>
+            <Hypnogram epochs={sleep.epochTimeline} height={160} />
           ) : (
-            <Card>
-              <CardContent>
-                <p className="text-muted-foreground text-sm py-2">
-                  No sleep detection for {date}. The strap may not have been worn, or the pipeline
-                  hasn't yet processed this night.
-                </p>
-              </CardContent>
-            </Card>
+            <p className="text-muted-foreground text-sm py-4 italic">
+              No sleep detection for {date}. The strap may not have been worn, or the
+              pipeline hasn't yet processed this night.
+            </p>
           )}
         </div>
       </section>
 
-      {/* Journal correlation editorial — only when present */}
+      {/* Editorial pull-quote — journal correlation. */}
       {topCorrelation && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent>
-            <AnimatedShinyText className="text-[15px] leading-relaxed text-foreground max-w-none">
+        <section className="rule-strong pt-4">
+          <p className="eyebrow text-[var(--vermillion)] mb-3">a note from the data</p>
+          <blockquote className="font-display text-[1.5rem] leading-snug max-w-[640px] text-foreground">
+            <AnimatedShinyText className="text-inherit leading-inherit max-w-none">
               {topCorrelation}
             </AnimatedShinyText>
-          </CardContent>
-        </Card>
+          </blockquote>
+        </section>
       )}
 
-      {/* Night metrics — chip grid */}
+      {/* Chapter 02 — Night metrics */}
       <section>
-        <SectionHead>Night metrics</SectionHead>
-        <div className="mt-5 grid grid-cols-4 gap-5">
+        <SectionHead n={2} kicker="Vitals at the time the strap was worn.">
+          Night metrics
+        </SectionHead>
+        <div className="mt-6 grid grid-cols-4 gap-x-8 gap-y-6">
           {chips.map((c) => (
             <div key={c.label} className="relative">
               <MetricChip label={c.label} value={c.value} unit={c.unit} avg14d={c.avg14d} baseline={c.baseline} />
-              <div className="absolute top-3.5 right-3.5">
+              <div className="absolute top-0 right-0">
                 <MetricInfo {...c.info} />
               </div>
             </div>
@@ -280,127 +274,92 @@ export function HomeTab(props: HomeProps) {
         </div>
       </section>
 
-      {/* Sync trail */}
+      {/* Chapter 03 — Sync trail */}
       <section>
-        <SectionHead>Sync trail</SectionHead>
-        <div className="mt-5">
+        <SectionHead n={3} kicker="Where the data sits across the pipeline.">
+          Sync trail
+        </SectionHead>
+        <div className="mt-6">
           <SyncTrail nodes={trailNodes} />
         </div>
       </section>
 
-      {/* Details disclosure */}
-      <section>
+      {/* Appendix */}
+      <section className="rule-hair pt-4">
         <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <CollapsibleTrigger className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors">
-            <span className="text-xs uppercase tracking-widest font-semibold">Details</span>
+          <CollapsibleTrigger className="flex items-center gap-1.5 eyebrow text-muted-foreground hover:text-foreground transition-colors">
+            <span>Appendix</span>
             <ChevronRight
-              className={cn("h-3.5 w-3.5 transition-transform duration-200", detailsOpen && "rotate-90")}
+              className={cn("h-3 w-3 transition-transform duration-200", detailsOpen && "rotate-90")}
             />
           </CollapsibleTrigger>
 
-          <CollapsibleContent className="mt-4 space-y-6">
-            <div className="grid grid-cols-4 gap-4">
-              <Card className="py-4">
-                <CardContent className="px-4">
-                  <Num
-                    label="Sensor records (all time)"
-                    value={overview?.counts.rawRecordCount ?? 0}
-                    sub={`Day: ${overview?.counts.selectedDayRawRecordCount ?? 0}`}
-                    status={!overview?.counts.rawRecordCount ? "error" : undefined}
-                  />
-                </CardContent>
-              </Card>
-              <Card className="py-4">
-                <CardContent className="px-4">
-                  <Num
-                    label="Sleep detections"
-                    value={overview?.counts.sleepDetectionCount ?? 0}
-                    sub={`mode: ${overview?.selectionMode ?? "—"}`}
-                    status={!overview?.counts.sleepDetectionCount ? "warn" : undefined}
-                  />
-                </CardContent>
-              </Card>
-              <Card className="py-4">
-                <CardContent className="px-4">
-                  <Num
-                    label="Sleep stages"
-                    value={overview?.counts.sleepStageCount ?? 0}
-                    sub={`${overview?.selectedEntities.epochTimelineCount ?? 0} epoch windows`}
-                    status={!overview?.counts.sleepStageCount ? "warn" : undefined}
-                  />
-                </CardContent>
-              </Card>
-              <Card className="py-4">
-                <CardContent className="px-4">
-                  <Num
-                    label="Daily scores"
-                    value={overview?.counts.dailyScoreCount ?? 0}
-                    sub={`last run: ${overview?.lastPipelineRunStatus ?? "—"}`}
-                    status={!overview?.counts.dailyScoreCount ? "error" : undefined}
-                  />
-                </CardContent>
-              </Card>
+          <CollapsibleContent className="mt-6 space-y-8">
+            <div className="grid grid-cols-4 gap-x-8">
+              <Num
+                label="Sensor records (all)"
+                value={overview?.counts.rawRecordCount ?? 0}
+                sub={`Day · ${overview?.counts.selectedDayRawRecordCount ?? 0}`}
+                size="md"
+                status={!overview?.counts.rawRecordCount ? "error" : undefined}
+              />
+              <Num
+                label="Sleep detections"
+                value={overview?.counts.sleepDetectionCount ?? 0}
+                sub={`mode · ${overview?.selectionMode ?? "—"}`}
+                size="md"
+                status={!overview?.counts.sleepDetectionCount ? "warn" : undefined}
+              />
+              <Num
+                label="Sleep stages"
+                value={overview?.counts.sleepStageCount ?? 0}
+                sub={`${overview?.selectedEntities.epochTimelineCount ?? 0} epoch windows`}
+                size="md"
+                status={!overview?.counts.sleepStageCount ? "warn" : undefined}
+              />
+              <Num
+                label="Daily scores"
+                value={overview?.counts.dailyScoreCount ?? 0}
+                sub={`last run · ${overview?.lastPipelineRunStatus ?? "—"}`}
+                size="md"
+                status={!overview?.counts.dailyScoreCount ? "error" : undefined}
+              />
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Sync state</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Row k="Night selection mode" v={overview?.selectionMode ?? "—"} dense />
-                  <Row k="Selected night" v={overview?.selectedNightDate ?? "—"} dense />
-                  <Row k="Earliest raw" v={formatTimestamp(overview?.earliestRawTimestamp)} dense />
-                  <Row k="Latest raw" v={formatTimestamp(overview?.latestRawTimestamp)} dense />
-                  <Row
-                    k="Sleep plan last updated"
-                    v={formatTimestamp(overview?.latestSyncMetadata.lastSleepPlanUpdateAt)}
-                    dense
-                  />
-                  <Row k="Reason" v={overview?.selectionReason ?? "—"} dense />
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>App views</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Row k="Home headline" v={homeView?.todayOverview.headline ?? "—"} dense />
-                  <Row
-                    k="Recommendation"
-                    v={homeView?.cards.recommendation.title ?? "—"}
-                    dense
-                  />
-                  <Row
-                    k="Sleep view"
-                    v={sleepView?.emptyState.isEmpty ? "empty" : "populated"}
-                    dense
-                  />
-                  <Row
-                    k="Bed → Wake"
-                    v={
-                      sleepView
-                        ? `${sleepView.header.bedtime} → ${sleepView.header.wakeTime}`
-                        : "—"
-                    }
-                    dense
-                  />
-                  <Row k="Duration" v={sleepView?.header.duration ?? "—"} dense />
-                  <Row k="Insight" v={sleepView?.sleepInsight ?? "—"} dense />
-                </CardContent>
-              </Card>
+            <div className="grid grid-cols-2 gap-x-12">
+              <div>
+                <p className="eyebrow text-muted-foreground mb-3 rule-strong pt-3">Sync state</p>
+                <Row k="Selection mode" v={overview?.selectionMode ?? "—"} dense />
+                <Row k="Selected night" v={overview?.selectedNightDate ?? "—"} dense />
+                <Row k="Earliest raw" v={formatTimestamp(overview?.earliestRawTimestamp)} dense />
+                <Row k="Latest raw" v={formatTimestamp(overview?.latestRawTimestamp)} dense />
+                <Row k="Sleep plan updated" v={formatTimestamp(overview?.latestSyncMetadata.lastSleepPlanUpdateAt)} dense />
+                <Row k="Reason" v={overview?.selectionReason ?? "—"} dense />
+              </div>
+              <div>
+                <p className="eyebrow text-muted-foreground mb-3 rule-strong pt-3">App views</p>
+                <Row k="Home headline" v={homeView?.todayOverview.headline ?? "—"} dense />
+                <Row k="Recommendation" v={homeView?.cards.recommendation.title ?? "—"} dense />
+                <Row k="Sleep view" v={sleepView?.emptyState.isEmpty ? "empty" : "populated"} dense />
+                <Row
+                  k="Bed → Wake"
+                  v={sleepView ? `${sleepView.header.bedtime} → ${sleepView.header.wakeTime}` : "—"}
+                  dense
+                />
+                <Row k="Duration" v={sleepView?.header.duration ?? "—"} dense />
+                <Row k="Insight" v={sleepView?.sleepInsight ?? "—"} dense />
+              </div>
             </div>
 
-            <div className="text-xs text-muted-foreground flex items-center gap-2">
-              <span>Pipeline:</span>
+            <p className="text-xs text-muted-foreground flex items-center gap-2 italic">
+              <span>Pipeline</span>
               <Pill tone={pipeline.tone === "ok" ? "green" : pipeline.tone === "warn" ? "yellow" : pipeline.tone === "error" ? "red" : "neutral"}>
                 {pipeline.label}
               </Pill>
               <span>
                 {pipelineState?.state?.lastRunAt ? `· ran ${relativeTime(pipelineState.state.lastRunAt)}` : ""}
               </span>
-            </div>
+            </p>
           </CollapsibleContent>
         </Collapsible>
       </section>

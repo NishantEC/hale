@@ -1,22 +1,21 @@
-import { useRef, type ReactNode } from "react"
+import type { ReactNode } from "react"
 
-import { AnimatedBeam } from "@/components/magicui/animated-beam"
-import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { relativeTime } from "@/format"
 
 type Tone = "ok" | "warn" | "error" | "neutral"
 
 const DOT: Record<Tone, string> = {
-  ok: "bg-success",
-  warn: "bg-warning",
-  error: "bg-destructive",
-  neutral: "bg-muted-foreground",
+  ok: "bg-[var(--sage)]",
+  warn: "bg-[var(--warning)]",
+  error: "bg-[var(--vermillion)]",
+  neutral: "bg-foreground/30",
 }
+
 const LABEL_COLOR: Record<Tone, string> = {
   ok: "text-foreground",
-  warn: "text-warning",
-  error: "text-destructive",
+  warn: "text-foreground",
+  error: "text-[var(--vermillion)]",
   neutral: "text-foreground",
 }
 
@@ -27,51 +26,48 @@ export type TrailNode = {
   tone: Tone
 }
 
+/**
+ * Sync trail — Field Manual style. A horizontal printed timeline.
+ * No fill, no rounded corners; just nodes connected by hairlines with
+ * vermillion progress dashes filling between solid nodes.
+ */
 export function SyncTrail({ nodes }: { nodes: TrailNode[] }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const refs = useRef<(HTMLDivElement | null)[]>([])
-
   return (
-    <Card className="p-4 relative">
-      <div ref={containerRef} className="flex items-stretch gap-2 relative">
+    <div className="relative">
+      {/* The rail itself — single hairline across the middle of the row */}
+      <div className="absolute left-2 right-2 top-2 h-px bg-foreground/15" aria-hidden />
+
+      <div className="grid grid-cols-4 gap-2 relative">
         {nodes.map((node, i) => (
-          <div
-            key={node.name}
-            ref={(el) => {
-              refs.current[i] = el
-            }}
-            className="flex flex-col items-start min-w-0 flex-1 z-10"
-          >
-            <div className="flex items-center gap-2">
-              <span className={cn("w-2 h-2 rounded-full", DOT[node.tone])} />
-              <span className={cn("text-[12px] font-semibold", LABEL_COLOR[node.tone])}>
-                {node.name}
+          <div key={node.name} className="flex flex-col min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <span
+                className={cn(
+                  "size-1.5 rounded-full ring-4 ring-paper relative z-10",
+                  DOT[node.tone],
+                )}
+              />
+              <span className="eyebrow text-muted-foreground tabular-nums">
+                {String(i + 1).padStart(2, "0")}
               </span>
             </div>
-            <p className="text-muted-foreground text-[11px] mt-0.5 truncate w-full">
+            <p
+              className={cn(
+                "font-display text-base leading-tight tracking-tight",
+                LABEL_COLOR[node.tone],
+              )}
+            >
+              {node.name}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1 truncate">
               {node.detail}
             </p>
-            <p className="text-muted-foreground text-[10px] tabular-nums">
+            <p className="font-mono text-[10px] text-muted-foreground tabular-nums mt-1">
               {node.timestamp ? relativeTime(node.timestamp) : "—"}
             </p>
           </div>
         ))}
-
-        {nodes.slice(0, -1).map((_, i) => (
-          <AnimatedBeam
-            key={`beam-${i}`}
-            containerRef={containerRef}
-            fromRef={{ current: refs.current[i] }}
-            toRef={{ current: refs.current[i + 1] }}
-            curvature={0}
-            duration={3}
-            gradientStartColor="var(--primary)"
-            gradientStopColor="var(--primary)"
-            pathColor="var(--border)"
-            pathOpacity={0.4}
-          />
-        ))}
       </div>
-    </Card>
+    </div>
   )
 }

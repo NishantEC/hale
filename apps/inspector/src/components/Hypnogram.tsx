@@ -16,10 +16,10 @@ import { formatTime } from "../format"
 // with hover tooltip and dashed hour columns.
 
 const STAGES = {
-  awake: { pos: 0, label: "Awake", color: "#FE8A73" },
-  rem: { pos: 1, label: "REM", color: "#3FB1E7" },
-  core: { pos: 2, label: "Core", color: "#1B81FE" },
-  deep: { pos: 3, label: "Deep", color: "#403EA7" },
+  awake: { pos: 0, label: "Awake", color: "#C0392B" },
+  rem: { pos: 1, label: "REM", color: "#7B5E3F" },
+  core: { pos: 2, label: "Core", color: "#3A4F6B" },
+  deep: { pos: 3, label: "Deep", color: "#1B2D4A" },
 } as const
 const STAGE_KEYS = ["awake", "rem", "core", "deep"] as const
 

@@ -8,13 +8,6 @@ import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { StageHrScatter } from "../components/StageHrScatter"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
@@ -89,18 +82,14 @@ export function SleepTab({
   const empty = !sleep?.selectedDetection
 
   return (
-    <div className="space-y-6 max-w-6xl">
-        <div className="flex items-baseline justify-between">
-          <SectionHead>
-            Selected night ·{" "}
-            <span className="font-mono font-medium tabular-nums">
-              {formatDate(sleep?.selectedNightDate ?? selectedDate)}
-            </span>
-          </SectionHead>
+    <div className="space-y-10">
+      <SectionHead
+        n="00"
+        meta={
           <RunPipelineMenu
             busy={busy}
-            variant="secondary"
-            label="Rerun this night"
+            variant="ghost"
+            label="rerun night"
             onRun={onRunPipeline}
             presets={[
               { kind: "day", day: nightDay, label: `Rerun ${nightDay} only` },
@@ -108,210 +97,215 @@ export function SleepTab({
               { kind: "full", label: "Rerun full (last 45 days)" },
             ]}
           />
+        }
+        kicker={
+          empty
+            ? "No sleep detection on this date. Try another or rerun the pipeline."
+            : "All measurements taken during the longest detected sleep window."
+        }
+      >
+        Night of{" "}
+        <span className="font-display italic">
+          {formatDate(sleep?.selectedNightDate ?? selectedDate)}
+        </span>
+      </SectionHead>
+
+      {empty && (
+        <Alert>
+          <Moon className="size-4" />
+          <AlertTitle>No sleep detection</AlertTitle>
+          <AlertDescription>
+            No sleep detection for {selectedDate}. Try a different date, or rerun the
+            pipeline for this night.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Vitals masthead */}
+      <section className="grid grid-cols-4 gap-x-8 gap-y-6">
+        <Num
+          label="Duration"
+          value={`${formatNumber(sleep?.selectedDetection?.durationHours, 1)}h`}
+          sub="total sleep"
+          size="md"
+          status={empty ? "stale" : undefined}
+        />
+        <Num
+          label="Resting HR"
+          value={formatNumber(sleep?.selectedNightFeature?.restingHeartRate)}
+          sub="bpm"
+          size="md"
+          status={empty ? "stale" : undefined}
+        />
+        <Num
+          label="HRV (RMSSD)"
+          value={formatNumber(sleep?.selectedNightFeature?.rmssd, 1)}
+          sub="ms"
+          size="md"
+          status={empty ? "stale" : undefined}
+        />
+        <Num
+          label="Respiratory"
+          value={formatNumber(sleep?.selectedNightFeature?.respiratoryRate, 1)}
+          sub="breaths / min"
+          size="md"
+          status={empty ? "stale" : undefined}
+        />
+      </section>
+
+      {/* Chapter 01 — Day timeline */}
+      <section>
+        <SectionHead
+          n={1}
+          kicker="Heart rate and motion across the calendar day."
+          meta={raw ? `${raw.count} raw · ${(raw.rows ?? []).length} sampled` : "—"}
+        >
+          Day timeline
+        </SectionHead>
+        <div className="mt-6">
+          <DayTimeline
+            raw={raw}
+            sleep={sleep}
+            cursorMs={cursorMs}
+            onCursorChange={setCursorMs}
+          />
         </div>
+      </section>
 
-        {empty && (
-          <Alert>
-            <Moon className="size-4" />
-            <AlertTitle>No sleep detection</AlertTitle>
-            <AlertDescription>
-              No sleep detection for {selectedDate}. Try a different date, or rerun the pipeline
-              for this night.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="grid grid-cols-4 gap-6">
-          <Card className="p-4 gap-0">
-            <Num
-              label="Duration"
-              value={`${formatNumber(sleep?.selectedDetection?.durationHours, 1)}h`}
-              sub="total sleep"
-              status={empty ? "stale" : undefined}
-            />
-          </Card>
-          <Card className="p-4 gap-0">
-            <Num
-              label="Resting HR"
-              value={formatNumber(sleep?.selectedNightFeature?.restingHeartRate)}
-              sub="bpm"
-              status={empty ? "stale" : undefined}
-            />
-          </Card>
-          <Card className="p-4 gap-0">
-            <Num
-              label="HRV (RMSSD)"
-              value={formatNumber(sleep?.selectedNightFeature?.rmssd, 1)}
-              sub="ms"
-              status={empty ? "stale" : undefined}
-            />
-          </Card>
-          <Card className="p-4 gap-0">
-            <Num
-              label="Respiratory"
-              value={formatNumber(sleep?.selectedNightFeature?.respiratoryRate, 1)}
-              sub="breaths/min"
-              status={empty ? "stale" : undefined}
-            />
-          </Card>
+      {/* Chapter 02 — Hypnogram */}
+      <section>
+        <SectionHead
+          n={2}
+          kicker="Sleep stages over the night, second-by-second."
+          meta={`${epochs.length} epoch windows`}
+        >
+          Hypnogram
+        </SectionHead>
+        <div className="mt-6 space-y-5">
+          <Hypnogram epochs={epochs} cursorMs={cursorMs} onCursorChange={setCursorMs} />
+          <div className="flex flex-wrap gap-x-8 gap-y-2">
+            {(
+              [
+                ["Awake", sleep?.stageTotals?.awakeMinutes, HYPNOGRAM_STAGES.awake.color],
+                ["REM", sleep?.stageTotals?.remMinutes, HYPNOGRAM_STAGES.rem.color],
+                ["Core", sleep?.stageTotals?.lightMinutes, HYPNOGRAM_STAGES.core.color],
+                ["Deep", sleep?.stageTotals?.deepMinutes, HYPNOGRAM_STAGES.deep.color],
+              ] as const
+            ).map(([label, minutes, color]) => (
+              <div key={label} className="flex items-center gap-2">
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="eyebrow text-muted-foreground">{label}</span>
+                <span className="font-mono text-sm tabular-nums">
+                  {minutes ?? 0}m
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
+      </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Day timeline</CardTitle>
-            <CardDescription className="font-mono tabular-nums">
-              {raw ? `${raw.count} raw · ${(raw.rows ?? []).length} sampled` : "—"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <DayTimeline
-              raw={raw}
-              sleep={sleep}
-              cursorMs={cursorMs}
-              onCursorChange={setCursorMs}
-            />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Hypnogram</CardTitle>
-            <CardDescription className="font-mono tabular-nums">
-              {epochs.length} epoch windows
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <Hypnogram
-              epochs={epochs}
-              cursorMs={cursorMs}
-              onCursorChange={setCursorMs}
-            />
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
-              {(
-                [
-                  ["Awake", sleep?.stageTotals?.awakeMinutes, HYPNOGRAM_STAGES.awake.color],
-                  ["REM", sleep?.stageTotals?.remMinutes, HYPNOGRAM_STAGES.rem.color],
-                  ["Core", sleep?.stageTotals?.lightMinutes, HYPNOGRAM_STAGES.core.color],
-                  ["Deep", sleep?.stageTotals?.deepMinutes, HYPNOGRAM_STAGES.deep.color],
-                ] as const
-              ).map(([label, minutes, color]) => (
-                <div key={label} className="flex items-center gap-2">
-                  <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: color }}
-                  />
-                  <span className="text-muted-foreground text-[13px]">{label}</span>
-                  <span className="text-[13px] font-mono font-semibold tabular-nums">
-                    {minutes ?? 0}m
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Stage × HR</CardTitle>
-            <CardDescription>
-              Joins each epoch's stage with the raw HR sample at that timestamp. Expect HR to drop from Awake to Deep.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <StageHrScatter sleep={sleep} raw={raw} />
-          </CardContent>
-        </Card>
-
-        <div className="grid grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Sleep detection</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Row k="Night date" v={sleep?.selectedDetection?.nightDate ?? "—"} dense />
-              <Row k="Bedtime" v={formatTimestamp(sleep?.selectedDetection?.bedtime)} dense />
-              <Row k="Wake time" v={formatTimestamp(sleep?.selectedDetection?.wakeTime)} dense />
-              <Row
-                k="Interruptions"
-                v={String(sleep?.selectedDetection?.interruptionCount ?? "—")}
-                dense
-              />
-              <Row
-                k="Continuity"
-                v={
-                  <SleepHoverValue
-                    value={formatNumber(sleep?.selectedDetection?.continuity, 3)}
-                    title="Continuity"
-                    description="Fraction of sleep time without major interruption. Higher = more consolidated sleep."
-                    range="0-1"
-                    direction="Higher is better"
-                  />
-                }
-                dense
-              />
-              <Row
-                k="Coverage"
-                v={
-                  <SleepHoverValue
-                    value={formatNumber(sleep?.selectedDetection?.validCoverage, 3)}
-                    title="Coverage"
-                    description="Fraction of expected sensor data actually present. Detects sensor dropout."
-                    range="0-1"
-                    direction="Higher is better"
-                  />
-                }
-                dense
-              />
-              <Row
-                k="Confidence"
-                v={
-                  <SleepHoverValue
-                    value={formatNumber(sleep?.selectedDetection?.confidence, 3)}
-                    title="Confidence"
-                    description="Detector's confidence in this sleep window."
-                    range="0-1"
-                    direction="Higher is better"
-                  />
-                }
-                dense
-              />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Night features</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Row
-                k="SDNN"
-                v={formatNumber(sleep?.selectedNightFeature?.sdnn, 1)}
-                dense
-              />
-              <Row
-                k="Sleep estimate"
-                v={`${formatNumber(sleep?.selectedNightFeature?.sleepEstimateHours, 2)}h`}
-                dense
-              />
-              <Row
-                k="Regularity"
-                v={
-                  <SleepHoverValue
-                    value={formatNumber(sleep?.selectedNightFeature?.regularity, 3)}
-                    title="Regularity"
-                    description="Bedtime/wake-time consistency vs your baseline schedule."
-                    range="0-1"
-                    direction="Higher is better"
-                  />
-                }
-                dense
-              />
-              <Row k="Source blend" v={sleep?.selectedNightFeature?.sourceBlend ?? "—"} dense />
-              <Row k="Selection reason" v={sleep?.selectionReason ?? "—"} dense />
-              <Row k="Epoch windows" v={String(sleep?.epochTimelineCount ?? 0)} dense />
-            </CardContent>
-          </Card>
+      {/* Chapter 03 — Stage × HR */}
+      <section>
+        <SectionHead
+          n={3}
+          kicker="HR for each epoch, joined by stage. Expect HR to drop from Awake to Deep."
+        >
+          Stage × Heart rate
+        </SectionHead>
+        <div className="mt-6">
+          <StageHrScatter sleep={sleep} raw={raw} />
         </div>
-      </div>
+      </section>
+
+      {/* Appendix — features & detection */}
+      <section className="grid grid-cols-2 gap-x-12 gap-y-6">
+        <div>
+          <SectionHead n="A">Sleep detection</SectionHead>
+          <div className="mt-4">
+            <Row k="Night date" v={sleep?.selectedDetection?.nightDate ?? "—"} dense />
+            <Row k="Bedtime" v={formatTimestamp(sleep?.selectedDetection?.bedtime)} dense />
+            <Row k="Wake time" v={formatTimestamp(sleep?.selectedDetection?.wakeTime)} dense />
+            <Row
+              k="Interruptions"
+              v={String(sleep?.selectedDetection?.interruptionCount ?? "—")}
+              dense
+            />
+            <Row
+              k="Continuity"
+              v={
+                <SleepHoverValue
+                  value={formatNumber(sleep?.selectedDetection?.continuity, 3)}
+                  title="Continuity"
+                  description="Fraction of sleep time without major interruption. Higher = more consolidated sleep."
+                  range="0-1"
+                  direction="Higher is better"
+                />
+              }
+              dense
+            />
+            <Row
+              k="Coverage"
+              v={
+                <SleepHoverValue
+                  value={formatNumber(sleep?.selectedDetection?.validCoverage, 3)}
+                  title="Coverage"
+                  description="Fraction of expected sensor data actually present. Detects sensor dropout."
+                  range="0-1"
+                  direction="Higher is better"
+                />
+              }
+              dense
+            />
+            <Row
+              k="Confidence"
+              v={
+                <SleepHoverValue
+                  value={formatNumber(sleep?.selectedDetection?.confidence, 3)}
+                  title="Confidence"
+                  description="Detector's confidence in this sleep window."
+                  range="0-1"
+                  direction="Higher is better"
+                />
+              }
+              dense
+            />
+          </div>
+        </div>
+        <div>
+          <SectionHead n="B">Night features</SectionHead>
+          <div className="mt-4">
+            <Row
+              k="SDNN"
+              v={formatNumber(sleep?.selectedNightFeature?.sdnn, 1)}
+              dense
+            />
+            <Row
+              k="Sleep estimate"
+              v={`${formatNumber(sleep?.selectedNightFeature?.sleepEstimateHours, 2)}h`}
+              dense
+            />
+            <Row
+              k="Regularity"
+              v={
+                <SleepHoverValue
+                  value={formatNumber(sleep?.selectedNightFeature?.regularity, 3)}
+                  title="Regularity"
+                  description="Bedtime/wake-time consistency vs your baseline schedule."
+                  range="0-1"
+                  direction="Higher is better"
+                />
+              }
+              dense
+            />
+            <Row k="Source blend" v={sleep?.selectedNightFeature?.sourceBlend ?? "—"} dense />
+            <Row k="Selection reason" v={sleep?.selectionReason ?? "—"} dense />
+            <Row k="Epoch windows" v={String(sleep?.epochTimelineCount ?? 0)} dense />
+          </div>
+        </div>
+      </section>
+    </div>
   )
 }
