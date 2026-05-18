@@ -39,11 +39,8 @@ export default function AppLayout() {
         }}
       />
       <Stack.Screen
-        name="debug-inspector"
-        options={{
-          presentation: "modal",
-          animation: "slide_from_right",
-        }}
+        name="dev-activity-strip"
+        options={{ headerShown: true, title: "Activity Strip" }}
       />
     </Stack>
   )

@@ -20,10 +20,10 @@ import {
   Cpu,
   DeviceMobile,
   FileText,
+  Flask,
   Icon as PhosphorIconType,
   Info,
   Moon,
-  Pulse,
   ShieldCheck,
   Sun,
   Watch,
@@ -502,13 +502,6 @@ export const SettingsScreen: FC = () => {
             chevron
             onPress={() => Linking.openURL("https://noop.app/terms").catch(() => {})}
           />
-          <Divider />
-          <Row
-            icon={Pulse}
-            label="Diagnostics"
-            chevron
-            onPress={() => router.push("/debug-inspector")}
-          />
         </Card>
 
         {/* About */}
@@ -520,6 +513,16 @@ export const SettingsScreen: FC = () => {
             icon={DeviceMobile}
             label="Platform"
             value={`${Platform.OS} ${Platform.Version}`}
+          />
+        </Card>
+
+        <SectionLabel>Developer</SectionLabel>
+        <Card>
+          <Row
+            icon={Flask}
+            label="Activity strip preview"
+            chevron
+            onPress={() => router.push("/dev-activity-strip")}
           />
         </Card>
 
