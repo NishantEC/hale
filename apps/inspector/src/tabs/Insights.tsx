@@ -255,11 +255,11 @@ export function InsightsTab({
   const correlationHeadline = pickTopCorrelationSentence(journalCorrelations)
 
   return (
-    <div className="space-y-10 max-w-6xl">
+    <div className="space-y-6 max-w-6xl">
       {correlationHeadline && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-[10px] uppercase tracking-widest font-semibold text-muted-foreground">
+            <CardTitle className="text-[11px] uppercase tracking-wider font-medium text-muted-foreground">
               Strongest journal correlation
             </CardTitle>
           </CardHeader>

@@ -89,7 +89,7 @@ export function SleepTab({
   const empty = !sleep?.selectedDetection
 
   return (
-    <div className="space-y-10 max-w-6xl">
+    <div className="space-y-6 max-w-6xl">
         <div className="flex items-baseline justify-between">
           <SectionHead>Selected night · {sleep?.selectedNightDate ?? selectedDate}</SectionHead>
           <RunPipelineMenu
@@ -151,11 +151,12 @@ export function SleepTab({
           </Card>
         </div>
 
-        <Card className="gap-0">
-          <CardHeader className="pb-4">
-            <CardTitle>
-              <SectionHead>Day timeline</SectionHead>
-            </CardTitle>
+        <Card>
+          <CardHeader>
+            <CardTitle>Day timeline</CardTitle>
+            <CardDescription className="font-mono tabular-nums">
+              {raw ? `${raw.count} raw · ${(raw.rows ?? []).length} sampled` : "—"}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <DayTimeline
@@ -167,12 +168,12 @@ export function SleepTab({
           </CardContent>
         </Card>
 
-        <Card className="gap-0">
-          <CardHeader className="pb-4">
-            <CardTitle>
-              <SectionHead>Hypnogram</SectionHead>
-            </CardTitle>
-            <CardDescription>{epochs.length} epoch windows</CardDescription>
+        <Card>
+          <CardHeader>
+            <CardTitle>Hypnogram</CardTitle>
+            <CardDescription className="font-mono tabular-nums">
+              {epochs.length} epoch windows
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <Hypnogram
@@ -180,7 +181,7 @@ export function SleepTab({
               cursorMs={cursorMs}
               onCursorChange={setCursorMs}
             />
-            <div className="flex flex-wrap gap-x-8 gap-y-2">
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
               {(
                 [
                   ["Awake", sleep?.stageTotals?.awakeMinutes, HYPNOGRAM_STAGES.awake.color],
@@ -189,31 +190,37 @@ export function SleepTab({
                   ["Deep", sleep?.stageTotals?.deepMinutes, HYPNOGRAM_STAGES.deep.color],
                 ] as const
               ).map(([label, minutes, color]) => (
-                <div key={label} className="flex items-center gap-2.5">
+                <div key={label} className="flex items-center gap-2">
                   <span
-                    className="w-2.5 h-2.5 rounded-full"
+                    className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: color }}
                   />
-                  <span className="text-muted-foreground text-sm">{label}</span>
-                  <span className="text-base font-semibold tabular-nums">{minutes ?? 0}m</span>
+                  <span className="text-muted-foreground text-[13px]">{label}</span>
+                  <span className="text-[13px] font-mono font-semibold tabular-nums">
+                    {minutes ?? 0}m
+                  </span>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
 
-        <Card className="gap-0">
-          <CardContent className="pt-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Stage × HR</CardTitle>
+            <CardDescription>
+              Joins each epoch's stage with the raw HR sample at that timestamp. Expect HR to drop from Awake to Deep.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <StageHrScatter sleep={sleep} raw={raw} />
           </CardContent>
         </Card>
 
-        <div className="grid grid-cols-2 gap-12">
-          <Card className="gap-0">
-            <CardHeader className="pb-2">
-              <CardTitle>
-                <SectionHead>Sleep detection</SectionHead>
-              </CardTitle>
+        <div className="grid grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Sleep detection</CardTitle>
             </CardHeader>
             <CardContent>
               <Row k="Night date" v={sleep?.selectedDetection?.nightDate ?? "—"} dense />
@@ -266,11 +273,9 @@ export function SleepTab({
             </CardContent>
           </Card>
 
-          <Card className="gap-0">
-            <CardHeader className="pb-2">
-              <CardTitle>
-                <SectionHead>Night features</SectionHead>
-              </CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle>Night features</CardTitle>
             </CardHeader>
             <CardContent>
               <Row

@@ -13,7 +13,6 @@ import {
 
 import type { RawRecords, SleepNight } from "../api"
 import { lttb } from "../utils/lttb"
-import { SectionHead } from "./primitives"
 
 // Heart-rate timeline for the selected day with sleep windows overlaid.
 //
@@ -67,14 +66,7 @@ export function DayTimeline({
       : null
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between mb-3">
-        <SectionHead>Day timeline</SectionHead>
-        <span className="text-muted-foreground text-xs font-mono tabular-nums">
-          {raw ? `${raw.count} raw · ${points.length} sampled` : "—"}
-        </span>
-      </div>
-      <div onMouseLeave={() => onCursorChange?.(null)}>
+    <div onMouseLeave={() => onCursorChange?.(null)}>
         {points.length === 0 ? (
           <div className="flex items-center justify-center text-muted-foreground text-sm h-44">
             No raw samples for this day. The strap may not have been worn or data hasn't synced.
@@ -177,7 +169,6 @@ export function DayTimeline({
             </LineChart>
           </ResponsiveContainer>
         )}
-      </div>
     </div>
   )
 }

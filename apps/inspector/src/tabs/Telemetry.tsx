@@ -131,7 +131,7 @@ export function TelemetryTab({
   }, [live, logSearch, telemetry?.consoleLogs?.recent])
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {tabHidden && (
         <Alert>
           <span className="w-2 h-2 rounded-full bg-muted-foreground shrink-0 inline-block mt-1" />

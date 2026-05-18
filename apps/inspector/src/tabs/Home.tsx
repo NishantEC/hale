@@ -212,7 +212,7 @@ export function HomeTab(props: HomeProps) {
   const topCorrelation = pickTopCorrelationSentence(journalCorrelations)
 
   return (
-    <div className="space-y-8 max-w-6xl">
+    <div className="space-y-6 max-w-6xl">
       {/* Hero status row */}
       <div className="grid grid-cols-3 gap-3">
         <StatusBadge tone={pipeline.tone} label={pipeline.label} detail={pipeline.detail} action={pipeline.action} size="lg" />
@@ -223,7 +223,12 @@ export function HomeTab(props: HomeProps) {
       {/* Last-night card */}
       <Card>
         <CardHeader className="flex-row items-baseline justify-between pb-0">
-          <CardTitle className="text-base">Last night · {sleep?.selectedNightDate ?? date}</CardTitle>
+          <CardTitle>
+            Last night ·{" "}
+            <span className="font-mono tabular-nums font-medium">
+              {sleep?.selectedNightDate ?? date}
+            </span>
+          </CardTitle>
           {detection?.confidence != null && (
             <CardDescription>
               confidence {(detection.confidence * 100).toFixed(0)}%
@@ -281,7 +286,7 @@ export function HomeTab(props: HomeProps) {
             />
           </CollapsibleTrigger>
 
-          <CollapsibleContent className="mt-4 space-y-8">
+          <CollapsibleContent className="mt-4 space-y-6">
             <div className="grid grid-cols-4 gap-4">
               <Card className="py-4">
                 <CardContent className="px-4">
@@ -328,7 +333,7 @@ export function HomeTab(props: HomeProps) {
             <div className="grid grid-cols-2 gap-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-sm">Sync state</CardTitle>
+                  <CardTitle>Sync state</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Row k="Night selection mode" v={overview?.selectionMode ?? "—"} dense />
@@ -346,7 +351,7 @@ export function HomeTab(props: HomeProps) {
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-sm">App views</CardTitle>
+                  <CardTitle>App views</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Row k="Home headline" v={homeView?.todayOverview.headline ?? "—"} dense />

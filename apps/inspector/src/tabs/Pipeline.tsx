@@ -52,7 +52,7 @@ export function PipelineTab({
   const hero = computeHeroStatus(state, () => onRunPipeline({ day: date }))
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <div>
         <StatusBadge
           tone={hero.tone}

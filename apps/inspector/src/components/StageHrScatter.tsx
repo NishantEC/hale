@@ -12,7 +12,6 @@ import {
 
 import type { RawRecords, SleepNight } from "../api"
 import { HYPNOGRAM_STAGES } from "./Hypnogram"
-import { SectionHead } from "./primitives"
 
 // Stage × HR scatter. Joins epoch stage labels with raw HR samples on
 // nearest-timestamp within an epoch window (default 30s). Lets you spot
@@ -86,25 +85,15 @@ export function StageHrScatter({
 
   if (points.length === 0) {
     return (
-      <div>
-        <SectionHead>Stage × HR</SectionHead>
-        <p className="mt-3 text-muted-foreground text-sm">
-          Need both an epoch timeline and raw HR samples to plot. Run the pipeline or sync the strap.
-        </p>
-      </div>
+      <p className="text-muted-foreground text-sm">
+        Need both an epoch timeline and raw HR samples to plot. Run the pipeline or sync the strap.
+      </p>
     )
   }
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-3">
-        <SectionHead>Stage × HR</SectionHead>
-        <span className="text-muted-foreground text-xs font-mono tabular-nums">
-          {points.length} pairs
-        </span>
-      </div>
-      <div>
-        <ResponsiveContainer width="100%" height={260}>
+      <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ top: 10, right: 16, left: 16, bottom: 8 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" />
             <XAxis
@@ -159,9 +148,8 @@ export function StageHrScatter({
                 isAnimationActive={false}
               />
             ))}
-          </ScatterChart>
-        </ResponsiveContainer>
-      </div>
+        </ScatterChart>
+      </ResponsiveContainer>
     </div>
   )
 }
