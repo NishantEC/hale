@@ -26,16 +26,20 @@ export function MetricChip({
       <p className="eyebrow text-muted-foreground">{label}</p>
       <div className="flex items-baseline gap-1.5">
         {value == null ? (
-          <p className="font-display-tight text-[2.5rem] leading-none tabular-nums">—</p>
+          <p className="font-mono text-[1.75rem] leading-none text-muted-foreground/60 tabular-nums">
+            —
+          </p>
         ) : (
-          <p className="font-display-tight text-[2.5rem] leading-none tabular-nums">
-            <NumberTicker value={value} decimalPlaces={decimalPlaces} />
-          </p>
-        )}
-        {unit && (
-          <p className="font-mono text-xs text-muted-foreground tabular-nums">
-            {unit}
-          </p>
+          <>
+            <p className="font-display-tight text-[2.5rem] leading-none tabular-nums">
+              <NumberTicker value={value} decimalPlaces={decimalPlaces} />
+            </p>
+            {unit && (
+              <p className="font-mono text-xs text-muted-foreground tabular-nums">
+                {unit}
+              </p>
+            )}
+          </>
         )}
       </div>
       <div className="mt-1 space-y-1">
