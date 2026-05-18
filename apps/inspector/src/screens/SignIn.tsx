@@ -1,5 +1,12 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
+import { AlertCircle } from "lucide-react"
+
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 
 import { API_BASE_URL, emailStorage, signIn, signUp, tokenStorage } from "../api"
 
@@ -28,59 +35,70 @@ export function SignIn({ onAuthed }: { onAuthed: (token: string) => void }) {
   }
 
   return (
-    <div className="h-screen flex items-center justify-center">
-      <div className="w-full max-w-sm px-6">
-        <h1 className="text-2xl font-semibold mb-1">Noop Inspector</h1>
-        <p className="text-text-1 mb-2">
-          {mode === "signin" ? "Sign in to your backend account" : "Create a new account"}
-        </p>
-        <p className="text-text-2 text-xs mb-8">
-          {API_BASE_URL.replace(/^https?:\/\//, "")}
-        </p>
-        <form className="space-y-4" onSubmit={submit}>
-          <input
-            className="w-full bg-surface-1 border border-border rounded-lg px-4 py-3 outline-none focus:border-border-strong placeholder:text-text-2 text-[15px]"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            placeholder="Email"
-            autoComplete="email"
-          />
-          <input
-            className="w-full bg-surface-1 border border-border rounded-lg px-4 py-3 outline-none focus:border-border-strong placeholder:text-text-2 text-[15px]"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            placeholder="Password"
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
-          />
-          <button
-            type="submit"
-            className="w-full bg-text-0 text-surface font-semibold rounded-lg py-3 cursor-pointer disabled:opacity-40"
-            disabled={busy}
-            aria-busy={busy}
-          >
-            {busy ? "Working..." : mode === "signin" ? "Sign in" : "Create account"}
-          </button>
-        </form>
-        <button
-          type="button"
-          className="mt-4 text-text-2 text-sm hover:text-text-1 transition-colors cursor-pointer"
-          onClick={() => {
-            setMode(mode === "signin" ? "signup" : "signin")
-            setError(null)
-          }}
-        >
-          {mode === "signin"
-            ? "No account yet? Create one."
-            : "Already have an account? Sign in."}
-        </button>
-        {error && (
-          <p className="mt-4 text-red text-sm" role="alert" aria-live="assertive">
-            {error}
+    <div className="h-screen flex items-center justify-center p-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <CardTitle className="text-2xl">Noop Inspector</CardTitle>
+          <CardDescription>
+            {mode === "signin"
+              ? "Sign in to your backend account"
+              : "Create a new account"}
+          </CardDescription>
+          <p className="text-muted-foreground text-xs mt-1 tabular-nums">
+            {API_BASE_URL.replace(/^https?:\/\//, "")}
           </p>
-        )}
-      </div>
+        </CardHeader>
+        <CardContent>
+          <form className="space-y-4" onSubmit={submit}>
+            <div className="space-y-1.5">
+              <Label htmlFor="signin-email">Email</Label>
+              <Input
+                id="signin-email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                placeholder="you@example.com"
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="signin-password">Password</Label>
+              <Input
+                id="signin-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={busy} aria-busy={busy}>
+              {busy ? "Working..." : mode === "signin" ? "Sign in" : "Create account"}
+            </Button>
+          </form>
+
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="mt-3 px-0 text-muted-foreground"
+            onClick={() => {
+              setMode(mode === "signin" ? "signup" : "signin")
+              setError(null)
+            }}
+          >
+            {mode === "signin"
+              ? "No account yet? Create one."
+              : "Already have an account? Sign in."}
+          </Button>
+
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="size-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
