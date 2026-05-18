@@ -127,9 +127,9 @@ export function Masthead({
   const volRoman = ROMAN_VOL[yearMonth] ?? yearMonth
 
   return (
-    <header className="bg-paper sticky top-0 z-30 shrink-0 rule-hair-b">
+    <header className="bg-paper sticky top-0 z-30 shrink-0 rule-hair-b max-w-[1200px] mx-auto w-full">
       {/* Row 1 — Masthead */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-6 h-16">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-12 h-16">
         {/* Left — identity */}
         <div className="flex items-baseline gap-3 min-w-0">
           <Logo
@@ -351,7 +351,7 @@ function TabStrip({
   return (
     <nav
       aria-label="Inspector sections"
-      className="rule-hair flex items-center justify-center h-11 px-6 gap-0"
+      className="rule-hair flex items-center justify-center h-11 px-12 gap-0"
     >
       {tabs.map((t, i) => {
         const isActive = active === t.id
