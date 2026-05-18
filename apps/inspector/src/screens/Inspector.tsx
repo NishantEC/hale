@@ -24,6 +24,11 @@ import { HelpModal } from "../shell/HelpModal"
 import { IconRail, type RailTab } from "../shell/IconRail"
 import { TopBar } from "../shell/TopBar"
 import { NetworkError, ServerError, isAuthError } from "../utils/errors"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Toaster } from "@/components/ui/sonner"
+import { AlertCircle } from "lucide-react"
+import { toast } from "sonner"
 
 function shiftDateIso(iso: string, deltaDays: number): string {
   const d = new Date(`${iso}T00:00:00`)
@@ -163,13 +168,30 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
 
   const onRunPipeline = useCallback(
     (opts: PipelineRunOptions) => {
-      runMutation.mutate(opts)
+      const promise = runMutation.mutateAsync(opts)
+      toast.promise(promise, {
+        loading: "Running pipeline...",
+        success: () => {
+          const scope = opts.day
+            ? `for ${opts.day}`
+            : opts.from && opts.to
+              ? "for selected range"
+              : "(full window)"
+          return `Pipeline ran ${scope}`
+        },
+        error: (e) => `Pipeline failed: ${e instanceof Error ? e.message : String(e)}`,
+      })
     },
     [runMutation],
   )
 
   const onSeed = useCallback(() => {
-    seedMutation.mutate()
+    const promise = seedMutation.mutateAsync()
+    toast.promise(promise, {
+      loading: "Seeding demo data...",
+      success: "Demo data seeded (7 nights)",
+      error: (e) => `Seed failed: ${e instanceof Error ? e.message : String(e)}`,
+    })
   }, [seedMutation])
 
   const onRefresh = useCallback(() => {
@@ -382,7 +404,7 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
           )}
 
           <div className="px-8 py-6">
-            <Suspense fallback={<div className="text-text-2 text-sm">Loading…</div>}>
+            <Suspense fallback={<div className="text-muted-foreground text-sm">Loading…</div>}>
               {(tab === "home" || tab === "overview") && (
                 <HomeTab
                   overview={overview.data ?? null}
@@ -453,6 +475,7 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
         commands={commands}
       />
       <HelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
+      <Toaster richColors closeButton position="bottom-right" />
     </div>
   )
 }
@@ -475,22 +498,21 @@ function ErrorBanner({
     title = "Backend returned an error"
   }
   return (
-    <div
-      role="alert"
-      className="flex items-start gap-3 text-sm bg-red-soft border border-red/40 rounded-lg px-4 py-3"
-    >
-      <span className="w-2 h-2 rounded-full bg-red mt-1.5 shrink-0" />
+    <Alert variant="destructive" className="flex items-start gap-3">
+      <AlertCircle className="size-4 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-red">{title}</p>
-        <p className="text-text-1 mt-0.5">{detail}</p>
+        <AlertTitle>{title}</AlertTitle>
+        <AlertDescription>{detail}</AlertDescription>
       </div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="sm"
         onClick={onRetry}
-        className="text-red font-semibold text-sm hover:underline cursor-pointer shrink-0"
+        className="text-destructive hover:bg-destructive/10 shrink-0 -my-1"
       >
         Retry
-      </button>
-    </div>
+      </Button>
+    </Alert>
   )
 }
