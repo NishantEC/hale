@@ -16,15 +16,14 @@ import { cn } from "@/lib/utils"
 import type { PipelineRunOptions, PipelineState } from "../api"
 import { Logo } from "../components/Logo"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
-import { ThemeToggle } from "../components/ThemeToggle"
 import { relativeTime } from "../format"
 
 type Tone = "ok" | "warn" | "error" | "neutral"
 
 const DOT: Record<Tone, string> = {
-  ok: "bg-[var(--sage)]",
-  warn: "bg-[var(--warning)]",
-  error: "bg-[var(--vermillion)]",
+  ok: "bg-[var(--accent-lime)]",
+  warn: "bg-[var(--accent-amber)]",
+  error: "bg-[var(--accent-magenta)]",
   neutral: "bg-foreground/30",
 }
 
@@ -41,29 +40,11 @@ function shiftDate(iso: string, deltaDays: number): string {
   d.setDate(d.getDate() + deltaDays)
   return d.toISOString().slice(0, 10)
 }
+
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-const ROMAN_VOL: Record<string, string> = {
-  "1": "I",
-  "2": "II",
-  "3": "III",
-  "4": "IV",
-  "5": "V",
-}
-
-/**
- * Masthead — top of the workspace.
- *
- * Row 1 (masthead, 64px):
- *   left  — logo + serif wordmark + eyebrow with vol + host
- *   center — date scrubber (chevron / serif date / chevron / today)
- *   right — marginalia: pipeline status, live, theme, refresh, run
- *
- * Row 2 (tab strip, 44px):
- *   centered tab names separated by middle dots, vermillion underline on active
- */
 export function Masthead({
   apiHost,
   date,
@@ -116,34 +97,26 @@ export function Masthead({
   const formattedDate = useMemo(
     () =>
       dateAsDate.toLocaleDateString(undefined, {
-        weekday: "long",
-        month: "long",
+        weekday: "short",
+        month: "short",
         day: "numeric",
       }),
     [dateAsDate],
   )
 
-  const yearMonth = new Date().getFullYear().toString().slice(-1)
-  const volRoman = ROMAN_VOL[yearMonth] ?? yearMonth
-
   return (
-    <header className="bg-paper sticky top-0 z-30 shrink-0 rule-hair-b max-w-[1200px] mx-auto w-full">
-      {/* Row 1 — Masthead */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-12 h-16">
+    <header className="bg-background/80 backdrop-blur-lg sticky top-0 z-30 shrink-0 rule-hair-b max-w-[1200px] mx-auto w-full">
+      {/* Row 1 — identity / date / actions */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-12 h-14">
         {/* Left — identity */}
-        <div className="flex items-baseline gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           <Logo
             variant="glyph"
-            className="size-5 self-center text-foreground -mb-0.5 shrink-0"
+            className="size-4 text-foreground shrink-0"
           />
-          <h1 className="font-display text-[26px] leading-none tracking-tight font-medium">
-            Inspector
-          </h1>
-          <span className="eyebrow text-muted-foreground truncate hidden md:inline">
-            vol. {volRoman} <span className="opacity-50 px-1">/</span>{" "}
-            <span className="font-mono normal-case tracking-normal text-foreground/70">
-              {apiHost}
-            </span>
+          <h1 className="text-sm font-semibold tracking-tight">Inspector</h1>
+          <span className="font-mono text-[11px] text-muted-foreground truncate tabular-nums hidden md:inline">
+            {apiHost}
           </span>
         </div>
 
@@ -155,7 +128,7 @@ export function Masthead({
                 type="button"
                 onClick={() => onDateChange(shiftDate(date, -1))}
                 aria-label="Previous day"
-                className="h-8 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+                className="h-8 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground rounded-md hover:bg-white/[0.04]"
               >
                 <ChevronLeft className="size-4" />
               </button>
@@ -167,7 +140,7 @@ export function Masthead({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className="font-display text-h2 leading-none tracking-tight text-foreground hover:text-[var(--vermillion)] inline-flex items-baseline gap-2 px-1 transition-colors"
+                className="text-sm font-medium leading-none text-foreground hover:text-[var(--accent-cyan)] inline-flex items-baseline gap-2 px-2 py-1.5 rounded-md hover:bg-white/[0.04] transition-colors"
               >
                 <CalendarIcon className="size-3.5 text-muted-foreground self-center" />
                 <span className="tabular-nums">{formattedDate}</span>
@@ -196,7 +169,7 @@ export function Masthead({
                 type="button"
                 onClick={() => onDateChange(shiftDate(date, 1))}
                 aria-label="Next day"
-                className="h-8 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+                className="h-8 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground rounded-md hover:bg-white/[0.04]"
               >
                 <ChevronRight className="size-4" />
               </button>
@@ -213,9 +186,8 @@ export function Masthead({
           </button>
         </div>
 
-        {/* Right — marginalia actions */}
-        <div className="flex items-center justify-end gap-3 text-[12px] min-w-0">
-          {/* pipeline pill */}
+        {/* Right — actions */}
+        <div className="flex items-center justify-end gap-2 text-[12px] min-w-0">
           <button
             type="button"
             onClick={() => onSelectTab("pipeline")}
@@ -223,19 +195,18 @@ export function Masthead({
             title={`Pipeline: ${pipelineLabel}`}
           >
             <span className={cn("size-1.5 rounded-full", DOT[pipelineTone])} />
-            <span className="hidden md:inline">{pipelineLabel}</span>
+            <span className="hidden lg:inline">{pipelineLabel}</span>
           </button>
 
           <Separator />
 
-          {/* live toggle */}
           <button
             type="button"
             onClick={onToggleLive}
             className={cn(
               "eyebrow inline-flex items-center gap-1.5",
               live
-                ? "text-[var(--vermillion)]"
+                ? "text-[var(--accent-cyan)]"
                 : "text-muted-foreground hover:text-foreground",
             )}
             title="Toggle live tail (L)"
@@ -243,22 +214,22 @@ export function Masthead({
             <span
               className={cn(
                 "size-1.5 rounded-full",
-                live ? "bg-[var(--vermillion)] animate-pulse" : "bg-foreground/30",
+                live ? "bg-[var(--accent-cyan)] animate-pulse" : "bg-foreground/30",
               )}
             />
             {live ? "live" : "off"}
           </button>
 
-          <Separator />
-
           {lastRefreshedAt && (
             <>
-              <span className="font-mono text-[11px] text-muted-foreground tabular-nums hidden lg:inline">
+              <Separator />
+              <span className="font-mono text-[11px] text-muted-foreground tabular-nums hidden xl:inline">
                 {relativeTime(lastRefreshedAt)}
               </span>
-              <Separator className="hidden lg:inline-block" />
             </>
           )}
+
+          <Separator />
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -268,7 +239,7 @@ export function Masthead({
                 disabled={busy}
                 aria-busy={busy}
                 aria-label="Refresh"
-                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-40"
+                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-md disabled:opacity-40"
               >
                 <RefreshCw className={cn("size-3.5", busy && "animate-spin")} />
               </button>
@@ -276,13 +247,11 @@ export function Masthead({
             <TooltipContent>Refresh (R)</TooltipContent>
           </Tooltip>
 
-          <ThemeToggle />
-
           <RunPipelineMenu
             busy={busy}
-            variant="ghost"
+            variant="secondary"
             size="sm"
-            label="run"
+            label="Run"
             onRun={onRunPipeline}
             presets={[
               { kind: "day", day: date, label: `Run ${date} only` },
@@ -300,7 +269,7 @@ export function Masthead({
                 type="button"
                 onClick={onSeed}
                 aria-label="Seed demo data"
-                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-md"
               >
                 <Database className="size-3.5" />
               </button>
@@ -314,7 +283,7 @@ export function Masthead({
                 type="button"
                 onClick={onLogout}
                 aria-label="Sign out"
-                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground"
+                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-md"
               >
                 <LogOut className="size-3.5" />
               </button>
@@ -334,7 +303,7 @@ function Separator({ className }: { className?: string }) {
   return (
     <span
       aria-hidden
-      className={cn("inline-block w-px h-3 bg-foreground/20", className)}
+      className={cn("inline-block w-px h-3 bg-white/10", className)}
     />
   )
 }
@@ -351,7 +320,7 @@ function TabStrip({
   return (
     <nav
       aria-label="Inspector sections"
-      className="rule-hair flex items-center justify-center h-11 px-12 gap-0"
+      className="rule-hair flex items-center justify-center h-10 px-12 gap-0"
     >
       {tabs.map((t, i) => {
         const isActive = active === t.id
@@ -372,7 +341,7 @@ function TabStrip({
               className={cn(
                 "relative eyebrow inline-flex items-center gap-1.5 py-1 transition-colors cursor-pointer",
                 isActive
-                  ? "text-[var(--vermillion)]"
+                  ? "text-[var(--accent-cyan)]"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -380,9 +349,9 @@ function TabStrip({
                 <span
                   className={cn(
                     "size-1.5 rounded-full",
-                    t.dot === "warn" && "bg-[var(--warning)]",
-                    t.dot === "ok" && "bg-[var(--sage)]",
-                    t.dot === "error" && "bg-[var(--vermillion)]",
+                    t.dot === "warn" && "bg-[var(--accent-amber)]",
+                    t.dot === "ok" && "bg-[var(--accent-lime)]",
+                    t.dot === "error" && "bg-[var(--accent-magenta)]",
                   )}
                 />
               )}
@@ -395,7 +364,7 @@ function TabStrip({
               {isActive && (
                 <span
                   aria-hidden
-                  className="absolute left-0 right-0 -bottom-px h-[1.5px] bg-[var(--vermillion)]"
+                  className="absolute left-0 right-0 -bottom-px h-[1.5px] bg-[var(--accent-cyan)]"
                 />
               )}
             </button>
@@ -405,4 +374,3 @@ function TabStrip({
     </nav>
   )
 }
-
