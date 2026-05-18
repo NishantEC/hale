@@ -1,1 +1,4 @@
 .fixtures/
+# But DO commit compute-engine golden fixtures (anonymized; gated by check-fixtures.ts).
+!.fixtures/compute-engine-golden/
+!.fixtures/compute-engine-golden/**
