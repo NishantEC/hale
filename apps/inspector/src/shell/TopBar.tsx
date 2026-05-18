@@ -86,7 +86,7 @@ export function TopBar({
 
   return (
     <header
-      className="flex items-center gap-4 px-4 border-b bg-background shrink-0"
+      className="flex items-center gap-4 px-4 bg-background shrink-0"
       style={{ height: TOP_BAR_HEIGHT }}
     >
       <div className="flex items-center gap-2.5 shrink-0">

@@ -221,7 +221,7 @@ export function PipelineRunsChart({
               row.pipelineVersion ? (
                 <span
                   key={row.idx}
-                  className="inline-block text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-accent text-muted-foreground border border-border"
+                  className="inline-block text-[10px] font-mono px-1.5 py-0.5 rounded text-muted-foreground"
                   title={`Run ${row.label}`}
                 >
                   {row.pipelineVersion as string}

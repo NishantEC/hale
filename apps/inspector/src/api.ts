@@ -148,6 +148,11 @@ export type Overview = {
   };
   earliestRawTimestamp: string | null;
   latestRawTimestamp: string | null;
+  // When the newest raw_sensor_record row was upserted on the backend.
+  // Distinct from latestRawTimestamp — fresh uploads with stale timestamps
+  // indicate the drainer is filling earlier-strap-time gaps (catching up
+  // backlog) rather than the strap being silent.
+  latestRawUpdatedAt: string | null;
   latestSyncMetadata: {
     lastRawRecordAt: string | null;
     lastSleepPlanUpdateAt: string | null;

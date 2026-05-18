@@ -5,12 +5,6 @@ import { cn } from "@/lib/utils"
 
 export type StatusTone = "ok" | "warn" | "error" | "neutral"
 
-const TONE_BG: Record<StatusTone, string> = {
-  ok: "bg-success/15",
-  warn: "bg-warning/15",
-  error: "bg-destructive/10",
-  neutral: "bg-muted border",
-}
 const TONE_DOT: Record<StatusTone, string> = {
   ok: "bg-success",
   warn: "bg-warning",
@@ -24,6 +18,8 @@ const TONE_TEXT: Record<StatusTone, string> = {
   neutral: "text-foreground",
 }
 
+// Hero status tile. Bg-card surface (no border), label + state + detail
+// stacked, optional inline action button. Used 3-across on Home.
 export function StatusBadge({
   tone,
   label,
@@ -37,17 +33,18 @@ export function StatusBadge({
   action?: { label: string; onClick: () => void }
   size?: "sm" | "md" | "lg"
 }) {
-  const pad = size === "lg" ? "px-4 py-3" : size === "sm" ? "px-2.5 py-1" : "px-3 py-2"
-  const labelSize = size === "lg" ? "text-sm" : size === "sm" ? "text-[11px]" : "text-[13px]"
+  const pad =
+    size === "lg" ? "px-5 py-4" : size === "sm" ? "px-3 py-2" : "px-4 py-3"
   return (
-    <div
-      className={cn("flex items-center gap-3 rounded-full", pad, TONE_BG[tone])}
-      role="status"
-    >
-      <span className={cn("w-2 h-2 rounded-full shrink-0", TONE_DOT[tone])} />
+    <div className={cn("flex items-start gap-3 rounded-lg bg-card", pad)} role="status">
+      <span className={cn("w-2 h-2 rounded-full shrink-0 mt-1.5", TONE_DOT[tone])} />
       <div className="flex-1 min-w-0">
-        <p className={cn("font-semibold", labelSize, TONE_TEXT[tone])}>{label}</p>
-        {detail && <p className="text-muted-foreground text-xs mt-0.5 truncate">{detail}</p>}
+        <p className={cn("text-[14px] font-semibold leading-tight", TONE_TEXT[tone])}>
+          {label}
+        </p>
+        {detail && (
+          <p className="text-[12px] text-muted-foreground mt-1 truncate">{detail}</p>
+        )}
       </div>
       {action && (
         <Button
@@ -55,7 +52,10 @@ export function StatusBadge({
           variant="ghost"
           size="sm"
           onClick={action.onClick}
-          className={cn("shrink-0 font-semibold hover:bg-transparent hover:underline", TONE_TEXT[tone])}
+          className={cn(
+            "shrink-0 -my-1 h-7 px-2 text-[12px] font-semibold hover:bg-transparent hover:underline",
+            TONE_TEXT[tone],
+          )}
         >
           {action.label}
         </Button>

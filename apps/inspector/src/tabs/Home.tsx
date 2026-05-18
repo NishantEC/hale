@@ -432,6 +432,19 @@ function computeStrapStatus(overview: Overview | null): {
   if (age < TIME_HOUR) {
     return { tone: "ok", label: "Strap: active", detail: `latest ${relativeTime(overview!.latestRawTimestamp!)}` }
   }
+  // Fresh uploads + stale record timestamps = drainer is grinding through a
+  // strap-flash backlog FIFO, filling earlier-strap-time gaps. The strap is
+  // not silent; the dashboard would just say so before this branch existed.
+  const uploadAge = ageMs(overview?.latestRawUpdatedAt)
+  if (uploadAge != null && uploadAge < 10 * 60 * 1000) {
+    return {
+      tone: "warn",
+      label: "Strap: catching up",
+      detail: `upload ${relativeTime(overview!.latestRawUpdatedAt!)} · records ${Math.round(
+        age / TIME_HOUR,
+      )}h behind`,
+    }
+  }
   if (age < 6 * TIME_HOUR) {
     return {
       tone: "warn",

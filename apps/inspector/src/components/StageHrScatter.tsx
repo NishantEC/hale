@@ -87,11 +87,10 @@ export function StageHrScatter({
   if (points.length === 0) {
     return (
       <div>
-        <SectionHead>Stage × HR scatter</SectionHead>
-        <div className="mt-3 bg-card border border-border rounded-2xl p-6 text-muted-foreground text-sm">
-          Need both an epoch timeline and raw HR samples to plot. Try running the pipeline for
-          this date and/or sync the strap.
-        </div>
+        <SectionHead>Stage × HR</SectionHead>
+        <p className="mt-3 text-muted-foreground text-sm">
+          Need both an epoch timeline and raw HR samples to plot. Run the pipeline or sync the strap.
+        </p>
       </div>
     )
   }
@@ -99,12 +98,12 @@ export function StageHrScatter({
   return (
     <div>
       <div className="flex items-baseline justify-between mb-3">
-        <SectionHead>Stage × HR scatter</SectionHead>
-        <span className="text-muted-foreground text-xs">
-          {points.length} epoch×HR pairs · expect HR to drop from Awake to Deep
+        <SectionHead>Stage × HR</SectionHead>
+        <span className="text-muted-foreground text-xs font-mono tabular-nums">
+          {points.length} pairs
         </span>
       </div>
-      <div className="bg-card border border-border rounded-2xl p-4">
+      <div>
         <ResponsiveContainer width="100%" height={260}>
           <ScatterChart margin={{ top: 10, right: 16, left: 16, bottom: 8 }}>
             <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="2 4" />
