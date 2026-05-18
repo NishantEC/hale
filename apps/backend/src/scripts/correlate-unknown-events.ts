@@ -25,15 +25,19 @@ const NAMED = new Map<number, string>([
   [36, 'AfeReset'],
   [46, 'RawDataCollectionOn'],
   [47, 'RawDataCollectionOff'],
-  [51, 'StrapDrivenAlarmSet'],
+  [56, 'StrapDrivenAlarmSet'],
   [57, 'StrapDrivenAlarmExecuted'],
   [59, 'StrapDrivenAlarmDisabled'],
   [60, 'HapticsFired'],
   [63, 'ExtendedBatteryInformation'],
+  [68, 'HighFreqSyncChunkStart'],
+  [69, 'HighFreqSyncChunkEnd'],
   [96, 'HighFreqSyncPrompt'],
   [97, 'HighFreqSyncEnabled'],
   [98, 'HighFreqSyncDisabled'],
   [100, 'HapticsTerminated'],
+  [102, 'OpticalSampleChannelA'],
+  [103, 'OpticalSampleChannelB'],
 ]);
 
 async function main() {
