@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react"
 
 import type { PipelineRunOptions, TrendsView } from "../api"
-import { SectionHead } from "../components/primitives"
+import { SectionHead, type AccentKey } from "../components/primitives"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { TrendChart } from "../components/TrendChart"
+import { Card } from "../components/ui/card"
 import { Label } from "../components/ui/label"
 import { Sortable, SortableContent, SortableItem } from "../components/ui/sortable"
 import { Switch } from "../components/ui/switch"
@@ -19,16 +20,16 @@ const RANGE_OPTIONS = [
 ] as const
 
 const CHART_COLORS = {
-  hrv: "#3A4F6B",
-  rhr: "#C0392B",
-  sleep: "#1B2D4A",
-  recovery: "#5F6B4E",
-  consistency: "#4A5D7A",
-  strain: "#B57F2A",
-  spo2: "#7B5E3F",
-  resp: "#A0577A",
-  stress: "#A23B2D",
-  training: "#6B5F52",
+  hrv: "#FF2D6E",
+  rhr: "#BBFF38",
+  sleep: "#00DCFF",
+  recovery: "#BBFF38",
+  consistency: "#5C8AC7",
+  strain: "#FFA42B",
+  spo2: "#FFA42B",
+  resp: "#FFA42B",
+  stress: "#FF2D6E",
+  training: "#6B6CC5",
 } as const
 
 type ChartDef = {
@@ -88,24 +89,24 @@ function loadChartOrder(): ChartDef[] {
 function trendBadge(trend: "improving" | "declining" | "stable" | null) {
   if (trend === "improving")
     return (
-      <span className="eyebrow text-[var(--sage)] border border-[var(--sage)] px-1.5 py-0.5">
+      <span className="eyebrow text-[var(--accent-lime)] bg-[rgba(187,255,56,0.12)] px-1.5 py-0.5 rounded-full">
         improving
       </span>
     )
   if (trend === "declining")
     return (
-      <span className="eyebrow text-[var(--vermillion)] border border-[var(--vermillion)] px-1.5 py-0.5">
+      <span className="eyebrow text-[var(--accent-magenta)] bg-[rgba(255,45,110,0.12)] px-1.5 py-0.5 rounded-full">
         declining
       </span>
     )
   if (trend === "stable")
     return (
-      <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+      <span className="eyebrow text-muted-foreground bg-white/[0.04] px-1.5 py-0.5 rounded-full">
         stable
       </span>
     )
   return (
-    <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+    <span className="eyebrow text-muted-foreground bg-white/[0.04] px-1.5 py-0.5 rounded-full">
       —
     </span>
   )
@@ -219,6 +220,7 @@ export function TrendsTab({
           <SummaryStat
             label="HRV (RMSSD)"
             value={formatNumber(summaries?.hrv.current, 1)}
+            accent="magenta"
             sub={
               hrvDelta != null
                 ? `${hrvDelta > 0 ? "+" : ""}${hrvDelta.toFixed(1)} vs week ago`
@@ -229,6 +231,7 @@ export function TrendsTab({
           <SummaryStat
             label="Resting HR"
             value={formatNumber(summaries?.restingHr.current, 0)}
+            accent="lime"
             sub={
               rhrDelta != null
                 ? `${rhrDelta > 0 ? "+" : ""}${rhrDelta.toFixed(0)} bpm vs week ago`
@@ -243,6 +246,7 @@ export function TrendsTab({
                 ? `${formatNumber(summaries.sleepDuration.avgHours, 1)}h`
                 : "—"
             }
+            accent="cyan"
             sub={`${summaries?.sleepDuration.nights ?? 0} nights`}
           />
         </div>
@@ -296,22 +300,33 @@ function SummaryStat({
   value,
   sub,
   trend,
+  accent,
 }: {
   label: string
   value: string | number
   sub?: string
   trend?: "improving" | "declining" | "stable" | null
+  accent?: AccentKey
 }) {
+  const accentText: Record<AccentKey, string> = {
+    cyan: "text-[var(--accent-cyan)]",
+    magenta: "text-[var(--accent-magenta)]",
+    lime: "text-[var(--accent-lime)]",
+    amber: "text-[var(--accent-amber)]",
+  }
+  const valueColor = accent ? accentText[accent] : "text-foreground"
   return (
-    <div className="rule-strong pt-3 flex flex-col gap-2">
-      <p className="eyebrow text-muted-foreground">{label}</p>
-      <span className="font-display-tight text-[2.5rem] leading-none tabular-nums tracking-tight">
+    <Card accent={accent}>
+      <p className="eyebrow">{label}</p>
+      <span
+        className={`text-[1.875rem] leading-none tabular-nums tracking-tight font-bold ${valueColor}`}
+      >
         {value}
       </span>
       {sub && (
         <p className="text-xs text-muted-foreground tabular-nums font-mono">{sub}</p>
       )}
       <div className="mt-1">{trendBadge(trend ?? null)}</div>
-    </div>
+    </Card>
   )
 }

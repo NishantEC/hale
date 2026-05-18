@@ -141,13 +141,13 @@ export function TelemetryTab({
           <span
             className={cn(
               "eyebrow inline-flex items-center gap-1.5",
-              live ? "text-[var(--vermillion)]" : "text-muted-foreground",
+              live ? "text-[var(--accent-cyan)]" : "text-muted-foreground",
             )}
           >
             <span
               className={cn(
                 "size-1.5 rounded-full",
-                live ? "bg-[var(--vermillion)] animate-pulse" : "bg-foreground/30",
+                live ? "bg-[var(--accent-cyan)] animate-pulse" : "bg-foreground/30",
               )}
             />
             {live ? "live · 5s poll" : "live off"}
@@ -170,7 +170,7 @@ export function TelemetryTab({
       {!tabHidden && pausedMs !== null && (
         <BlurFade key={pausedMs} duration={0.3}>
           <Alert>
-            <span className="w-2 h-2 rounded-full bg-[var(--sage)] shrink-0 inline-block mt-1" />
+            <span className="w-2 h-2 rounded-full bg-[var(--accent-lime)] shrink-0 inline-block mt-1" />
             <AlertTitle>Resumed</AlertTitle>
             <AlertDescription>
               Refreshing after {Math.round(pausedMs / 1000)}s pause.
@@ -179,25 +179,25 @@ export function TelemetryTab({
         </BlurFade>
       )}
 
-      <section className="grid grid-cols-2 gap-x-8">
-        <div className="rule-strong pt-3 flex flex-col gap-2">
-          <p className="eyebrow text-muted-foreground">Device events</p>
-          <p className="font-display-tight text-[3rem] leading-none tabular-nums tracking-tight">
+      <section className="grid grid-cols-2 gap-4">
+        <Card accent="cyan">
+          <p className="eyebrow">Device events</p>
+          <p className="text-[2.25rem] leading-none tabular-nums tracking-tight font-bold text-[var(--accent-cyan)]">
             <NumberTicker value={telemetry?.events.totalCount ?? 0} />
           </p>
           <p className="text-xs text-muted-foreground">
             {Object.keys(telemetry?.events.summary ?? {}).length} distinct event types received from strap
           </p>
-        </div>
-        <div className="rule-strong pt-3 flex flex-col gap-2">
-          <p className="eyebrow text-muted-foreground">BLE realtime samples</p>
-          <p className="font-display-tight text-[3rem] leading-none tabular-nums tracking-tight">
+        </Card>
+        <Card accent="magenta">
+          <p className="eyebrow">BLE realtime samples</p>
+          <p className="text-[2.25rem] leading-none tabular-nums tracking-tight font-bold text-[var(--accent-magenta)]">
             <NumberTicker value={telemetry?.realtime.totalCount ?? 0} />
           </p>
           <p className="text-xs text-muted-foreground">
             {Object.keys(telemetry?.realtime.sessions ?? {}).length} streaming sessions — heart rate, accel, etc.
           </p>
-        </div>
+        </Card>
       </section>
 
       <BatterySection

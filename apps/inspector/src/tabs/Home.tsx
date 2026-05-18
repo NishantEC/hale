@@ -17,6 +17,7 @@ import { Num, Pill, Row, SectionHead } from "../components/primitives"
 import { StatusBadge, type StatusTone } from "../components/StatusBadge"
 import { SyncTrail, type TrailNode } from "../components/SyncTrail"
 import { AnimatedShinyText } from "@/components/magicui/animated-shiny-text"
+import { Card } from "@/components/ui/card"
 import {
   HoverCard,
   HoverCardContent,
@@ -118,6 +119,7 @@ export function HomeTab(props: HomeProps) {
     unit: string
     avg14d: number | null
     baseline: number | null
+    accent: "cyan" | "magenta" | "lime" | "amber"
     info: MetricInfoProps
   }> = [
     {
@@ -126,6 +128,7 @@ export function HomeTab(props: HomeProps) {
       unit: "h",
       avg14d: avgOfLastN(durationSeries, 14),
       baseline: null,
+      accent: "cyan",
       info: {
         title: "Duration",
         description: "Total sleep time for the selected night, in hours.",
@@ -139,6 +142,7 @@ export function HomeTab(props: HomeProps) {
       unit: "ms",
       avg14d: avgOfLastN(hrvSeries, 14),
       baseline: baseline?.rmssd ?? null,
+      accent: "magenta",
       info: {
         title: "HRV (RMSSD)",
         description:
@@ -153,6 +157,7 @@ export function HomeTab(props: HomeProps) {
       unit: "bpm",
       avg14d: avgOfLastN(rhrSeries, 14),
       baseline: baseline?.restingHeartRate ?? null,
+      accent: "lime",
       info: {
         title: "Resting HR",
         description: "Heart rate measured during the longest period of low motion + sleep.",
@@ -166,6 +171,7 @@ export function HomeTab(props: HomeProps) {
       unit: "rpm",
       avg14d: avgOfLastN(respSeries, 14),
       baseline: null,
+      accent: "amber",
       info: {
         title: "Respiratory",
         description: "Breaths per minute during sleep.",
@@ -229,7 +235,7 @@ export function HomeTab(props: HomeProps) {
           }
         >
           The night of{" "}
-          <span className="font-display italic">
+          <span className="font-medium">
             {formatDate(sleep?.selectedNightDate ?? date)}
           </span>
         </SectionHead>
@@ -245,16 +251,15 @@ export function HomeTab(props: HomeProps) {
         </div>
       </section>
 
-      {/* Editorial pull-quote — journal correlation. */}
       {topCorrelation && (
-        <section className="rule-strong pt-4">
-          <p className="eyebrow text-[var(--vermillion)] mb-3">a note from the data</p>
-          <blockquote className="font-display text-[1.5rem] leading-snug max-w-[640px] text-foreground">
+        <Card accent="cyan">
+          <p className="eyebrow text-[var(--accent-cyan)] mb-2">a note from the data</p>
+          <p className="text-base leading-snug text-foreground max-w-[640px]">
             <AnimatedShinyText className="text-inherit leading-inherit max-w-none">
               {topCorrelation}
             </AnimatedShinyText>
-          </blockquote>
-        </section>
+          </p>
+        </Card>
       )}
 
       {/* Chapter 02 — Night metrics */}
@@ -265,7 +270,7 @@ export function HomeTab(props: HomeProps) {
         <div className="mt-6 grid grid-cols-4 gap-x-8 gap-y-6">
           {chips.map((c) => (
             <div key={c.label} className="relative">
-              <MetricChip label={c.label} value={c.value} unit={c.unit} avg14d={c.avg14d} baseline={c.baseline} />
+              <MetricChip label={c.label} value={c.value} unit={c.unit} avg14d={c.avg14d} baseline={c.baseline} accent={c.accent} />
               <div className="absolute top-0 right-0">
                 <MetricInfo {...c.info} />
               </div>
@@ -328,7 +333,7 @@ export function HomeTab(props: HomeProps) {
 
             <div className="grid grid-cols-2 gap-x-12">
               <div>
-                <p className="eyebrow text-muted-foreground mb-3 rule-strong pt-3">Sync state</p>
+                <p className="eyebrow text-muted-foreground mb-3 rule-hair pt-3">Sync state</p>
                 <Row k="Selection mode" v={overview?.selectionMode ?? "—"} dense />
                 <Row k="Selected night" v={overview?.selectedNightDate ?? "—"} dense />
                 <Row k="Earliest raw" v={formatTimestamp(overview?.earliestRawTimestamp)} dense />
@@ -337,7 +342,7 @@ export function HomeTab(props: HomeProps) {
                 <Row k="Reason" v={overview?.selectionReason ?? "—"} dense />
               </div>
               <div>
-                <p className="eyebrow text-muted-foreground mb-3 rule-strong pt-3">App views</p>
+                <p className="eyebrow text-muted-foreground mb-3 rule-hair pt-3">App views</p>
                 <Row k="Home headline" v={homeView?.todayOverview.headline ?? "—"} dense />
                 <Row k="Recommendation" v={homeView?.cards.recommendation.title ?? "—"} dense />
                 <Row k="Sleep view" v={sleepView?.emptyState.isEmpty ? "empty" : "populated"} dense />

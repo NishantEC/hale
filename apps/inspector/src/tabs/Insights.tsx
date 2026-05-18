@@ -7,6 +7,7 @@ import type {
 import { SectionHead } from "../components/primitives"
 import { AnimatedShinyText } from "../components/magicui/animated-shiny-text"
 import { Alert, AlertTitle, AlertDescription } from "../components/ui/alert"
+import { Card } from "../components/ui/card"
 import {
   Accordion,
   AccordionContent,
@@ -250,16 +251,16 @@ export function InsightsTab({
   return (
     <div className="space-y-10">
       {correlationHeadline && (
-        <section className="rule-strong pt-4">
-          <p className="eyebrow text-[var(--vermillion)] mb-3">
+        <Card accent="cyan">
+          <p className="eyebrow text-[var(--accent-cyan)] mb-2">
             strongest journal correlation
           </p>
-          <blockquote className="font-display text-[1.5rem] leading-snug max-w-[640px] text-foreground">
+          <p className="text-base leading-snug text-foreground max-w-[640px]">
             <AnimatedShinyText className="text-inherit leading-inherit max-w-none">
               {correlationHeadline}
             </AnimatedShinyText>
-          </blockquote>
-        </section>
+          </p>
+        </Card>
       )}
 
       {/* Chapter 01 — Why is today different? */}
@@ -361,8 +362,8 @@ export function InsightsTab({
                 const top = topDelta(c)
                 const topTone =
                   top.value > 0
-                    ? "border-[var(--sage)] text-[var(--sage)]"
-                    : "border-[var(--vermillion)] text-[var(--vermillion)]"
+                    ? "text-[var(--accent-lime)] bg-[rgba(187,255,56,0.12)]"
+                    : "text-[var(--accent-magenta)] bg-[rgba(255,45,110,0.12)]"
                 return (
                   <AccordionItem
                     key={c.factorTag}
@@ -371,7 +372,7 @@ export function InsightsTab({
                   >
                     <AccordionTrigger className="hover:no-underline py-3">
                       <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <span className="font-display text-lg leading-none tracking-tight truncate">
+                        <span className="text-base font-semibold leading-none tracking-tight truncate">
                           {c.factorTag}
                         </span>
                         <span className="eyebrow text-muted-foreground shrink-0 tabular-nums">
@@ -379,7 +380,7 @@ export function InsightsTab({
                         </span>
                         <span
                           className={cn(
-                            "ml-auto shrink-0 eyebrow border px-2 py-0.5 tabular-nums",
+                            "ml-auto shrink-0 eyebrow px-2 py-0.5 rounded-full tabular-nums",
                             topTone,
                           )}
                         >
@@ -422,36 +423,56 @@ export function InsightsTab({
 
 // ── Delta tile ────────────────────────────────────────────────────────────────
 
+const TILE_ACCENT: Record<string, "cyan" | "magenta" | "lime" | "amber"> = {
+  "HRV (RMSSD)": "magenta",
+  "Resting HR": "lime",
+  SDNN: "magenta",
+  "Sleep duration": "cyan",
+}
+
 function DeltaTile({ card, compact }: { card: DeltaCard; compact?: boolean }) {
   const deltaTextClass =
     card.tone === "good"
-      ? "text-[var(--sage)]"
+      ? "text-[var(--accent-lime)]"
       : card.tone === "bad"
-      ? "text-[var(--vermillion)]"
+      ? "text-[var(--accent-magenta)]"
       : "text-muted-foreground"
 
   const def = METRIC_DEFS[card.label]
+  const accent = TILE_ACCENT[card.label]
+  const accentText: Record<"cyan" | "magenta" | "lime" | "amber", string> = {
+    cyan: "text-[var(--accent-cyan)]",
+    magenta: "text-[var(--accent-magenta)]",
+    lime: "text-[var(--accent-lime)]",
+    amber: "text-[var(--accent-amber)]",
+  }
+  const valueColor = accent ? accentText[accent] : "text-foreground"
 
   return (
-    <div className="rule-strong pt-3 flex flex-col gap-2">
+    <Card accent={accent}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
-          <p className="eyebrow text-muted-foreground truncate">{card.label}</p>
+          <p className="eyebrow truncate">{card.label}</p>
           {def && <InfoButton def={def} />}
         </div>
         {card.tone === "good" && (
-          <span className="eyebrow text-[var(--sage)] border border-[var(--sage)] px-1.5 py-0.5 shrink-0">
+          <span className="eyebrow text-[var(--accent-lime)] bg-[rgba(187,255,56,0.12)] px-1.5 py-0.5 rounded-full shrink-0">
             good
           </span>
         )}
         {card.tone === "bad" && (
-          <span className="eyebrow text-[var(--vermillion)] border border-[var(--vermillion)] px-1.5 py-0.5 shrink-0">
+          <span className="eyebrow text-[var(--accent-magenta)] bg-[rgba(255,45,110,0.12)] px-1.5 py-0.5 rounded-full shrink-0">
             below
           </span>
         )}
       </div>
       <div className="flex items-baseline gap-1.5">
-        <span className="font-display-tight text-[2.25rem] leading-none tabular-nums tracking-tight">
+        <span
+          className={cn(
+            "text-[1.75rem] leading-none tabular-nums tracking-tight font-bold",
+            valueColor,
+          )}
+        >
           {formatNumber(card.current, 1)}
         </span>
         <span className="font-mono text-xs text-muted-foreground">{card.unit}</span>
@@ -476,11 +497,9 @@ function DeltaTile({ card, compact }: { card: DeltaCard; compact?: boolean }) {
         )}
       </p>
       {!compact && (
-        <p className="text-xs text-muted-foreground leading-snug italic mt-1">
-          {card.hint}
-        </p>
+        <p className="text-xs text-muted-foreground leading-snug mt-1">{card.hint}</p>
       )}
-    </div>
+    </Card>
   )
 }
 
@@ -509,39 +528,58 @@ function DirectionCard({
   const trendPill = () => {
     if (trend === "improving")
       return (
-        <span className="eyebrow text-[var(--sage)] border border-[var(--sage)] px-1.5 py-0.5">
+        <span className="eyebrow text-[var(--accent-lime)] bg-[rgba(187,255,56,0.12)] px-1.5 py-0.5 rounded-full">
           improving
         </span>
       )
     if (trend === "declining")
       return (
-        <span className="eyebrow text-[var(--vermillion)] border border-[var(--vermillion)] px-1.5 py-0.5">
+        <span className="eyebrow text-[var(--accent-magenta)] bg-[rgba(255,45,110,0.12)] px-1.5 py-0.5 rounded-full">
           declining
         </span>
       )
     if (trend === "stable")
       return (
-        <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+        <span className="eyebrow text-muted-foreground bg-white/[0.04] px-1.5 py-0.5 rounded-full">
           stable
         </span>
       )
     if (trend == null && direction !== "neutral")
       return (
-        <span className="eyebrow text-muted-foreground border border-foreground/20 px-1.5 py-0.5">
+        <span className="eyebrow text-muted-foreground bg-white/[0.04] px-1.5 py-0.5 rounded-full">
           insufficient
         </span>
       )
     return null
   }
 
+  const DIR_ACCENT: Record<string, "cyan" | "magenta" | "lime" | "amber"> = {
+    HRV: "magenta",
+    "Resting HR": "lime",
+    "Avg sleep duration": "cyan",
+  }
+  const accent = DIR_ACCENT[label]
+  const accentText: Record<"cyan" | "magenta" | "lime" | "amber", string> = {
+    cyan: "text-[var(--accent-cyan)]",
+    magenta: "text-[var(--accent-magenta)]",
+    lime: "text-[var(--accent-lime)]",
+    amber: "text-[var(--accent-amber)]",
+  }
+  const valueColor = accent ? accentText[accent] : "text-foreground"
+
   return (
-    <div className="rule-strong pt-3 flex flex-col gap-2">
+    <Card accent={accent}>
       <div className="flex items-center gap-1.5">
-        <p className="eyebrow text-muted-foreground">{label}</p>
+        <p className="eyebrow">{label}</p>
         {def && <InfoButton def={def} />}
       </div>
       <div className="flex items-baseline gap-1.5">
-        <span className="font-display-tight text-[2.25rem] leading-none tabular-nums tracking-tight">
+        <span
+          className={cn(
+            "text-[1.75rem] leading-none tabular-nums tracking-tight font-bold",
+            valueColor,
+          )}
+        >
           {formatNumber(current, decimals)}
         </span>
         <span className="font-mono text-xs text-muted-foreground">{unit}</span>
@@ -552,7 +590,7 @@ function DirectionCard({
           : "—"}
       </p>
       <div className="mt-1">{trendPill()}</div>
-    </div>
+    </Card>
   )
 }
 
@@ -580,7 +618,7 @@ function CorrelationDeltaRow({
     )
   }
   const scaled = value * scale
-  const tone = scaled > 0 ? "text-[var(--sage)]" : "text-[var(--vermillion)]"
+  const tone = scaled > 0 ? "text-[var(--accent-lime)]" : "text-[var(--accent-magenta)]"
   return (
     <div className="flex flex-col gap-0.5">
       <span className="eyebrow text-muted-foreground">{label}</span>

@@ -249,7 +249,7 @@ export function RawTab({
           onChange={(e) => setFilterInput(e.target.value)}
           placeholder="Filter by time — e.g. 02:00-03:00 or 14:30"
           aria-invalid={inputInvalid || undefined}
-          className={cn("w-72", inputInvalid && "border-[var(--vermillion)]")}
+          className={cn("w-72", inputInvalid && "border-[var(--accent-magenta)]")}
         />
         {filterActive && (
           <Button variant="ghost" size="sm" onClick={() => setFilterInput("")}>
@@ -257,7 +257,7 @@ export function RawTab({
           </Button>
         )}
         {inputInvalid && (
-          <p className="text-xs text-[var(--vermillion)]">
+          <p className="text-xs text-[var(--accent-magenta)]">
             Use HH:MM or HH:MM-HH:MM (24-hour). Example: 02:00-03:30
           </p>
         )}

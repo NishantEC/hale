@@ -7,6 +7,7 @@ import { Num, Row, SectionHead } from "../components/primitives"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { StageHrScatter } from "../components/StageHrScatter"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Card } from "@/components/ui/card"
 import {
   HoverCard,
   HoverCardContent,
@@ -105,7 +106,7 @@ export function SleepTab({
         }
       >
         Night of{" "}
-        <span className="font-display italic">
+        <span className="font-medium">
           {formatDate(sleep?.selectedNightDate ?? selectedDate)}
         </span>
       </SectionHead>
@@ -122,35 +123,47 @@ export function SleepTab({
       )}
 
       {/* Vitals masthead */}
-      <section className="grid grid-cols-4 gap-x-8 gap-y-6">
-        <Num
-          label="Duration"
-          value={`${formatNumber(sleep?.selectedDetection?.durationHours, 1)}h`}
-          sub="total sleep"
-          size="md"
-          status={empty ? "stale" : undefined}
-        />
-        <Num
-          label="Resting HR"
-          value={formatNumber(sleep?.selectedNightFeature?.restingHeartRate)}
-          sub="bpm"
-          size="md"
-          status={empty ? "stale" : undefined}
-        />
-        <Num
-          label="HRV (RMSSD)"
-          value={formatNumber(sleep?.selectedNightFeature?.rmssd, 1)}
-          sub="ms"
-          size="md"
-          status={empty ? "stale" : undefined}
-        />
-        <Num
-          label="Respiratory"
-          value={formatNumber(sleep?.selectedNightFeature?.respiratoryRate, 1)}
-          sub="breaths / min"
-          size="md"
-          status={empty ? "stale" : undefined}
-        />
+      <section className="grid grid-cols-4 gap-x-4 gap-y-4">
+        <Card accent="cyan">
+          <Num
+            label="Duration"
+            value={`${formatNumber(sleep?.selectedDetection?.durationHours, 1)}h`}
+            sub="total sleep"
+            accent="cyan"
+            size="md"
+            status={empty ? "stale" : undefined}
+          />
+        </Card>
+        <Card accent="lime">
+          <Num
+            label="Resting HR"
+            value={formatNumber(sleep?.selectedNightFeature?.restingHeartRate)}
+            sub="bpm"
+            accent="lime"
+            size="md"
+            status={empty ? "stale" : undefined}
+          />
+        </Card>
+        <Card accent="magenta">
+          <Num
+            label="HRV (RMSSD)"
+            value={formatNumber(sleep?.selectedNightFeature?.rmssd, 1)}
+            sub="ms"
+            accent="magenta"
+            size="md"
+            status={empty ? "stale" : undefined}
+          />
+        </Card>
+        <Card accent="amber">
+          <Num
+            label="Respiratory"
+            value={formatNumber(sleep?.selectedNightFeature?.respiratoryRate, 1)}
+            sub="breaths / min"
+            accent="amber"
+            size="md"
+            status={empty ? "stale" : undefined}
+          />
+        </Card>
       </section>
 
       {/* Chapter 01 — Day timeline */}
