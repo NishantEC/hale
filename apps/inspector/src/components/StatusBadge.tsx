@@ -1,29 +1,29 @@
 import type { ReactNode } from "react"
 
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+
 export type StatusTone = "ok" | "warn" | "error" | "neutral"
 
 const TONE_BG: Record<StatusTone, string> = {
-  ok: "bg-green-soft",
-  warn: "bg-yellow-soft",
-  error: "bg-red-soft",
-  neutral: "bg-surface-2 border border-border",
+  ok: "bg-success/15",
+  warn: "bg-warning/15",
+  error: "bg-destructive/10",
+  neutral: "bg-muted border",
 }
 const TONE_DOT: Record<StatusTone, string> = {
-  ok: "bg-green",
-  warn: "bg-yellow",
-  error: "bg-red",
-  neutral: "bg-text-2",
+  ok: "bg-success",
+  warn: "bg-warning",
+  error: "bg-destructive",
+  neutral: "bg-muted-foreground",
 }
 const TONE_TEXT: Record<StatusTone, string> = {
-  ok: "text-green",
-  warn: "text-yellow",
-  error: "text-red",
-  neutral: "text-text-1",
+  ok: "text-success",
+  warn: "text-warning",
+  error: "text-destructive",
+  neutral: "text-foreground",
 }
 
-// Hero status pill used on Home (3 across) and at the top of tabs that
-// repeat actionable state. `detail` is a small line of context; `action`
-// is an inline button rendered on the right when something needs doing.
 export function StatusBadge({
   tone,
   label,
@@ -41,22 +41,24 @@ export function StatusBadge({
   const labelSize = size === "lg" ? "text-sm" : size === "sm" ? "text-[11px]" : "text-[13px]"
   return (
     <div
-      className={`flex items-center gap-3 rounded-full ${pad} ${TONE_BG[tone]}`}
+      className={cn("flex items-center gap-3 rounded-full", pad, TONE_BG[tone])}
       role="status"
     >
-      <span className={`w-2 h-2 rounded-full shrink-0 ${TONE_DOT[tone]}`} />
+      <span className={cn("w-2 h-2 rounded-full shrink-0", TONE_DOT[tone])} />
       <div className="flex-1 min-w-0">
-        <p className={`font-semibold ${labelSize} ${TONE_TEXT[tone]}`}>{label}</p>
-        {detail && <p className="text-text-2 text-xs mt-0.5 truncate">{detail}</p>}
+        <p className={cn("font-semibold", labelSize, TONE_TEXT[tone])}>{label}</p>
+        {detail && <p className="text-muted-foreground text-xs mt-0.5 truncate">{detail}</p>}
       </div>
       {action && (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={action.onClick}
-          className={`shrink-0 ${labelSize} font-semibold ${TONE_TEXT[tone]} hover:underline cursor-pointer`}
+          className={cn("shrink-0 font-semibold hover:bg-transparent hover:underline", TONE_TEXT[tone])}
         >
           {action.label}
-        </button>
+        </Button>
       )}
     </div>
   )
