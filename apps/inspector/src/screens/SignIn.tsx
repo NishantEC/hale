@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
 import { API_BASE_URL, emailStorage, signIn, signUp, tokenStorage } from "../api"
+import { Logo } from "../components/Logo"
 
 export function SignIn({ onAuthed }: { onAuthed: (token: string) => void }) {
   const [mode, setMode] = useState<"signin" | "signup">("signin")
@@ -38,15 +39,20 @@ export function SignIn({ onAuthed }: { onAuthed: (token: string) => void }) {
     <div className="h-screen flex items-center justify-center p-6">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-2xl">Noop Inspector</CardTitle>
+          <div className="flex items-center gap-3 mb-2">
+            <Logo variant="badge" className="size-10" />
+            <div>
+              <CardTitle className="text-xl leading-tight">Noop Inspector</CardTitle>
+              <p className="text-muted-foreground text-xs mt-0.5 tabular-nums">
+                {API_BASE_URL.replace(/^https?:\/\//, "")}
+              </p>
+            </div>
+          </div>
           <CardDescription>
             {mode === "signin"
               ? "Sign in to your backend account"
               : "Create a new account"}
           </CardDescription>
-          <p className="text-muted-foreground text-xs mt-1 tabular-nums">
-            {API_BASE_URL.replace(/^https?:\/\//, "")}
-          </p>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={submit}>

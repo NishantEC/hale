@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 
 import type { PipelineRunOptions, PipelineState } from "../api"
+import { Logo } from "../components/Logo"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { ThemeToggle } from "../components/ThemeToggle"
 import { relativeTime } from "../format"
@@ -74,11 +75,17 @@ export function TopBar({
       className="flex items-center gap-4 px-4 border-b bg-background shrink-0"
       style={{ height: TOP_BAR_HEIGHT }}
     >
-      <div className="flex items-baseline gap-2 shrink-0">
-        <h1 className="text-sm font-semibold tracking-tight">Noop Inspector</h1>
-        <span className="text-muted-foreground text-xs truncate max-w-[180px]" title={apiHost}>
-          {apiHost}
-        </span>
+      <div className="flex items-center gap-2.5 shrink-0">
+        <Logo variant="badge" className="size-6" />
+        <div className="flex items-baseline gap-2">
+          <h1 className="text-sm font-semibold tracking-tight">Inspector</h1>
+          <span
+            className="text-muted-foreground text-xs truncate max-w-[180px] tabular-nums"
+            title={apiHost}
+          >
+            {apiHost}
+          </span>
+        </div>
       </div>
 
       <div className="flex items-center gap-1 mx-auto">
