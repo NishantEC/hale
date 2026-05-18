@@ -1,9 +1,10 @@
-import { ChevronLeft, ChevronRight } from "lucide-react"
-import { useMemo } from "react"
+import { CalendarIcon, ChevronLeft, ChevronRight } from "lucide-react"
+import { useMemo, useState } from "react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { Calendar } from "@/components/ui/calendar"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
@@ -70,6 +71,19 @@ export function TopBar({
     return `Pipeline: clean · ${relativeTime(pipelineState.state.lastRunAt ?? null)}`
   }, [pipelineState])
 
+  const [calOpen, setCalOpen] = useState(false)
+  const dateAsDate = useMemo(() => new Date(`${date}T00:00:00`), [date])
+  const formattedDate = useMemo(
+    () =>
+      dateAsDate.toLocaleDateString(undefined, {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }),
+    [dateAsDate],
+  )
+
   return (
     <header
       className="flex items-center gap-4 px-4 border-b bg-background shrink-0"
@@ -105,12 +119,34 @@ export function TopBar({
           <TooltipContent>Previous day ([)</TooltipContent>
         </Tooltip>
 
-        <Input
-          type="date"
-          value={date}
-          onChange={(e) => onDateChange(e.target.value)}
-          className="h-8 w-auto px-2 text-sm tabular-nums"
-        />
+        <Popover open={calOpen} onOpenChange={setCalOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-3 text-sm font-medium gap-2 tabular-nums"
+            >
+              <CalendarIcon className="size-3.5 text-muted-foreground" />
+              {formattedDate}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="center" className="w-auto p-0">
+            <Calendar
+              mode="single"
+              selected={dateAsDate}
+              onSelect={(d) => {
+                if (!d) return
+                const year = d.getFullYear()
+                const month = String(d.getMonth() + 1).padStart(2, "0")
+                const day = String(d.getDate()).padStart(2, "0")
+                onDateChange(`${year}-${month}-${day}`)
+                setCalOpen(false)
+              }}
+              autoFocus
+            />
+          </PopoverContent>
+        </Popover>
 
         <Tooltip>
           <TooltipTrigger asChild>
