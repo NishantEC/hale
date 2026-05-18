@@ -336,7 +336,7 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
   useKeyboardShortcuts(shortcuts, !paletteOpen)
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col items-center">
       <Masthead
         apiHost={API_BASE_URL.replace(/^https?:\/\//, "").slice(0, 40)}
         date={date}
