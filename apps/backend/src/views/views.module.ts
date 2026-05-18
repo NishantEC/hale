@@ -13,6 +13,7 @@ import { BaselineProfile } from '../plans/baseline-profile.entity.js';
 import { JournalEntry } from '../journal/journal-entry.entity.js';
 import { SleepPlan } from '../plans/sleep-plan.entity.js';
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
+import { RawSensorRecord } from '../pipeline/entities/raw-sensor-record.entity.js';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ActivityDetection } from '../activity/entities/activity-detection.entit
       JournalEntry,
       SleepPlan,
       ActivityDetection,
+      RawSensorRecord,
     ]),
   ],
   controllers: [ViewsController],

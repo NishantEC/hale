@@ -26,13 +26,16 @@ import { DailyScore } from '../wellness/entities/daily-score.entity.js';
 import { SignalSample } from '../wellness/entities/signal-sample.entity.js';
 import { UpdateSleepPlanDto } from './dto/update-sleep-plan.dto.js';
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
+import { RawSensorRecord } from '../pipeline/entities/raw-sensor-record.entity.js';
 import { deltaVsWeek } from './delta.js';
 import {
   calendarDayBounds,
   calendarDayKey,
   resolveCalendarDate,
+  resolveTimeZone,
   selectCalendarDayItem,
 } from '../common/calendar.js';
+import { coverageFromMinutes, Coverage } from './coverage.js';
 
 type DashboardData = {
   selectedDate: Date;
@@ -71,7 +74,51 @@ export class ViewsService {
     private readonly signalSampleRepo: Repository<SignalSample>,
     @InjectRepository(ActivityDetection)
     private readonly activityDetectionRepo: Repository<ActivityDetection>,
+    @InjectRepository(RawSensorRecord)
+    private readonly rawSensorRepo: Repository<RawSensorRecord>,
   ) {}
+
+  // Day-coverage for the home-screen calendar picker. Groups raw_sensor_records
+  // by IST-local day in the caller's tz, returns days with > 9 min of distinct
+  // minutes marked full or partial.
+  async getCoverage(
+    userId: string,
+    fromMonth: string,
+    toMonth: string,
+    timeZoneInput?: string,
+  ): Promise<{ days: Array<{ date: string; coverage: Coverage }> }> {
+    const timeZone = resolveTimeZone(timeZoneInput);
+    const fromBounds = calendarDayBounds(`${fromMonth}-01`, timeZone);
+    const [toY, toM] = toMonth.split('-').map(Number);
+    const lastDay = new Date(Date.UTC(toY, toM, 0)).getUTCDate();
+    const toBounds = calendarDayBounds(
+      `${toMonth}-${String(lastDay).padStart(2, '0')}`,
+      timeZone,
+    );
+
+    const rows: Array<{ day: string; minutes: string }> = await this.rawSensorRepo
+      .createQueryBuilder('r')
+      .select(`to_char((r."timestamp" AT TIME ZONE :tz)::date, 'YYYY-MM-DD')`, 'day')
+      .addSelect(`count(distinct date_trunc('minute', r."timestamp"))`, 'minutes')
+      .where(`r."userId" = :userId`)
+      .andWhere(`r."timestamp" >= :start AND r."timestamp" < :end`)
+      .groupBy('day')
+      .setParameters({
+        userId,
+        start: fromBounds.start,
+        end: toBounds.end,
+        tz: timeZone,
+      })
+      .getRawMany();
+
+    const days = rows
+      .map((row) => ({
+        date: row.day,
+        coverage: coverageFromMinutes(Number(row.minutes)),
+      }))
+      .filter((d) => d.coverage !== 'none');
+    return { days };
+  }
 
   async getHomeView(userId: string, selectedDateInput?: string, timeZoneInput?: string) {
     const data = await this.loadDashboardData(userId, selectedDateInput, timeZoneInput);

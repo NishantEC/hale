@@ -46,6 +46,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([]),
+      repo([]),
     );
 
     const view = await service.getSleepView(
@@ -70,6 +71,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([], null),
+      repo([]),
       repo([]),
       repo([]),
     );
@@ -112,6 +114,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([]),
+      repo([]),
     );
 
     const view = await service.getTrendsView('user-1', 30);
@@ -152,6 +155,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([]),
+      repo([]),
     );
 
     const view = await service.getTrendsView('user-1', 30);
@@ -170,6 +174,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([], null),
+      repo([]),
       repo([]),
       repo([]),
     );
@@ -198,6 +203,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([], null),
+      repo([]),
       repo([]),
       repo([]),
     );
@@ -229,6 +235,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([], null),
+      repo([]),
       repo([]),
       repo([]),
     );
@@ -265,6 +272,7 @@ describe('ViewsService sleep view date selection', () => {
       repo([], null),
       repo([]),
       repo([]),
+      repo([]),
     );
 
     const view = await service.getSleepView(
@@ -275,5 +283,61 @@ describe('ViewsService sleep view date selection', () => {
 
     expect(view.header.bedtime).toBe('4:40 AM');
     expect(view.header.wakeTime).toBe('7:11 AM');
+  });
+});
+
+describe('ViewsService.getCoverage', () => {
+  function rawSensorRepoMock(rows: Array<{ day: string; minutes: number }>) {
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
+      setParameters: jest.fn().mockReturnThis(),
+      getRawMany: jest
+        .fn()
+        .mockResolvedValue(rows.map((r) => ({ day: r.day, minutes: String(r.minutes) }))),
+    };
+    return {
+      createQueryBuilder: jest.fn(() => chain),
+    } as any;
+  }
+
+  function makeService(rawSensorRepo: any) {
+    return new ViewsService(
+      repo([]),
+      repo([]),
+      repo([]),
+      repo([]),
+      repo([]),
+      repo([], null),
+      repo([]),
+      repo([], null),
+      repo([]),
+      repo([]),
+      rawSensorRepo,
+    );
+  }
+
+  test('returns days[] with coverage label for each non-empty day', async () => {
+    const svc = makeService(
+      rawSensorRepoMock([
+        { day: '2026-05-17', minutes: 1200 },
+        { day: '2026-05-13', minutes: 400 },
+        { day: '2026-05-15', minutes: 5 },
+      ]),
+    );
+    const out = await svc.getCoverage('u', '2026-05', '2026-05', 'Asia/Kolkata');
+    expect(out.days).toContainEqual({ date: '2026-05-17', coverage: 'full' });
+    expect(out.days).toContainEqual({ date: '2026-05-13', coverage: 'partial' });
+    // 5 minutes < MIN_MINUTES_FOR_DATA → dropped
+    expect(out.days.find((d) => d.date === '2026-05-15')).toBeUndefined();
+  });
+
+  test('omits days with no records', async () => {
+    const svc = makeService(rawSensorRepoMock([]));
+    const out = await svc.getCoverage('u', '2026-05', '2026-05', 'Asia/Kolkata');
+    expect(out.days).toEqual([]);
   });
 });
