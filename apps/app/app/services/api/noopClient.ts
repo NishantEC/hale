@@ -1,4 +1,5 @@
 import { HistoricalRecord } from '../ble/packet-types';
+import { recordApiFailure, type ApiFailureKind } from '../sync/syncTelemetry';
 
 const DEFAULT_BASE_URL = 'https://api.noop.enform.co';
 const BASE_URL =
@@ -6,6 +7,15 @@ const BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   DEFAULT_BASE_URL;
 const REQUEST_TIMEOUT_MS = 20000;
+// Aggregate reads (home/sleep/trends/health views, debug overview) join across
+// raw + derived tables; under cold-backend / mobile-network conditions a single
+// request can easily push past 20s. Bumped per-endpoint so fast CRUD paths
+// still surface stalls quickly.
+const VIEW_TIMEOUT_MS = 45000;
+// Bulk uploads (HealthKit batches, raw record ingest) ship up to a few MB of
+// JSON and gate on a server-side insert. 60s leaves room for backpressure
+// without hiding genuinely broken endpoints.
+const BULK_UPLOAD_TIMEOUT_MS = 60000;
 const PIPELINE_TIMEOUT_MS = 300000;
 export const INSPECTOR_WEB_URL = process.env.EXPO_PUBLIC_INSPECTOR_URL || 'https://noop.enform.co';
 
@@ -298,6 +308,11 @@ export interface DebugOverview {
   };
   earliestRawTimestamp: string | null;
   latestRawTimestamp: string | null;
+  // When the newest raw_sensor_record row was upserted on the backend. This
+  // can be fresh (~minutes ago) while latestRawTimestamp is stale (days ago)
+  // when the drainer is filling earlier-strap-time gaps. LiveMonitor uses the
+  // skew between the two to tell "actually silent" from "catching up backlog."
+  latestRawUpdatedAt: string | null;
   latestSyncMetadata: {
     lastRawRecordAt: string | null;
     lastSleepPlanUpdateAt: string | null;
@@ -440,32 +455,44 @@ export function setSessionToken(token?: string | null) {
 
 async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeoutMessage = `Request timed out after ${Math.round(timeoutMs / 1000)}s`;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutReject = new Promise<never>((_, reject) => {
+  // Include path so the user (and we) know which endpoint stalled — the
+  // CFNetwork `<private>` URL redaction in iOS logs makes this impossible to
+  // recover after the fact otherwise.
+  const timeoutMessage = `Request timed out after ${Math.round(timeoutMs / 1000)}s: ${init.method ?? 'GET'} ${path}`;
+  // Race BOTH the headers phase (fetch) AND the body-read phase
+  // (res.text()) against this promise. A slowloris server that
+  // returns headers fast and then dribbles the body would otherwise
+  // hang us past `timeoutMs` even though the timer aborts the
+  // underlying fetch — and a fetch implementation that ignores the
+  // AbortSignal (RN has shipped buggy ones) still gets cut off here.
+  let didTimeout = false;
+  let timeout: ReturnType<typeof setTimeout>;
+  const timeoutPromise = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => {
+      didTimeout = true;
       controller.abort();
       reject(new Error(timeoutMessage));
     }, timeoutMs);
   });
+  // If the request finishes before timeoutMs, this promise's rejection
+  // would surface as an unhandledRejection. Pre-attach a no-op handler.
+  timeoutPromise.catch(() => {});
 
   try {
-    const request = fetch(`${BASE_URL}${path}`, {
-      ...init,
-      headers: withBaseHeaders(init.headers),
-      signal: controller.signal,
-    });
-    // If timeoutReject wins the race, the still-pending fetch eventually
-    // rejects with AbortError. Mark that rejection as handled so it doesn't
-    // surface as an unhandledRejection.
-    request.catch(() => {});
-    const res = await Promise.race([request, timeoutReject]);
+    const res = await Promise.race([
+      fetch(`${BASE_URL}${path}`, {
+        ...init,
+        headers: withBaseHeaders(init.headers),
+        signal: controller.signal,
+      }),
+      timeoutPromise,
+    ]);
 
     if (res.status === 401) {
       clearSession()
     }
 
-    const text = await res.text();
+    const text = await Promise.race([res.text(), timeoutPromise]);
     const contentType = res.headers.get('content-type') ?? '';
     const looksJson =
       contentType.includes('application/json') ||
@@ -499,17 +526,67 @@ async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQ
         data?.message ||
         data?.error ||
         `Request failed: ${res.status} ${res.statusText}`;
+      // Only record 5xx; 4xx (auth, validation) is user-facing and not
+      // the kind of stall we want filling the Inspector's failure list.
+      if (res.status >= 500) {
+        recordFailureSafe({
+          method: init.method ?? 'GET',
+          path,
+          kind: 'server',
+          message,
+          status: res.status,
+        });
+      }
       throw new ApiError(res.status, message);
     }
 
     return data;
   } catch (error: any) {
-    if (error?.name === 'AbortError') {
+    if (didTimeout || error?.name === 'AbortError') {
+      recordFailureSafe({
+        method: init.method ?? 'GET',
+        path,
+        kind: 'timeout',
+        message: timeoutMessage,
+      });
       throw new ApiError(0, timeoutMessage);
     }
+    // Re-thrown ApiError from the !res.ok branch above — already recorded.
+    if (error instanceof ApiError) throw error;
+    // Network / DNS / TLS failure: TypeError from fetch in RN, or anything
+    // else that didn't make it to a response.
+    recordFailureSafe({
+      method: init.method ?? 'GET',
+      path,
+      kind: 'network',
+      message: error?.message ?? String(error),
+    });
     throw error;
   } finally {
-    if (timeout) clearTimeout(timeout);
+    clearTimeout(timeout!);
+  }
+}
+
+// Wraps recordApiFailure so an unexpected throw from telemetry can't
+// mask the original API error. Belt-and-suspenders.
+function recordFailureSafe(input: {
+  method: string;
+  path: string;
+  kind: ApiFailureKind;
+  message: string;
+  status?: number;
+}): void {
+  try {
+    recordApiFailure({
+      at: Date.now(),
+      method: input.method,
+      path: input.path,
+      kind: input.kind,
+      message: input.message,
+      status: input.status ?? null,
+    });
+  } catch (err) {
+    console.warn('[noopClient] recordApiFailure threw', err);
   }
 }
 
@@ -602,10 +679,10 @@ export async function login(email: string, password: string): Promise<string> {
   return data.token
 }
 
-export async function apiGet(path: string) {
+export async function apiGet(path: string, timeoutMs = REQUEST_TIMEOUT_MS) {
   return requestJson(path, {
     headers: withBaseHeaders({ Authorization: `Bearer ${sessionToken}` }),
-  });
+  }, timeoutMs);
 }
 
 export async function apiPost(path: string, body: any, timeoutMs = REQUEST_TIMEOUT_MS) {
@@ -619,7 +696,7 @@ export async function apiPost(path: string, body: any, timeoutMs = REQUEST_TIMEO
   }, timeoutMs);
 }
 
-export async function apiPut(path: string, body: any) {
+export async function apiPut(path: string, body: any, timeoutMs = REQUEST_TIMEOUT_MS) {
   return requestJson(path, {
     method: 'PUT',
     headers: withBaseHeaders({
@@ -627,7 +704,7 @@ export async function apiPut(path: string, body: any) {
       Authorization: `Bearer ${sessionToken}`,
     }),
     body: JSON.stringify(body),
-  });
+  }, timeoutMs);
 }
 
 // Pipeline interfaces and functions
@@ -690,7 +767,7 @@ export async function ingestHistoricalRecords(records: HistoricalRecord[]): Prom
         };
       }),
     };
-    const result = await apiPost('/pipeline/ingest', payload);
+    const result = await apiPost('/pipeline/ingest', payload, BULK_UPLOAD_TIMEOUT_MS);
     totalSignal += result?.signalSamples ?? 0;
     totalSensor += result?.sensorRecords ?? 0;
   }
@@ -703,11 +780,14 @@ export async function runPipeline(): Promise<{ ok: boolean; computed: any }> {
 }
 
 export async function fetchResults(): Promise<PipelineResults> {
-  return apiGet('/pipeline/results');
+  return apiGet('/pipeline/results', VIEW_TIMEOUT_MS);
 }
 
 export async function fetchHomeView(date: string): Promise<HomeViewModel> {
-  return apiGet(withDeviceTimeZone(`/views/home?date=${encodeURIComponent(date)}`));
+  return apiGet(
+    withDeviceTimeZone(`/views/home?date=${encodeURIComponent(date)}`),
+    VIEW_TIMEOUT_MS,
+  );
 }
 
 export async function confirmActivity(
@@ -724,7 +804,10 @@ export async function dismissActivity(id: string): Promise<{ ok: boolean }> {
 }
 
 export async function fetchSleepView(date: string): Promise<SleepViewModel> {
-  return apiGet(withDeviceTimeZone(`/views/sleep?date=${encodeURIComponent(date)}`));
+  return apiGet(
+    withDeviceTimeZone(`/views/sleep?date=${encodeURIComponent(date)}`),
+    VIEW_TIMEOUT_MS,
+  );
 }
 
 export interface TrendsViewModel {
@@ -748,7 +831,25 @@ export interface TrendsViewModel {
 }
 
 export async function fetchTrendsView(days: number = 30): Promise<TrendsViewModel> {
-  return apiGet(`/views/trends?days=${days}`);
+  return apiGet(`/views/trends?days=${days}`, VIEW_TIMEOUT_MS);
+}
+
+export type CoverageKind = 'full' | 'partial' | 'none';
+
+export interface CoverageResponse {
+  days: Array<{ date: string; coverage: CoverageKind }>;
+}
+
+export async function fetchCoverage(
+  fromMonth: string,
+  toMonth: string,
+): Promise<CoverageResponse> {
+  return apiGet(
+    withDeviceTimeZone(
+      `/views/coverage?from=${encodeURIComponent(fromMonth)}&to=${encodeURIComponent(toMonth)}`,
+    ),
+    VIEW_TIMEOUT_MS,
+  );
 }
 
 export interface HealthContributor {
@@ -792,7 +893,7 @@ export interface HealthViewModel {
 
 export async function fetchHealthView(week?: string): Promise<HealthViewModel> {
   const qs = week ? `?week=${encodeURIComponent(week)}` : '';
-  return apiGet(`/views/health${qs}`);
+  return apiGet(`/views/health${qs}`, VIEW_TIMEOUT_MS);
 }
 
 export async function fetchProfile(): Promise<UserProfileData> {
@@ -837,7 +938,7 @@ export interface HealthkitSyncPayload {
 export async function pushHealthkitSync(
   payload: HealthkitSyncPayload,
 ): Promise<{ ok: boolean; summariesUpserted: number; workoutsUpserted: number }> {
-  return apiPost('/healthkit/sync', payload);
+  return apiPost('/healthkit/sync', payload, BULK_UPLOAD_TIMEOUT_MS);
 }
 
 export interface BarometerSamplePayload {
@@ -851,7 +952,7 @@ export interface BarometerSamplePayload {
 export async function pushBarometerSamples(
   payload: BarometerSamplePayload,
 ): Promise<{ ok: boolean; inserted: number }> {
-  return apiPost('/healthkit/barometer', payload);
+  return apiPost('/healthkit/barometer', payload, BULK_UPLOAD_TIMEOUT_MS);
 }
 
 export interface MotionActivityPayload {
@@ -865,25 +966,32 @@ export interface MotionActivityPayload {
 export async function pushMotionActivity(
   payload: MotionActivityPayload,
 ): Promise<{ ok: boolean; inserted: number }> {
-  return apiPost('/healthkit/motion-activity', payload);
+  return apiPost('/healthkit/motion-activity', payload, BULK_UPLOAD_TIMEOUT_MS);
 }
 
 export async function fetchDebugOverview(date: string): Promise<DebugOverview> {
-  return apiGet(withDeviceTimeZone(`/debug/overview?date=${encodeURIComponent(date)}`));
+  return apiGet(
+    withDeviceTimeZone(`/debug/overview?date=${encodeURIComponent(date)}`),
+    VIEW_TIMEOUT_MS,
+  );
 }
 
 export async function fetchDebugRawRecords(date: string, limit = 120): Promise<DebugRawRecords> {
   return apiGet(
     withDeviceTimeZone(`/debug/raw-records?date=${encodeURIComponent(date)}&limit=${limit}`),
+    VIEW_TIMEOUT_MS,
   );
 }
 
 export async function fetchDebugSleepNight(date: string): Promise<DebugSleepNight> {
-  return apiGet(withDeviceTimeZone(`/debug/sleep-night?date=${encodeURIComponent(date)}`));
+  return apiGet(
+    withDeviceTimeZone(`/debug/sleep-night?date=${encodeURIComponent(date)}`),
+    VIEW_TIMEOUT_MS,
+  );
 }
 
 export async function fetchDebugPipelineResults(): Promise<DebugPipelineResults> {
-  return apiGet('/debug/pipeline-results');
+  return apiGet('/debug/pipeline-results', VIEW_TIMEOUT_MS);
 }
 
 export async function runDebugPipeline(date: string): Promise<{
@@ -913,11 +1021,15 @@ export async function fetchDebugPipelineRuns(limit = 30): Promise<{
     features: number;
   }>;
 }> {
-  return apiGet(`/debug/pipeline-runs?limit=${limit}`);
+  return apiGet(`/debug/pipeline-runs?limit=${limit}`, VIEW_TIMEOUT_MS);
 }
 
 export async function recomputeDebugViews(date: string): Promise<DebugViewsRecompute> {
-  return apiPost(withDeviceTimeZone(`/debug/views/recompute?date=${encodeURIComponent(date)}`), {});
+  return apiPost(
+    withDeviceTimeZone(`/debug/views/recompute?date=${encodeURIComponent(date)}`),
+    {},
+    VIEW_TIMEOUT_MS,
+  );
 }
 
 // Journal CRUD
