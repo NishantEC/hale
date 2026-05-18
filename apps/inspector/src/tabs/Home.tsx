@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, Info } from "lucide-react"
 import type {
   BaselineProfileRow,
   HomeView,
@@ -25,6 +25,12 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
+import { Badge } from "@/components/ui/badge"
+import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
@@ -44,6 +50,40 @@ type HomeProps = {
   journalCorrelations: JournalCorrelation[]
   date: string
   onRunPipeline: (opts: PipelineRunOptions) => void
+}
+
+type MetricInfoProps = {
+  title: string
+  description: string
+  range: string
+  direction: "Higher is better" | "Lower is better" | "Stable is better"
+}
+
+function MetricInfo({ title, description, range, direction }: MetricInfoProps) {
+  return (
+    <HoverCard openDelay={150}>
+      <HoverCardTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-help"
+        >
+          <Info className="size-3.5" />
+        </button>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-72">
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-xs text-muted-foreground mt-1">{description}</p>
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-2">
+          <span>
+            <span className="text-foreground font-medium">Range:</span> {range}
+          </span>
+          <Badge variant="outline" className="text-[10px]">
+            {direction}
+          </Badge>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  )
 }
 
 const TIME_HOUR = 60 * 60 * 1000
@@ -79,13 +119,26 @@ export function HomeTab(props: HomeProps) {
   const durationSeries = trends?.sleepDurationTrend?.map((p) => p.value) ?? []
   const respSeries = trends?.respiratoryRateTrend?.map((p) => p.value) ?? []
 
-  const chips = [
+  const chips: Array<{
+    label: string
+    value: number | null
+    unit: string
+    avg14d: number | null
+    baseline: number | null
+    info: MetricInfoProps
+  }> = [
     {
       label: "Duration",
       value: detection?.durationHours ?? null,
       unit: "h",
       avg14d: avgOfLastN(durationSeries, 14),
       baseline: null,
+      info: {
+        title: "Duration",
+        description: "Total sleep time for the selected night, in hours.",
+        range: "Adults typically 7-9 h",
+        direction: "Higher is better",
+      },
     },
     {
       label: "HRV (RMSSD)",
@@ -93,6 +146,13 @@ export function HomeTab(props: HomeProps) {
       unit: "ms",
       avg14d: avgOfLastN(hrvSeries, 14),
       baseline: baseline?.rmssd ?? null,
+      info: {
+        title: "HRV (RMSSD)",
+        description:
+          "Heart rate variability, root mean square of successive differences. Higher = better autonomic balance.",
+        range: "20-100 ms in adults",
+        direction: "Higher is better",
+      },
     },
     {
       label: "Resting HR",
@@ -100,6 +160,12 @@ export function HomeTab(props: HomeProps) {
       unit: "bpm",
       avg14d: avgOfLastN(rhrSeries, 14),
       baseline: baseline?.restingHeartRate ?? null,
+      info: {
+        title: "Resting HR",
+        description: "Heart rate measured during the longest period of low motion + sleep.",
+        range: "40-80 bpm",
+        direction: "Lower is better",
+      },
     },
     {
       label: "Respiratory",
@@ -107,6 +173,12 @@ export function HomeTab(props: HomeProps) {
       unit: "rpm",
       avg14d: avgOfLastN(respSeries, 14),
       baseline: null,
+      info: {
+        title: "Respiratory",
+        description: "Breaths per minute during sleep.",
+        range: "12-20 rpm",
+        direction: "Stable is better",
+      },
     },
   ]
 
@@ -180,7 +252,12 @@ export function HomeTab(props: HomeProps) {
 
           <div className="grid grid-cols-4 gap-3">
             {chips.map((c) => (
-              <MetricChip key={c.label} {...c} />
+              <div key={c.label} className="relative">
+                <MetricChip label={c.label} value={c.value} unit={c.unit} avg14d={c.avg14d} baseline={c.baseline} />
+                <div className="absolute top-3.5 right-3.5">
+                  <MetricInfo {...c.info} />
+                </div>
+              </div>
             ))}
           </div>
         </CardContent>

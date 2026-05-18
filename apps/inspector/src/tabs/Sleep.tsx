@@ -1,4 +1,4 @@
-import { Moon } from "lucide-react"
+import { Info, Moon } from "lucide-react"
 
 import type { PipelineRunOptions, RawRecords, SleepNight } from "../api"
 import { DayTimeline } from "../components/DayTimeline"
@@ -15,13 +15,57 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card"
+import { Badge } from "@/components/ui/badge"
 import { formatNumber, formatTimestamp } from "../format"
 import { useScrubController } from "../hooks/useScrubController"
+
+type Direction = "Higher is better" | "Lower is better" | "Stable is better"
+
+function SleepHoverValue({
+  value,
+  title,
+  description,
+  range,
+  direction,
+}: {
+  value: string
+  title: string
+  description: string
+  range: string
+  direction: Direction
+}) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span>{value}</span>
+      <HoverCard openDelay={150}>
+        <HoverCardTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors cursor-help"
+          >
+            <Info className="size-3.5" />
+          </button>
+        </HoverCardTrigger>
+        <HoverCardContent className="w-72">
+          <p className="text-sm font-semibold">{title}</p>
+          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground mt-2">
+            <span>
+              <span className="text-foreground font-medium">Range:</span> {range}
+            </span>
+            <Badge variant="outline" className="text-[10px]">
+              {direction}
+            </Badge>
+          </div>
+        </HoverCardContent>
+      </HoverCard>
+    </span>
+  )
+}
 
 export function SleepTab({
   sleep,
@@ -45,8 +89,7 @@ export function SleepTab({
   const empty = !sleep?.selectedDetection
 
   return (
-    <TooltipProvider>
-      <div className="space-y-10 max-w-6xl">
+    <div className="space-y-10 max-w-6xl">
         <div className="flex items-baseline justify-between">
           <SectionHead>Selected night · {sleep?.selectedNightDate ?? selectedDate}</SectionHead>
           <RunPipelineMenu
@@ -184,48 +227,39 @@ export function SleepTab({
               <Row
                 k="Continuity"
                 v={
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="cursor-default">
-                        {formatNumber(sleep?.selectedDetection?.continuity, 3)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Fraction of sleep time without major interruption. Higher is better (0–1).
-                    </TooltipContent>
-                  </Tooltip>
+                  <SleepHoverValue
+                    value={formatNumber(sleep?.selectedDetection?.continuity, 3)}
+                    title="Continuity"
+                    description="Fraction of sleep time without major interruption. Higher = more consolidated sleep."
+                    range="0-1"
+                    direction="Higher is better"
+                  />
                 }
                 dense
               />
               <Row
                 k="Coverage"
                 v={
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="cursor-default">
-                        {formatNumber(sleep?.selectedDetection?.validCoverage, 3)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Fraction of expected sensor data actually present. Higher is better (0–1).
-                    </TooltipContent>
-                  </Tooltip>
+                  <SleepHoverValue
+                    value={formatNumber(sleep?.selectedDetection?.validCoverage, 3)}
+                    title="Coverage"
+                    description="Fraction of expected sensor data actually present. Detects sensor dropout."
+                    range="0-1"
+                    direction="Higher is better"
+                  />
                 }
                 dense
               />
               <Row
                 k="Confidence"
                 v={
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="cursor-default">
-                        {formatNumber(sleep?.selectedDetection?.confidence, 3)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Detector confidence in this sleep window. Higher is better (0–1).
-                    </TooltipContent>
-                  </Tooltip>
+                  <SleepHoverValue
+                    value={formatNumber(sleep?.selectedDetection?.confidence, 3)}
+                    title="Confidence"
+                    description="Detector's confidence in this sleep window."
+                    range="0-1"
+                    direction="Higher is better"
+                  />
                 }
                 dense
               />
@@ -252,16 +286,13 @@ export function SleepTab({
               <Row
                 k="Regularity"
                 v={
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="cursor-default">
-                        {formatNumber(sleep?.selectedNightFeature?.regularity, 3)}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      Bedtime/wake-time consistency vs your baseline. Higher is better (0–1).
-                    </TooltipContent>
-                  </Tooltip>
+                  <SleepHoverValue
+                    value={formatNumber(sleep?.selectedNightFeature?.regularity, 3)}
+                    title="Regularity"
+                    description="Bedtime/wake-time consistency vs your baseline schedule."
+                    range="0-1"
+                    direction="Higher is better"
+                  />
                 }
                 dense
               />
@@ -272,6 +303,5 @@ export function SleepTab({
           </Card>
         </div>
       </div>
-    </TooltipProvider>
   )
 }
