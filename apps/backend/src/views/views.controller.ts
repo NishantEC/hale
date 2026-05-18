@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -53,6 +54,31 @@ export class ViewsController {
       if (e instanceof HttpException) throw e;
       throw new HttpException(`Sleep view failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  @Get('coverage')
+  async coverage(
+    @Req() req: any,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('timeZone') timeZone?: string,
+  ) {
+    if (!/^\d{4}-\d{2}$/.test(from) || !/^\d{4}-\d{2}$/.test(to)) {
+      throw new BadRequestException('from/to must be YYYY-MM');
+    }
+    if (from > to) {
+      throw new BadRequestException('from must be <= to (range)');
+    }
+    // 13 months back, matching the client's 12-month cap with a 1-month
+    // buffer for cross-month requests near the boundary.
+    const now = new Date();
+    const limit = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 13, 1));
+    const [fy, fm] = from.split('-').map(Number);
+    const fromMonthStart = new Date(Date.UTC(fy, fm - 1, 1));
+    if (fromMonthStart < limit) {
+      throw new BadRequestException('range too old (>13 months back)');
+    }
+    return this.viewsService.getCoverage(req.user.userId, from, to, timeZone);
   }
 
   @Get('trends')
