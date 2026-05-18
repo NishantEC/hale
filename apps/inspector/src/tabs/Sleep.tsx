@@ -20,7 +20,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card"
 import { Badge } from "@/components/ui/badge"
-import { formatNumber, formatTimestamp } from "../format"
+import { formatDate, formatNumber, formatTimestamp } from "../format"
 import { useScrubController } from "../hooks/useScrubController"
 
 type Direction = "Higher is better" | "Lower is better" | "Stable is better"
@@ -91,7 +91,12 @@ export function SleepTab({
   return (
     <div className="space-y-6 max-w-6xl">
         <div className="flex items-baseline justify-between">
-          <SectionHead>Selected night · {sleep?.selectedNightDate ?? selectedDate}</SectionHead>
+          <SectionHead>
+            Selected night ·{" "}
+            <span className="font-mono font-medium tabular-nums">
+              {formatDate(sleep?.selectedNightDate ?? selectedDate)}
+            </span>
+          </SectionHead>
           <RunPipelineMenu
             busy={busy}
             variant="secondary"

@@ -5,6 +5,18 @@ export function formatTimestamp(value: string | null | undefined): string {
   return new Date(value).toLocaleString();
 }
 
+// Short, scannable date: "Sat, May 16" — for headers / titles.
+export function formatDate(value: string | null | undefined): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 export function formatTime(value: string | null | undefined): string {
   if (!value) return "—";
   return new Date(value).toLocaleTimeString([], {

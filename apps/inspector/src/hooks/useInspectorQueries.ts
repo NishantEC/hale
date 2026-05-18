@@ -4,6 +4,7 @@ import {
   apiGet,
   apiPost,
   triggerPipelineRun,
+  withTimeZone,
   type BatteryHistory,
   type HomeView,
   type Overview,
@@ -38,7 +39,8 @@ const enc = encodeURIComponent
 export function useOverview(token: string, date: string) {
   return useQuery({
     queryKey: queryKeys.overview(date),
-    queryFn: () => apiGet<Overview>(`/debug/overview?date=${enc(date)}`, token),
+    queryFn: () =>
+      apiGet<Overview>(withTimeZone(`/debug/overview?date=${enc(date)}`), token),
     enabled: !!token,
   })
 }
@@ -46,7 +48,11 @@ export function useOverview(token: string, date: string) {
 export function useRaw(token: string, date: string, opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.raw(date),
-    queryFn: () => apiGet<RawRecords>(`/debug/raw-records?date=${enc(date)}&limit=5000`, token),
+    queryFn: () =>
+      apiGet<RawRecords>(
+        withTimeZone(`/debug/raw-records?date=${enc(date)}&limit=5000`),
+        token,
+      ),
     enabled: !!token && (opts?.enabled ?? true),
   })
 }
@@ -54,7 +60,8 @@ export function useRaw(token: string, date: string, opts?: { enabled?: boolean }
 export function useSleep(token: string, date: string, opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.sleep(date),
-    queryFn: () => apiGet<SleepNight>(`/debug/sleep-night?date=${enc(date)}`, token),
+    queryFn: () =>
+      apiGet<SleepNight>(withTimeZone(`/debug/sleep-night?date=${enc(date)}`), token),
     enabled: !!token && (opts?.enabled ?? true),
   })
 }
@@ -86,7 +93,7 @@ export function usePipelineRuns(token: string, opts?: { enabled?: boolean }) {
 export function useHomeView(token: string, date: string) {
   return useQuery({
     queryKey: queryKeys.homeView(date),
-    queryFn: () => apiGet<HomeView>(`/views/home?date=${enc(date)}`, token),
+    queryFn: () => apiGet<HomeView>(withTimeZone(`/views/home?date=${enc(date)}`), token),
     enabled: !!token,
   })
 }
@@ -94,7 +101,8 @@ export function useHomeView(token: string, date: string) {
 export function useSleepView(token: string, date: string) {
   return useQuery({
     queryKey: queryKeys.sleepView(date),
-    queryFn: () => apiGet<SleepView>(`/views/sleep?date=${enc(date)}`, token),
+    queryFn: () =>
+      apiGet<SleepView>(withTimeZone(`/views/sleep?date=${enc(date)}`), token),
     enabled: !!token,
   })
 }

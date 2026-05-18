@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -86,8 +87,17 @@ export function Hypnogram({
   const BAR_HEIGHT = ROW_HEIGHT * 0.45
   const BAR_OFFSET = BAR_HEIGHT * 0.8
 
+  // Instance-unique gradient + mask IDs so SVGs don't collide when
+  // two Hypnograms mount in the same DOM (Home + Sleep both render one).
+  const uid = useId().replace(/:/g, "")
+  const gradientId = `hg-${uid}`
+  const maskId = `hm-${uid}`
+
   const ref = useRef<HTMLDivElement>(null)
-  const [containerWidth, setContainerWidth] = useState(0)
+  // Initialise to a sensible default so the chart paints something on
+  // first mount before ResizeObserver fires. The observer updates it
+  // to the real measured width within the next frame.
+  const [containerWidth, setContainerWidth] = useState(640)
   const [cursor, setCursor] = useState<{
     x: number
     seg: Segment
@@ -161,7 +171,7 @@ export function Hypnogram({
     if (!containerWidth || !segments.length) return null
     return (
       <defs>
-        <linearGradient id="hg" x1="0" y1="0.2" x2="0" y2="0.95">
+        <linearGradient id={gradientId} x1="0" y1="0.2" x2="0" y2="0.95">
           {STAGE_KEYS.map((k) => (
             <stop
               key={k}
@@ -171,7 +181,7 @@ export function Hypnogram({
             />
           ))}
         </linearGradient>
-        <mask id="hm">
+        <mask id={maskId}>
           {segments.map((s) => {
             const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
             const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
@@ -296,12 +306,8 @@ export function Hypnogram({
     <div>
       <div
         ref={ref}
-        className="relative select-none"
-        style={{
-          height: CHART_HEIGHT,
-          borderLeft: "1px solid rgba(255,255,255,0.12)",
-          borderRight: "1px solid rgba(255,255,255,0.12)",
-        }}
+        className="relative select-none w-full border-l border-r"
+        style={{ height: CHART_HEIGHT, borderColor: "color-mix(in oklch, currentColor 12%, transparent)" }}
         onMouseMove={onMouseMove}
         onMouseLeave={onMouseLeave}
       >
@@ -373,8 +379,8 @@ export function Hypnogram({
                 y={0}
                 width={containerWidth}
                 height={CHART_HEIGHT}
-                fill="url(#hg)"
-                mask="url(#hm)"
+                fill={`url(#${gradientId})`}
+                mask={`url(#${maskId})`}
               />
             </svg>
 

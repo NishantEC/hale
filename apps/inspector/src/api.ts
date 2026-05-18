@@ -10,6 +10,26 @@ export const API_BASE_URL =
 const TOKEN_KEY = "noop.inspector.token";
 const EMAIL_KEY = "noop.inspector.email";
 
+// Browser-resolved IANA time zone (e.g. "Asia/Kolkata"). Passed to every
+// date-scoped backend request so "May 17" means "May 17 in the user's local
+// calendar," not "May 17 UTC." Backend's resolveTimeZone falls back to UTC if
+// this is missing — which is why an IST user looking at May 17 used to see
+// no records: the UTC-day bounds excluded their actual May 17 IST window.
+export function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+// Append `&timeZone=...` (or `?timeZone=...`) to a path so the backend
+// computes day boundaries in the caller's time zone.
+export function withTimeZone(path: string): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}timeZone=${encodeURIComponent(browserTimeZone())}`;
+}
+
 function authHeaders(token: string): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
@@ -394,8 +414,8 @@ export async function triggerPipelineRun(
   if (opts.from) params.set("from", opts.from);
   if (opts.to) params.set("to", opts.to);
   if (opts.force) params.set("force", "true");
-  const qs = params.toString();
-  return apiPost(`/debug/pipeline/run${qs ? `?${qs}` : ""}`, token);
+  params.set("timeZone", browserTimeZone());
+  return apiPost(`/debug/pipeline/run?${params.toString()}`, token);
 }
 
 export type PipelineRunsHistory = {

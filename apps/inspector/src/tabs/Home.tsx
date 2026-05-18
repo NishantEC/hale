@@ -36,7 +36,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
-import { formatTimestamp, relativeTime } from "../format"
+import { formatDate, formatTimestamp, relativeTime } from "../format"
 import { pickTopCorrelationSentence } from "../utils/correlations"
 
 type HomeProps = {
@@ -226,7 +226,7 @@ export function HomeTab(props: HomeProps) {
           <CardTitle>
             Last night ·{" "}
             <span className="font-mono tabular-nums font-medium">
-              {sleep?.selectedNightDate ?? date}
+              {formatDate(sleep?.selectedNightDate ?? date)}
             </span>
           </CardTitle>
           {detection?.confidence != null && (
