@@ -1,6 +1,8 @@
 import { useRef, isValidElement, cloneElement, type ReactNode, type ReactElement } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
+import { cn } from "@/lib/utils"
+
 type VirtualTableProps<T> = {
   rows: T[]
   rowHeight: number
@@ -10,6 +12,11 @@ type VirtualTableProps<T> = {
   maxHeight?: number
 }
 
+// Virtualised list with table-like semantics. Uses ARIA roles instead of
+// real <table>/<tr>/<td> so we can absolutely-position rows for the
+// virtualizer without losing column-width alignment between the header
+// and the rows. Each row is a flex container; cells set width via style
+// on the role="cell" element.
 export function VirtualTable<T>({
   rows,
   rowHeight,
@@ -32,44 +39,45 @@ export function VirtualTable<T>({
   return (
     <div
       ref={scrollRef}
-      className={`overflow-auto rounded-xl border border-border ${className ?? ""}`}
+      className={cn("overflow-auto rounded-xl border", className)}
       style={{ maxHeight }}
+      role="table"
     >
-      <table className="w-full text-sm border-collapse">
-        {renderHeader && (
-          <thead className="sticky top-0 bg-card z-10">
-            {renderHeader()}
-          </thead>
-        )}
-        <tbody style={{ height: totalHeight, display: "block", position: "relative" }}>
-          {virtualizer.getVirtualItems().map((virtualItem) => {
-            const row = rows[virtualItem.index]
-            const rendered = renderRow(row, virtualItem.index)
-            const positionStyle: React.CSSProperties = {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              transform: `translateY(${virtualItem.start}px)`,
-              display: "table",
-              tableLayout: "fixed",
-            }
-            if (isValidElement(rendered)) {
-              return cloneElement(rendered as ReactElement<React.HTMLAttributes<HTMLTableRowElement>>, {
-                key: virtualItem.key,
-                "data-index": virtualItem.index,
-                ref: virtualizer.measureElement,
-                style: {
-                  ...(rendered.props as React.HTMLAttributes<HTMLTableRowElement>).style,
-                  ...positionStyle,
-                },
-                tabIndex: 0,
-              } as React.HTMLAttributes<HTMLTableRowElement> & { "data-index": number; ref: unknown })
-            }
-            return null
-          })}
-        </tbody>
-      </table>
+      {renderHeader && (
+        <div role="rowgroup" className="sticky top-0 bg-card z-10">
+          {renderHeader()}
+        </div>
+      )}
+      <div role="rowgroup" style={{ height: totalHeight, position: "relative" }}>
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const row = rows[virtualItem.index]
+          const rendered = renderRow(row, virtualItem.index)
+          if (!isValidElement(rendered)) return null
+          const previousStyle =
+            (rendered.props as { style?: React.CSSProperties }).style ?? {}
+          const positionStyle: React.CSSProperties = {
+            ...previousStyle,
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: "100%",
+            transform: `translateY(${virtualItem.start}px)`,
+          }
+          return cloneElement(
+            rendered as ReactElement<React.HTMLAttributes<HTMLElement>>,
+            {
+              key: virtualItem.key,
+              "data-index": virtualItem.index,
+              ref: virtualizer.measureElement,
+              style: positionStyle,
+              tabIndex: 0,
+            } as React.HTMLAttributes<HTMLElement> & {
+              "data-index": number
+              ref: unknown
+            },
+          )
+        })}
+      </div>
     </div>
   )
 }

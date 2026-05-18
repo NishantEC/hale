@@ -13,17 +13,28 @@ import { cn } from "@/lib/utils"
 
 const ROW_HEIGHT = 40
 
-const COLUMNS = [
-  { key: "timestamp",   label: "Time" },
-  { key: "hr",          label: "HR" },
-  { key: "rr",          label: "RR avg" },
-  { key: "skin",        label: "Skin contact" },
-  { key: "gravity",     label: "Gravity" },
-  { key: "resp",        label: "Resp" },
-  { key: "spo2r",       label: "SpO2 R" },
-  { key: "spo2ir",      label: "SpO2 IR" },
-  { key: "temp",        label: "Skin temp" },
-] as const
+type ColumnKey =
+  | "timestamp"
+  | "hr"
+  | "rr"
+  | "skin"
+  | "gravity"
+  | "resp"
+  | "spo2r"
+  | "spo2ir"
+  | "temp"
+
+const COLUMNS: ReadonlyArray<{ key: ColumnKey; label: string; width: string }> = [
+  { key: "timestamp", label: "Time", width: "14%" },
+  { key: "hr", label: "HR", width: "9%" },
+  { key: "rr", label: "RR avg", width: "10%" },
+  { key: "skin", label: "Skin contact", width: "11%" },
+  { key: "gravity", label: "Gravity", width: "12%" },
+  { key: "resp", label: "Resp", width: "10%" },
+  { key: "spo2r", label: "SpO2 R", width: "9%" },
+  { key: "spo2ir", label: "SpO2 IR", width: "9%" },
+  { key: "temp", label: "Skin temp", width: "16%" },
+]
 
 type RawRow = RawRecords["rows"][number]
 
@@ -71,6 +82,29 @@ function rowInRange(row: RawRow, range: ParsedRange): boolean {
   return minutes >= startMinutes || minutes <= endMinutes
 }
 
+function valueFor(row: RawRow, key: ColumnKey): string {
+  switch (key) {
+    case "hr":
+      return formatNumber(row.heartRate)
+    case "rr":
+      return formatNumber(row.rrAverageMs, 1)
+    case "skin":
+      return row.skinContact == null ? "—" : row.skinContact ? "yes" : "no"
+    case "gravity":
+      return formatNumber(row.gravityMagnitude, 3)
+    case "resp":
+      return formatNumber(row.respRateRaw, 2)
+    case "spo2r":
+      return formatNumber(row.spo2Red)
+    case "spo2ir":
+      return formatNumber(row.spo2IR)
+    case "temp":
+      return formatNumber(row.skinTempRaw, 2)
+    default:
+      return ""
+  }
+}
+
 export function RawTab({
   raw,
   date,
@@ -93,65 +127,89 @@ export function RawTab({
 
   const handleCopy = useCallback((row: RawRow) => {
     const text = JSON.stringify(row, null, 2)
-    navigator.clipboard.writeText(text).then(() => {
-      toast.success("Row JSON copied to clipboard")
-    }).catch(() => {})
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        toast.success("Row JSON copied to clipboard")
+      })
+      .catch(() => {})
   }, [])
 
-  const renderHeader = useCallback(() => (
-    <tr>
-      {COLUMNS.map((col) => (
-        <th
-          key={col.key}
-          className="px-4 py-3 text-left text-muted-foreground font-medium text-xs uppercase tracking-wider border-b border-border"
-        >
-          {col.label}
-        </th>
-      ))}
-    </tr>
-  ), [])
+  const renderHeader = useCallback(
+    () => (
+      <div role="row" className="flex border-b">
+        {COLUMNS.map((col) => (
+          <div
+            key={col.key}
+            role="columnheader"
+            className="px-4 py-3 text-left text-muted-foreground font-medium text-xs uppercase tracking-wider shrink-0"
+            style={{ width: col.width }}
+          >
+            {col.label}
+          </div>
+        ))}
+      </div>
+    ),
+    [],
+  )
 
-  const renderRow = useCallback((row: RawRow) => {
-    const isHovered = hoveredId === row.id
-    return (
-      <tr
-        className="border-b border-border/50 hover:bg-muted/50 transition-colors focus:outline-none focus:bg-muted/50"
-        onMouseEnter={() => setHoveredId(row.id)}
-        onMouseLeave={() => setHoveredId(null)}
-        onFocus={() => setHoveredId(row.id)}
-        onBlur={() => setHoveredId(null)}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "c") {
-            e.preventDefault()
-            handleCopy(row)
-          }
-        }}
-      >
-        <td className="px-4 py-2.5 text-foreground whitespace-nowrap" style={{ width: "14%" }}>
-          <span className="flex items-center gap-1.5">
-            {formatRowTime(row.timestamp)}
-            <Copy
-              aria-hidden
-              className={cn(
-                "size-3 text-muted-foreground transition-opacity shrink-0",
-                isHovered ? "opacity-100" : "opacity-0",
-              )}
-            />
-          </span>
-        </td>
-        <td className="px-4 py-2.5" style={{ width: "9%" }}>{formatNumber(row.heartRate)}</td>
-        <td className="px-4 py-2.5" style={{ width: "10%" }}>{formatNumber(row.rrAverageMs, 1)}</td>
-        <td className="px-4 py-2.5" style={{ width: "11%" }}>
-          {row.skinContact == null ? "—" : row.skinContact ? "yes" : "no"}
-        </td>
-        <td className="px-4 py-2.5" style={{ width: "12%" }}>{formatNumber(row.gravityMagnitude, 3)}</td>
-        <td className="px-4 py-2.5" style={{ width: "10%" }}>{formatNumber(row.respRateRaw, 2)}</td>
-        <td className="px-4 py-2.5" style={{ width: "9%" }}>{formatNumber(row.spo2Red)}</td>
-        <td className="px-4 py-2.5" style={{ width: "9%" }}>{formatNumber(row.spo2IR)}</td>
-        <td className="px-4 py-2.5" style={{ width: "10%" }}>{formatNumber(row.skinTempRaw, 2)}</td>
-      </tr>
-    )
-  }, [hoveredId, handleCopy])
+  const renderRow = useCallback(
+    (row: RawRow) => {
+      const isHovered = hoveredId === row.id
+      return (
+        <div
+          role="row"
+          className="flex items-center border-b border-border/50 hover:bg-muted/50 focus:outline-none focus:bg-muted/50 transition-colors"
+          onMouseEnter={() => setHoveredId(row.id)}
+          onMouseLeave={() => setHoveredId(null)}
+          onFocus={() => setHoveredId(row.id)}
+          onBlur={() => setHoveredId(null)}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "c") {
+              e.preventDefault()
+              handleCopy(row)
+            }
+          }}
+          style={{ height: ROW_HEIGHT }}
+        >
+          {COLUMNS.map((col) => {
+            if (col.key === "timestamp") {
+              return (
+                <div
+                  key={col.key}
+                  role="cell"
+                  className="px-4 text-foreground whitespace-nowrap shrink-0"
+                  style={{ width: col.width }}
+                >
+                  <span className="inline-flex items-center gap-1.5 tabular-nums">
+                    {formatRowTime(row.timestamp)}
+                    <Copy
+                      aria-hidden
+                      className={cn(
+                        "size-3 text-muted-foreground transition-opacity shrink-0",
+                        isHovered ? "opacity-100" : "opacity-0",
+                      )}
+                    />
+                  </span>
+                </div>
+              )
+            }
+            return (
+              <div
+                key={col.key}
+                role="cell"
+                className="px-4 text-foreground tabular-nums shrink-0 truncate"
+                style={{ width: col.width }}
+              >
+                {valueFor(row, col.key)}
+              </div>
+            )
+          })}
+        </div>
+      )
+    },
+    [hoveredId, handleCopy],
+  )
 
   const totalCount = raw?.count ?? 0
   const filterActive = inputIsNonEmpty && parsedRange !== null
