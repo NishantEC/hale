@@ -12,6 +12,7 @@ import { computeRecoveryIndex } from './recovery-index';
 import { computeTrainingLoadRatio } from './training-load';
 import { estimateCoreTemperature } from './core-temperature';
 import { addDaysToDateKey, calendarDayBounds, calendarDayKey } from '../common/calendar';
+import { averageByTimestamp, sliceByTimestamp } from './timestamp-slice';
 
 interface SensorSample {
   timestamp: Date;
@@ -88,20 +89,23 @@ export function computeDerivedMetrics(
   const series = precomputed ?? precomputeMetricSeries(samples, sensorRecords);
   const { stress, spo2, skinTemp, hrvRmssd: hrvRmssdSeries } = series;
 
-  const daySamples = samples.filter(
-    (s) => s.timestamp >= dayStart && s.timestamp < dayEnd,
-  );
+  // Per-day binary-search slice over pre-sorted series. `samples` is
+  // sorted by `pipeline.service.ts:sanitize`, and `stress`/`spo2`/
+  // `skinTemp` are sorted by their `*Points` builders. Switching from
+  // `.filter()` here was the fix for the per-day-O(N) blow-up that put
+  // `stages.compute` at ~10 minutes on a 45-day window.
+  const daySamples = sliceByTimestamp(samples, dayStart, dayEnd);
   const strain = strainScore(daySamples, baseline);
 
-  const stressAvg = averageInDay(stress, dayStart, dayEnd);
-  const spo2Avg = averageInDay(spo2, dayStart, dayEnd);
-  const skinTempAvg = averageInDay(skinTemp, dayStart, dayEnd);
+  const stressAvg = averageByTimestamp(stress, dayStart, dayEnd);
+  const spo2Avg = averageByTimestamp(spo2, dayStart, dayEnd);
+  const skinTempAvg = averageByTimestamp(skinTemp, dayStart, dayEnd);
 
   const baselineStart = calendarDayBounds(
     addDaysToDateKey(referenceKey, -7),
     timeZoneInput,
   ).start;
-  const skinTempBaseline = averageInRange(skinTemp, baselineStart, dayStart);
+  const skinTempBaseline = averageByTimestamp(skinTemp, baselineStart, dayStart);
 
   const recentStart = calendarDayBounds(
     addDaysToDateKey(referenceKey, -6),
@@ -259,26 +263,6 @@ function rollingRmssd(
   return results;
 }
 
-function averageInDay(
-  points: TimestampedValue[],
-  dayStart: Date,
-  dayEnd: Date,
-): number | null {
-  return averageInRange(points, dayStart, dayEnd);
-}
-
-function averageInRange(
-  points: TimestampedValue[],
-  start: Date,
-  end: Date,
-): number | null {
-  const filtered = points.filter(
-    (p) => p.timestamp >= start && p.timestamp < end,
-  );
-  if (filtered.length === 0) return null;
-  return average(filtered.map((p) => p.value));
-}
-
 // --- Stress (Baevsky Stress Index) ---
 
 function stressPoints(samples: SignalSample[]): TimestampedValue[] {
@@ -399,9 +383,11 @@ function strainScore(
   samples: SignalSample[],
   baseline: BaselineProfile,
 ): number | null {
-  const sorted = [...samples].sort(
-    (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
-  );
+  // Callers (only `computeDerivedMetrics` today) pass a slice taken from
+  // an already-sorted series, so the leading copy+sort is redundant. If
+  // a future caller passes unsorted input this assumption breaks — easy
+  // to re-add a sort guard here if that ever happens.
+  const sorted = samples;
   if (sorted.length < 2) return null;
 
   const maxHR = baseline.maxHeartRate ?? 190.0;

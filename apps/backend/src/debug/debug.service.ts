@@ -210,6 +210,7 @@ export class DebugService {
       dailyMetricCount,
       earliestRaw,
       latestRaw,
+      latestRawUpdatedAt,
       selectedDayRawRecordCount,
       recentDetections,
       recentStages,
@@ -225,6 +226,16 @@ export class DebugService {
       this.dailyMetricRepo.count({ where: { userId } }),
       this.rawSensorRepo.findOne({ where: { userId }, order: { timestamp: 'ASC' } }),
       this.rawSensorRepo.findOne({ where: { userId }, order: { timestamp: 'DESC' } }),
+      // updatedAt MAX is distinct from timestamp MAX. After 2 days of strap
+      // silence we noticed timestamp was stuck at 17:42 IST while updatedAt
+      // was 5 min ago — drainer was filling earlier-strap-time gaps. Surfacing
+      // both lets the LiveMonitor say "Catching up backlog · N min ago"
+      // instead of "Strap dead · 2d ago" while uploads are healthy.
+      this.rawSensorRepo
+        .createQueryBuilder('raw')
+        .select('MAX(raw."updatedAt")', 'max')
+        .where('raw."userId" = :userId', { userId })
+        .getRawOne<{ max: Date | null }>(),
       this.rawSensorRepo
         .createQueryBuilder('raw')
         .where('raw."userId" = :userId', { userId })
@@ -325,6 +336,11 @@ export class DebugService {
       },
       earliestRawTimestamp: earliestRaw?.timestamp?.toISOString() ?? null,
       latestRawTimestamp: latestRaw?.timestamp?.toISOString() ?? null,
+      // Distinct from latestRawTimestamp — this is when the most recent upload
+      // hit the backend, not the strap-time the record was captured. Used by
+      // the mobile LiveMonitor to tell "actually silent" apart from "still
+      // catching up on the backlog."
+      latestRawUpdatedAt: latestRawUpdatedAt?.max?.toISOString() ?? null,
       latestSyncMetadata: {
         lastRawRecordAt: latestRaw?.timestamp?.toISOString() ?? null,
         lastSleepPlanUpdateAt: latestSleepPlan?.updatedAt?.toISOString() ?? null,
