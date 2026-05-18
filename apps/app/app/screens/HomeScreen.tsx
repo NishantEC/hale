@@ -23,10 +23,14 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BlurHeader } from "@/components/BlurHeader"
 import { DateSwitcher } from "@/components/DateSwitcher"
+import { HomeDateCalendar } from "@/components/home/HomeDateCalendar"
 import { MetricRingsRow } from "@/components/home/MetricRingsRow"
 import { MonitorCard } from "@/components/home/MonitorCard"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
 import { TodayCard } from "@/components/home/TodayCard"
+import { fetchCoverage, type CoverageKind } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { getViewCache, setViewCache } from "@/services/db/repositories/viewCache"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { Text } from "@/components/Text"
@@ -83,6 +87,7 @@ export const HomeScreen: FC = () => {
   const navigation = useNavigation<any>()
   const {
     selectedDate,
+    setSelectedDate,
     homeView,
     error,
     isRefreshing,
@@ -94,7 +99,58 @@ export const HomeScreen: FC = () => {
   const { connectionState, batteryLevel, isCharging, isSyncing } = useBle()
   const { setActiveDate: setHealthKitActiveDate } = useHealthKit()
   const [isHorizontalDaySwipeActive, setIsHorizontalDaySwipeActive] = useState(false)
+  const [isCalendarOpen, setCalendarOpen] = useState(false)
+  const [calendarMonthCursor, setCalendarMonthCursor] = useState(() =>
+    selectedDate.slice(0, 7),
+  )
+  const [coverageByDate, setCoverageByDate] = useState<Record<string, CoverageKind>>({})
   const lastShownError = useRef<string | null>(null)
+
+  // Fetch coverage for the visible month whenever the calendar is open or the
+  // cursor changes. Local viewCache provides instant render; remote fetch
+  // refreshes in the background. Soft-fail — missing markers don't break the
+  // picker.
+  useEffect(() => {
+    if (!isCalendarOpen) return
+    let alive = true
+    void (async () => {
+      try {
+        const db = openDatabase()
+        const cached = await getViewCache<{
+          days: Array<{ date: string; coverage: CoverageKind }>
+        }>(db, "coverage", calendarMonthCursor)
+        if (cached && alive) {
+          const map: Record<string, CoverageKind> = {}
+          cached.days.forEach((d) => {
+            map[d.date] = d.coverage
+          })
+          setCoverageByDate((prev) => ({ ...prev, ...map }))
+        }
+      } catch {
+        // cache miss is fine
+      }
+      try {
+        const data = await fetchCoverage(calendarMonthCursor, calendarMonthCursor)
+        if (!alive) return
+        const map: Record<string, CoverageKind> = {}
+        data.days.forEach((d) => {
+          map[d.date] = d.coverage
+        })
+        setCoverageByDate((prev) => ({ ...prev, ...map }))
+        try {
+          const db = openDatabase()
+          await setViewCache(db, "coverage", calendarMonthCursor, data)
+        } catch {
+          // cache write failures don't affect the user
+        }
+      } catch {
+        // network failure — picker still works, just without markers
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [isCalendarOpen, calendarMonthCursor])
 
   useEffect(() => {
     setHealthKitActiveDate(selectedDate)
@@ -301,6 +357,8 @@ export const HomeScreen: FC = () => {
               title={selectedDateTitle}
               onPrevious={moveToPreviousDay}
               onNext={moveToNextDay}
+              onOpenCalendar={() => setCalendarOpen((v) => !v)}
+              isOpen={isCalendarOpen}
             />
 
             <DevicePill
@@ -311,7 +369,37 @@ export const HomeScreen: FC = () => {
             />
           </View>
 
-          <View style={themed($dayContentWrap)}>
+          {isCalendarOpen ? (
+            <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+              <HomeDateCalendar
+                selectedDate={selectedDate}
+                monthCursor={calendarMonthCursor}
+                coverageByDate={coverageByDate}
+                onSelectDate={(date) => {
+                  setCalendarOpen(false)
+                  setSelectedDate(date)
+                }}
+                onMonthCursorChange={setCalendarMonthCursor}
+                onClose={() => setCalendarOpen(false)}
+              />
+            </Animated.View>
+          ) : null}
+
+          {isCalendarOpen ? (
+            <TouchableOpacity
+              style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }}
+              activeOpacity={1}
+              onPress={() => setCalendarOpen(false)}
+            />
+          ) : null}
+
+          <View
+            style={[
+              themed($dayContentWrap),
+              isCalendarOpen ? { opacity: 0.55 } : null,
+            ]}
+            pointerEvents={isCalendarOpen ? "none" : "auto"}
+          >
             {isHomeViewLoading ? (
               <Animated.View
                 key={contentKey}
@@ -328,6 +416,7 @@ export const HomeScreen: FC = () => {
               >
                 <MetricRingsRow
                   rings={[ringTrio[0], ringTrio[1], ringTrio[2]] as any}
+                  layout="left-hero"
                 />
 
                 <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
@@ -484,7 +573,10 @@ const $topStrip: ThemedStyle<ViewStyle> = () => ({
   flexDirection: "row",
   gap: 12,
   justifyContent: "space-between",
-  marginBottom: 6,
+  // More vertical breathing room between the date/device strip and
+  // the rings cluster below it. The old 6px sat the hero ring right
+  // under the strip; 24 lets the hero anchor on its own.
+  marginBottom: 24,
 })
 
 const $topStripRight: ThemedStyle<ViewStyle> = () => ({

@@ -28,7 +28,7 @@ describe("noopClient request timeout", () => {
     await Promise.resolve()
     await jest.advanceTimersByTimeAsync(20_000)
 
-    expect(outcome).toBe("Request timed out after 20s")
+    expect(outcome).toMatch(/^Request timed out after 20s:/)
   })
 
   it("gives backend pipeline runs a longer timeout budget", async () => {
@@ -54,6 +54,6 @@ describe("noopClient request timeout", () => {
 
     await jest.advanceTimersByTimeAsync(180_000)
 
-    expect(outcome).toBe("Request timed out after 300s")
+    expect(outcome).toMatch(/^Request timed out after 300s:/)
   })
 })
