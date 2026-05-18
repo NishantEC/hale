@@ -1,7 +1,7 @@
-/* Field Manual — Fraunces (variable serif, opticals), IBM Plex Sans, IBM Plex Mono.
-   Must precede the tailwindcss import: Tailwind v4 expands its import inline, which
-   pushes any later @import past other rules and triggers a PostCSS error. */
-@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap");
+/* Inter + JetBrains Mono. Must precede @import "tailwindcss" — Tailwind v4
+   expands its import inline, which pushes any later @import past other rules
+   and triggers a PostCSS error. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap");
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -11,8 +11,6 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-paper: var(--paper);
-  --color-paper-foreground: var(--paper-foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
@@ -31,13 +29,13 @@
   --color-ring: var(--ring);
 
   --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
 
-  --color-vermillion: var(--vermillion);
-  --color-sage: var(--sage);
-  --color-ink: var(--ink);
+  /* per-metric accents */
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-magenta: var(--accent-magenta);
+  --color-accent-lime: var(--accent-lime);
+  --color-accent-amber: var(--accent-amber);
 
   --color-stage-awake: var(--stage-awake);
   --color-stage-rem: var(--stage-rem);
@@ -46,31 +44,19 @@
 
   --color-border: var(--border);
   --color-hairline: var(--hairline);
-  --color-rule: var(--rule);
 
-  --font-sans:
-    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --font-mono:
-    "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
-  --font-display:
-    "Fraunces", "Times New Roman", Georgia, serif;
-  --font-prose:
-    "IBM Plex Sans", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
 
-  /* Editorial type scale — Fraunces display + Plex body */
-  --text-masthead: 4.5rem;      /* 72px — masthead / cover */
-  --text-masthead-line: 0.95;
-  --text-display: 3rem;         /* 48px — hero numbers */
-  --text-display-line: 1;
-  --text-chapter: 2.25rem;      /* 36px — chapter heads */
-  --text-chapter-line: 1.05;
-  --text-h1: 1.625rem;          /* 26px — page heads */
-  --text-h2: 1.25rem;           /* 20px — subhead */
-  --text-h3: 1rem;              /* 16px — subsection */
-  --text-body: 0.9375rem;       /* 15px — body */
-  --text-sm: 0.8125rem;         /* 13px — secondary */
-  --text-xs: 0.75rem;           /* 12px — caption */
-  --text-eyebrow: 0.6875rem;    /* 11px — small-caps labels */
+  /* type scale */
+  --text-display: 2.25rem;   /* 36px */
+  --text-h1: 1.5rem;         /* 24px */
+  --text-h2: 1.125rem;       /* 18px */
+  --text-h3: 1rem;           /* 16px */
+  --text-body: 0.9375rem;    /* 15px */
+  --text-sm: 0.8125rem;      /* 13px */
+  --text-xs: 0.75rem;        /* 12px */
+  --text-eyebrow: 0.6875rem; /* 11px */
 
   --animate-marquee: marquee var(--duration) infinite linear;
   --animate-marquee-vertical: marquee-vertical var(--duration) linear infinite;
@@ -84,9 +70,7 @@
   }
   --animate-shimmer-slide: shimmer-slide var(--speed) ease-in-out infinite alternate;
   --animate-spin-around: spin-around calc(var(--speed) * 2) infinite linear;
-  @keyframes shimmer-slide {
-    to { transform: translate(calc(100cqw - 100%), 0); }
-  }
+  @keyframes shimmer-slide { to { transform: translate(calc(100cqw - 100%), 0); } }
   @keyframes spin-around {
     0% { transform: translateZ(0) rotate(0); }
     15%, 35% { transform: translateZ(0) rotate(90deg); }
@@ -94,9 +78,7 @@
     100% { transform: translateZ(0) rotate(360deg); }
   }
   --animate-gradient: gradient 8s linear infinite;
-  @keyframes gradient {
-    to { background-position: var(--bg-size, 300%) 0; }
-  }
+  @keyframes gradient { to { background-position: var(--bg-size, 300%) 0; } }
   --animate-shiny-text: shiny-text 8s infinite;
   @keyframes shiny-text {
     0%, 90%, 100% { background-position: calc(-100% - var(--shiny-width)) 0; }
@@ -104,97 +86,47 @@
   }
 }
 
-:root {
-  /* LIGHT — cream paper, ink, vermillion accent. Field manual. */
-  --paper: #F4EFE6;
-  --paper-foreground: #1B1714;
-  --background: #F4EFE6;
-  --foreground: #1B1714;
-  --ink: #1B1714;
+:root, .dark {
+  --background: #000000;
+  --foreground: #FFFFFF;
 
-  /* No raised cards — surfaces equal paper. Where we need a fill (modal, popover) it lifts to plain warm white. */
-  --card: #FCFAF5;
-  --card-foreground: #1B1714;
-  --popover: #FCFAF5;
-  --popover-foreground: #1B1714;
+  --card: rgba(28, 28, 30, 0.7);
+  --card-foreground: #FFFFFF;
+  --popover: rgba(20, 20, 22, 0.95);
+  --popover-foreground: #FFFFFF;
 
-  --vermillion: #C0392B;
-  --sage: #5F6B4E;
+  --primary: #FFFFFF;
+  --primary-foreground: #000000;
+  --secondary: rgba(255, 255, 255, 0.06);
+  --secondary-foreground: #FFFFFF;
+  --muted: rgba(255, 255, 255, 0.04);
+  --muted-foreground: #8E8E93;
+  --accent: rgba(255, 255, 255, 0.06);
+  --accent-foreground: #FFFFFF;
 
-  --primary: #1B1714;          /* primary CTA = ink button on cream */
-  --primary-foreground: #F4EFE6;
-  --secondary: #E9E2D3;        /* warm tan */
-  --secondary-foreground: #1B1714;
-  --muted: #E9E2D3;
-  --muted-foreground: #6B5F52; /* warm taupe */
-  --accent: #E9E2D3;
-  --accent-foreground: #1B1714;
-  --destructive: #C0392B;
-  --destructive-foreground: #F4EFE6;
-  --success: #5F6B4E;
-  --success-foreground: #F4EFE6;
-  --warning: #B57F2A;
-  --warning-foreground: #1B1714;
+  --destructive: #FF2D6E;
+  --destructive-foreground: #FFFFFF;
+  --success: #BBFF38;
+  --warning: #FFA42B;
 
-  /* Rules — hairlines for separators. Thicker top-of-section rule via .rule-strong utility. */
-  --border: rgba(27, 23, 20, 0.14);
-  --hairline: rgba(27, 23, 20, 0.08);
-  --rule: rgba(27, 23, 20, 0.85);
-  --input: rgba(27, 23, 20, 0.22);
-  --ring: #C0392B;
+  --accent-cyan: #00DCFF;
+  --accent-magenta: #FF2D6E;
+  --accent-lime: #BBFF38;
+  --accent-amber: #FFA42B;
 
-  /* Sleep stage colors — toned down to fit cream paper */
-  --stage-awake: #C0392B;
-  --stage-rem: #2E7BBF;
-  --stage-core: #6B8FBF;
-  --stage-deep: #4A4880;
-}
+  --border: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.05);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #00DCFF;
 
-.dark {
-  /* DARK — ink black page, warm cream ink. The same paper, inverted. */
-  --paper: #0F0D0B;
-  --paper-foreground: #E8E2D3;
-  --background: #0F0D0B;
-  --foreground: #E8E2D3;
-  --ink: #E8E2D3;
-
-  --card: #191714;
-  --card-foreground: #E8E2D3;
-  --popover: #191714;
-  --popover-foreground: #E8E2D3;
-
-  --vermillion: #E5604F;
-  --sage: #93A382;
-
-  --primary: #E8E2D3;
-  --primary-foreground: #0F0D0B;
-  --secondary: #25201B;
-  --secondary-foreground: #E8E2D3;
-  --muted: #25201B;
-  --muted-foreground: #9C9384;
-  --accent: #25201B;
-  --accent-foreground: #E8E2D3;
-  --destructive: #E5604F;
-  --destructive-foreground: #0F0D0B;
-  --success: #93A382;
-  --success-foreground: #0F0D0B;
-  --warning: #D9A24F;
-  --warning-foreground: #0F0D0B;
-
-  --border: rgba(232, 226, 211, 0.14);
-  --hairline: rgba(232, 226, 211, 0.08);
-  --rule: rgba(232, 226, 211, 0.9);
-  --input: rgba(232, 226, 211, 0.22);
-  --ring: #E5604F;
-
-  --stage-awake: #E5604F;
-  --stage-rem: #6FA8D5;
-  --stage-core: #8AAACD;
-  --stage-deep: #8A87C2;
+  --stage-awake: #FF2D6E;
+  --stage-rem: #00DCFF;
+  --stage-core: #5C8AC7;
+  --stage-deep: #6B6CC5;
 }
 
 * { box-sizing: border-box; margin: 0; }
-:root { color-scheme: light dark; }
+:root { color-scheme: dark; }
 
 html, body, #root {
   height: 100%;
@@ -206,37 +138,8 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  font-feature-settings: "ss01" 1, "cv01" 1, "cv11" 1;
 }
 
-/* Subtle paper grain — only on the page background, never on overlays. */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.4;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.1  0 0 0 0 0.09  0 0 0 0 0.08  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  mix-blend-mode: multiply;
-}
-.dark body::before {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.9  0 0 0 0 0.88  0 0 0 0 0.83  0 0 0 0.06 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  mix-blend-mode: screen;
-}
-#root { position: relative; z-index: 1; }
-
-/* Display + mono hand-applied. */
-.font-display {
-  font-family: var(--font-display);
-  font-variation-settings: "opsz" 96, "SOFT" 0;
-  letter-spacing: -0.015em;
-}
-.font-display-tight {
-  font-family: var(--font-display);
-  font-variation-settings: "opsz" 144, "SOFT" 0;
-  letter-spacing: -0.025em;
-}
 .font-mono,
 code,
 kbd,
@@ -246,48 +149,39 @@ pre {
   font-feature-settings: "calt" 0, "liga" 0, "zero" 1;
 }
 
-/* Small-caps eyebrow — used for section labels, masthead metadata, kicker text. */
 .eyebrow {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: var(--text-eyebrow);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-weight: 500;
+  font-weight: 600;
+  color: var(--muted-foreground);
 }
 
-/* Rules — replace card chrome. */
-.rule-strong { border-top: 1.5px solid var(--rule); }
 .rule-hair { border-top: 1px solid var(--hairline); }
 .rule-hair-b { border-bottom: 1px solid var(--hairline); }
-.rule-double {
-  border-top: 1px solid var(--rule);
-  box-shadow: 0 3px 0 -2px var(--rule);
-}
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: color-mix(in oklch, var(--foreground) 14%, transparent); }
-::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--foreground) 24%, transparent); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
 
 :focus-visible {
   outline: 1.5px solid var(--ring);
-  outline-offset: 3px;
-  border-radius: 0;
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 button:focus:not(:focus-visible),
 input:focus:not(:focus-visible),
-[tabindex]:focus:not(:focus-visible) {
-  outline: none;
-}
+[tabindex]:focus:not(:focus-visible) { outline: none; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
 
-/* Editorial selection. */
 ::selection {
-  background: var(--vermillion);
-  color: var(--paper);
+  background: var(--accent-cyan);
+  color: #000;
 }
