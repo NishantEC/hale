@@ -86,7 +86,7 @@ export function TopBar({
 
   return (
     <header
-      className="flex items-center gap-4 px-4 bg-background shrink-0"
+      className="flex items-center gap-4 px-5 bg-background border-b border-border shrink-0"
       style={{ height: TOP_BAR_HEIGHT }}
     >
       <div className="flex items-center gap-2.5 shrink-0">
@@ -180,7 +180,7 @@ export function TopBar({
         </Tooltip>
       </div>
 
-      <div className="flex items-center gap-2 shrink-0">
+      <div className="flex items-center gap-3 shrink-0">
         <Badge variant="outline" className="gap-2 px-3 py-1 font-medium" title={pipelineLabel}>
           <span className={cn("w-2 h-2 rounded-full", DOT_BG[pipelineTone])} />
           <span className="text-xs">{pipelineLabel}</span>
@@ -210,13 +210,14 @@ export function TopBar({
           <TooltipContent>Toggle live tail (L)</TooltipContent>
         </Tooltip>
 
-        <ThemeToggle />
+        <div className="flex items-center gap-2 pl-3 ml-1 border-l border-border">
+          <ThemeToggle />
 
-        <span className="text-muted-foreground text-xs tabular-nums hidden lg:inline">
-          {lastRefreshedAt ? `Refreshed ${relativeTime(lastRefreshedAt)}` : "—"}
-        </span>
+          <span className="text-muted-foreground text-xs tabular-nums hidden lg:inline">
+            {lastRefreshedAt ? `${relativeTime(lastRefreshedAt)}` : "—"}
+          </span>
 
-        <Tooltip>
+          <Tooltip>
           <TooltipTrigger asChild>
             <Button
               type="button"
@@ -233,17 +234,18 @@ export function TopBar({
           <TooltipContent>Refresh data (R)</TooltipContent>
         </Tooltip>
 
-        <RunPipelineMenu
-          busy={busy}
-          onRun={onRunPipeline}
-          label="Run"
-          presets={[
-            { kind: "day", day: date, label: `Run ${date} only` },
-            { kind: "lastDays", days: 7, label: "Run last 7 days" },
-            { kind: "lastDays", days: 30, label: "Run last 30 days" },
-            { kind: "full", label: "Run full (last 45 days)" },
-          ]}
-        />
+          <RunPipelineMenu
+            busy={busy}
+            onRun={onRunPipeline}
+            label="Run"
+            presets={[
+              { kind: "day", day: date, label: `Run ${date} only` },
+              { kind: "lastDays", days: 7, label: "Run last 7 days" },
+              { kind: "lastDays", days: 30, label: "Run last 30 days" },
+              { kind: "full", label: "Run full (last 45 days)" },
+            ]}
+          />
+        </div>
       </div>
     </header>
   )

@@ -50,7 +50,7 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
 
 function Section({ title, items }: { title: string; items: Shortcut[] }) {
   return (
-    <div className="mb-2 last:mb-0">
+    <div className="mb-5 last:mb-0">
       <p className="text-muted-foreground text-[10px] uppercase tracking-widest font-semibold mb-2">
         {title}
       </p>

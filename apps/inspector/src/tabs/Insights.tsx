@@ -436,7 +436,7 @@ function DeltaTile({ card, compact }: { card: DeltaCard; compact?: boolean }) {
   const def = METRIC_DEFS[card.label]
 
   return (
-    <Card className={cn("gap-2", borderClass, compact ? "" : "min-h-32")}>
+    <Card className={cn("gap-3", borderClass, compact ? "" : "min-h-32")}>
       <CardHeader className="pb-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">

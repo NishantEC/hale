@@ -36,7 +36,7 @@ export function IconRail({
 }) {
   return (
     <nav
-      className="flex flex-col items-center bg-background shrink-0 py-3"
+      className="flex flex-col items-center bg-background border-r border-border shrink-0 py-4"
       style={{ width: RAIL_WIDTH }}
     >
       <div className="flex-1 flex flex-col gap-1 w-full px-2">
@@ -85,7 +85,7 @@ export function IconRail({
         })}
       </div>
 
-      <div className="flex flex-col gap-1 w-full px-2 pt-2">
+      <div className="flex flex-col gap-1 w-full px-2 pt-3 mt-2 border-t border-border">
         <Tooltip>
           <TooltipTrigger asChild>
             <button

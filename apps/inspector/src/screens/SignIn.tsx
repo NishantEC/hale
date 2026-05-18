@@ -125,7 +125,7 @@ export function SignIn({ onAuthed }: { onAuthed: (token: string) => void }) {
             type="button"
             variant="link"
             size="sm"
-            className="mt-3 px-0 text-muted-foreground"
+            className="mt-5 px-0 text-muted-foreground"
             onClick={() => {
               setMode(mode === "signin" ? "signup" : "signin")
               setError(null)

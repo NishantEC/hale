@@ -20,7 +20,6 @@ import { AnimatedShinyText } from "@/components/magicui/animated-shiny-text"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -214,64 +213,77 @@ export function HomeTab(props: HomeProps) {
   return (
     <div className="space-y-6 max-w-6xl">
       {/* Hero status row */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-5">
         <StatusBadge tone={pipeline.tone} label={pipeline.label} detail={pipeline.detail} action={pipeline.action} size="lg" />
         <StatusBadge tone={strap.tone} label={strap.label} detail={strap.detail} size="lg" />
         <StatusBadge tone={night.tone} label={night.label} detail={night.detail} action={night.action} size="lg" />
       </div>
 
-      {/* Last-night card */}
-      <Card>
-        <CardHeader className="flex-row items-baseline justify-between pb-0">
-          <CardTitle>
+      {/* Last night — hypnogram */}
+      <section>
+        <div className="flex items-baseline justify-between">
+          <SectionHead>
             Last night ·{" "}
             <span className="font-mono tabular-nums font-medium">
               {formatDate(sleep?.selectedNightDate ?? date)}
             </span>
-          </CardTitle>
+          </SectionHead>
           {detection?.confidence != null && (
-            <CardDescription>
+            <span className="text-muted-foreground text-xs">
               confidence {(detection.confidence * 100).toFixed(0)}%
-            </CardDescription>
+            </span>
           )}
-        </CardHeader>
-        <CardContent className="space-y-4">
+        </div>
+        <div className="mt-5">
           {sleep?.epochTimeline && sleep.epochTimeline.length > 0 ? (
-            <Hypnogram epochs={sleep.epochTimeline} height={140} />
+            <Card>
+              <CardContent>
+                <Hypnogram epochs={sleep.epochTimeline} height={140} />
+              </CardContent>
+            </Card>
           ) : (
-            <p className="text-muted-foreground text-sm py-2">
-              No sleep detection for {date}. The strap may not have been worn, or the pipeline
-              hasn't yet processed this night.
-            </p>
-          )}
-
-          {topCorrelation && (
-            <Card className="border-primary/30 bg-primary/5 py-4">
-              <CardContent className="px-4">
-                <AnimatedShinyText className="text-[15px] leading-relaxed text-foreground max-w-none">
-                  {topCorrelation}
-                </AnimatedShinyText>
+            <Card>
+              <CardContent>
+                <p className="text-muted-foreground text-sm py-2">
+                  No sleep detection for {date}. The strap may not have been worn, or the pipeline
+                  hasn't yet processed this night.
+                </p>
               </CardContent>
             </Card>
           )}
+        </div>
+      </section>
 
-          <div className="grid grid-cols-4 gap-3">
-            {chips.map((c) => (
-              <div key={c.label} className="relative">
-                <MetricChip label={c.label} value={c.value} unit={c.unit} avg14d={c.avg14d} baseline={c.baseline} />
-                <div className="absolute top-3.5 right-3.5">
-                  <MetricInfo {...c.info} />
-                </div>
+      {/* Journal correlation editorial — only when present */}
+      {topCorrelation && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent>
+            <AnimatedShinyText className="text-[15px] leading-relaxed text-foreground max-w-none">
+              {topCorrelation}
+            </AnimatedShinyText>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Night metrics — chip grid */}
+      <section>
+        <SectionHead>Night metrics</SectionHead>
+        <div className="mt-5 grid grid-cols-4 gap-5">
+          {chips.map((c) => (
+            <div key={c.label} className="relative">
+              <MetricChip label={c.label} value={c.value} unit={c.unit} avg14d={c.avg14d} baseline={c.baseline} />
+              <div className="absolute top-3.5 right-3.5">
+                <MetricInfo {...c.info} />
               </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* Sync trail */}
       <section>
         <SectionHead>Sync trail</SectionHead>
-        <div className="mt-3">
+        <div className="mt-5">
           <SyncTrail nodes={trailNodes} />
         </div>
       </section>

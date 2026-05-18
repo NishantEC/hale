@@ -92,7 +92,7 @@ export function TrendsTab({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-6xl">
       {/* Header row */}
       <div className="flex items-center justify-between">
         <p className="text-muted-foreground text-sm">
