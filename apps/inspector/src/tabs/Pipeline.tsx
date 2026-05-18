@@ -13,7 +13,6 @@ import { StatusBadge, type StatusTone } from "../components/StatusBadge"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
