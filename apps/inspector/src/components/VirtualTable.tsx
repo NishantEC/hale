@@ -37,7 +37,7 @@ export function VirtualTable<T>({
     >
       <table className="w-full text-sm border-collapse">
         {renderHeader && (
-          <thead className="sticky top-0 bg-surface-1 z-10">
+          <thead className="sticky top-0 bg-card z-10">
             {renderHeader()}
           </thead>
         )}

@@ -1,8 +1,15 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react"
+import { useState, useMemo, useCallback } from "react"
+import { Copy } from "lucide-react"
+import { toast } from "sonner"
 import type { RawRecords } from "../api"
 import { SectionHead } from "../components/primitives"
 import { VirtualTable } from "../components/VirtualTable"
 import { formatNumber } from "../format"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
 
 const ROW_HEIGHT = 40
 
@@ -64,24 +71,6 @@ function rowInRange(row: RawRow, range: ParsedRange): boolean {
   return minutes >= startMinutes || minutes <= endMinutes
 }
 
-function CopyIcon({ visible }: { visible: boolean }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width="13"
-      height="13"
-      viewBox="0 0 16 16"
-      fill="none"
-      className={`inline-block ml-1.5 text-text-2 transition-opacity ${visible ? "opacity-100" : "opacity-0"} shrink-0`}
-    >
-      <rect x="5" y="5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2H3.5A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  )
-}
-
-type CopiedState = { id: string; timeoutId: ReturnType<typeof setTimeout> } | null
-
 export function RawTab({
   raw,
   date,
@@ -91,8 +80,6 @@ export function RawTab({
 }) {
   const [filterInput, setFilterInput] = useState("")
   const [hoveredId, setHoveredId] = useState<string | null>(null)
-  const [copied, setCopied] = useState<CopiedState>(null)
-  const copiedRef = useRef<CopiedState>(null)
 
   const inputIsNonEmpty = filterInput.trim().length > 0
   const parsedRange = useMemo(() => parseTimeRange(filterInput), [filterInput])
@@ -107,19 +94,8 @@ export function RawTab({
   const handleCopy = useCallback((row: RawRow) => {
     const text = JSON.stringify(row, null, 2)
     navigator.clipboard.writeText(text).then(() => {
-      if (copiedRef.current) clearTimeout(copiedRef.current.timeoutId)
-      const timeoutId = setTimeout(() => {
-        setCopied(null)
-        copiedRef.current = null
-      }, 1800)
-      const next = { id: row.id, timeoutId }
-      copiedRef.current = next
-      setCopied(next)
+      toast.success("Row JSON copied to clipboard")
     }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    return () => { if (copiedRef.current) clearTimeout(copiedRef.current.timeoutId) }
   }, [])
 
   const renderHeader = useCallback(() => (
@@ -127,7 +103,7 @@ export function RawTab({
       {COLUMNS.map((col) => (
         <th
           key={col.key}
-          className="px-4 py-3 text-left text-text-2 font-medium text-xs uppercase tracking-wider border-b border-border"
+          className="px-4 py-3 text-left text-muted-foreground font-medium text-xs uppercase tracking-wider border-b border-border"
         >
           {col.label}
         </th>
@@ -137,10 +113,9 @@ export function RawTab({
 
   const renderRow = useCallback((row: RawRow) => {
     const isHovered = hoveredId === row.id
-    const isCopied = copied?.id === row.id
     return (
       <tr
-        className="border-b border-border/50 hover:bg-surface-1 transition-colors focus:outline-none focus:bg-surface-1"
+        className="border-b border-border/50 hover:bg-muted/50 transition-colors focus:outline-none focus:bg-muted/50"
         onMouseEnter={() => setHoveredId(row.id)}
         onMouseLeave={() => setHoveredId(null)}
         onFocus={() => setHoveredId(row.id)}
@@ -152,13 +127,16 @@ export function RawTab({
           }
         }}
       >
-        <td className="px-4 py-2.5 text-text-1 whitespace-nowrap" style={{ width: "14%" }}>
-          <span className="flex items-center">
+        <td className="px-4 py-2.5 text-foreground whitespace-nowrap" style={{ width: "14%" }}>
+          <span className="flex items-center gap-1.5">
             {formatRowTime(row.timestamp)}
-            {isCopied
-              ? <span className="ml-1.5 text-[11px] text-green font-medium">copied</span>
-              : <CopyIcon visible={isHovered} />
-            }
+            <Copy
+              aria-hidden
+              className={cn(
+                "size-3 text-muted-foreground transition-opacity shrink-0",
+                isHovered ? "opacity-100" : "opacity-0",
+              )}
+            />
           </span>
         </td>
         <td className="px-4 py-2.5" style={{ width: "9%" }}>{formatNumber(row.heartRate)}</td>
@@ -173,80 +151,80 @@ export function RawTab({
         <td className="px-4 py-2.5" style={{ width: "10%" }}>{formatNumber(row.skinTempRaw, 2)}</td>
       </tr>
     )
-  }, [hoveredId, copied, handleCopy])
+  }, [hoveredId, handleCopy])
+
+  const totalCount = raw?.count ?? 0
+  const filterActive = inputIsNonEmpty && parsedRange !== null
+
+  const rowCountLabel = filterActive
+    ? `${filteredRows.length} of ${totalCount} rows · ${date}`
+    : `${totalCount} rows · ${date}`
 
   if (raw?.count === 0) {
     return (
       <div>
         <div className="flex items-baseline justify-between mb-4">
           <SectionHead>Raw sensor records</SectionHead>
-          <span className="text-text-2 text-sm">{date}</span>
+          <span className="text-muted-foreground text-sm">{date}</span>
         </div>
-        <div className="py-16 text-center text-text-2 text-sm">
-          No sensor records for {date}. Select a different date or check that the strap synced.
-        </div>
+        <Alert>
+          <AlertDescription>
+            No sensor records for {date}. Select a different date or check that the strap synced.
+          </AlertDescription>
+        </Alert>
       </div>
     )
   }
-
-  const totalCount = raw?.count ?? 0
-  const filterActive = inputIsNonEmpty && parsedRange !== null
 
   return (
     <div>
       <div className="flex items-baseline justify-between mb-4">
         <SectionHead>Raw sensor records</SectionHead>
-        <span className="text-text-2 text-sm">
-          {filterActive
-            ? `${filteredRows.length} of ${totalCount} rows · ${date}`
-            : `${totalCount} rows · ${date}`}
-        </span>
+        <span className="text-muted-foreground text-sm">{rowCountLabel}</span>
       </div>
 
-      <div className="mb-3">
-        <div className="flex items-center gap-3">
-          <input
-            type="text"
-            value={filterInput}
-            onChange={(e) => setFilterInput(e.target.value)}
-            placeholder="Filter by time — e.g. 02:00-03:00 or 14:30"
-            className={[
-              "w-72 px-3 py-1.5 text-sm rounded-lg border bg-surface-1 text-text-1",
-              "placeholder:text-text-2 outline-none focus:ring-1 transition-colors",
-              inputInvalid
-                ? "border-red/60 focus:ring-red/40"
-                : "border-border focus:ring-border focus:border-text-2",
-            ].join(" ")}
-          />
-          {filterActive && (
-            <button
-              onClick={() => setFilterInput("")}
-              className="text-xs text-text-2 hover:text-text-1 transition-colors"
-            >
-              Clear
-            </button>
+      <Card>
+        <CardHeader className="py-4">
+          <div className="flex items-center gap-3">
+            <Input
+              type="text"
+              value={filterInput}
+              onChange={(e) => setFilterInput(e.target.value)}
+              placeholder="Filter by time — e.g. 02:00-03:00 or 14:30"
+              aria-invalid={inputInvalid || undefined}
+              className={cn(
+                "w-72",
+                inputInvalid && "border-destructive focus-visible:ring-destructive/20",
+              )}
+            />
+            {filterActive && (
+              <Button variant="ghost" size="sm" onClick={() => setFilterInput("")}>
+                Clear
+              </Button>
+            )}
+          </div>
+          {inputInvalid && (
+            <p className="text-xs text-destructive">
+              Use HH:MM or HH:MM-HH:MM (24-hour). Example: 02:00-03:30
+            </p>
           )}
-        </div>
-        {inputInvalid && (
-          <p className="mt-1 text-xs text-red/80">
-            Use HH:MM or HH:MM-HH:MM (24-hour). Example: 02:00-03:30
+        </CardHeader>
+
+        <CardContent className="px-0 pb-0">
+          <VirtualTable
+            rows={filteredRows}
+            rowHeight={ROW_HEIGHT}
+            renderHeader={renderHeader}
+            renderRow={renderRow}
+            maxHeight={window.innerHeight - 260}
+          />
+          <p className="px-6 py-3 text-xs text-muted-foreground">
+            Focus a row, then press{" "}
+            <kbd className="font-mono bg-muted border border-border rounded px-1 py-0.5">Cmd C</kbd>{" "}
+            to copy the record as JSON.
           </p>
-        )}
-      </div>
-
-      <VirtualTable
-        rows={filteredRows}
-        rowHeight={ROW_HEIGHT}
-        renderHeader={renderHeader}
-        renderRow={renderRow}
-        maxHeight={window.innerHeight - 220}
-      />
-
-      <p className="mt-2 text-xs text-text-2">
-        Focus a row, then press{" "}
-        <kbd className="font-mono bg-surface-2 border border-border rounded px-1 py-0.5">Cmd C</kbd>{" "}
-        to copy the record as JSON.
-      </p>
+        </CardContent>
+      </Card>
     </div>
   )
 }
