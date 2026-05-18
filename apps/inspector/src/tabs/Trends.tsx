@@ -7,23 +7,17 @@ import { TrendChart } from "../components/TrendChart"
 import { Badge } from "../components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Label } from "../components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select"
 import { Switch } from "../components/ui/switch"
+import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
 import { formatNumber } from "../format"
 import { cn } from "@/lib/utils"
 
 const RANGE_OPTIONS = [
-  { days: 7, label: "Last 7 days" },
-  { days: 14, label: "Last 14 days" },
-  { days: 30, label: "Last 30 days" },
-  { days: 60, label: "Last 60 days" },
-  { days: 90, label: "Last 90 days" },
+  { days: 7, label: "Last 7 days", short: "7d" },
+  { days: 14, label: "Last 14 days", short: "14d" },
+  { days: 30, label: "Last 30 days", short: "30d" },
+  { days: 60, label: "Last 60 days", short: "60d" },
+  { days: 90, label: "Last 90 days", short: "90d" },
 ] as const
 
 const CHART_COLORS = {
@@ -97,9 +91,6 @@ export function TrendsTab({
     compact,
   }
 
-  const currentRangeLabel =
-    RANGE_OPTIONS.find((r) => r.days === rangeDays)?.label ?? `Last ${rangeDays} days`
-
   return (
     <div className="space-y-10">
       {/* Header row */}
@@ -120,21 +111,19 @@ export function TrendsTab({
             </Label>
           </div>
 
-          <Select
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
             value={String(rangeDays)}
-            onValueChange={(v) => onRangeChange(Number(v))}
+            onValueChange={(v) => v && onRangeChange(Number(v))}
           >
-            <SelectTrigger size="sm" className="w-[130px]">
-              <SelectValue>{currentRangeLabel}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {RANGE_OPTIONS.map((r) => (
-                <SelectItem key={r.days} value={String(r.days)}>
-                  {r.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {RANGE_OPTIONS.map((r) => (
+              <ToggleGroupItem key={r.days} value={String(r.days)} aria-label={r.label}>
+                {r.short}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
 
           <RunPipelineMenu
             busy={busy}
