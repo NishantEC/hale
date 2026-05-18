@@ -36,10 +36,13 @@ export const HomeDateCalendar: FC<Props> = ({
   return (
     <View style={$wrap(colors)}>
       <Calendar
+        // react-native-calendars treats `current` as initial-only — changes
+        // after mount don't navigate the grid. Forcing a remount via key on
+        // every monthCursor change makes external arrow taps actually flip
+        // the displayed month.
+        key={monthCursor}
         current={monthInitial}
         minDate={minDate}
-        // Render the chrome-less variant — we own the month header in the
-        // top-strip DateSwitcher and don't want a second one inside the grid.
         renderHeader={() => null}
         hideArrows
         enableSwipeMonths
@@ -113,9 +116,11 @@ export const HomeDateCalendar: FC<Props> = ({
 
 const $wrap = (colors: typeof LOCAL_THEME.colors): ViewStyle => ({
   backgroundColor: colors.surfaceSubtle,
-  paddingHorizontal: 14,
-  paddingTop: 6,
-  paddingBottom: 12,
+  // Edge-to-edge band — internal padding lives inside the Calendar's own
+  // theme styling, not on the wrapper.
+  paddingHorizontal: 0,
+  paddingTop: 4,
+  paddingBottom: 10,
 })
 
 const $day = (bg: string): ViewStyle => ({

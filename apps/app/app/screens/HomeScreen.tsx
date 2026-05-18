@@ -238,18 +238,25 @@ export const HomeScreen: FC = () => {
     })
   }, [calendarMonthCursor])
 
-  const handleDaySwipeChanged = useCallback(({ nativeEvent }: PanGestureHandlerGestureEvent) => {
-    setIsHorizontalDaySwipeActive(
-      shouldLockHomeScroll({
-        translationX: nativeEvent.translationX,
-        translationY: nativeEvent.translationY,
-      }),
-    )
-  }, [])
+  const handleDaySwipeChanged = useCallback(
+    ({ nativeEvent }: PanGestureHandlerGestureEvent) => {
+      // With the calendar open the user is swiping the month grid; the
+      // outer day-swipe shouldn't steal those gestures.
+      if (isCalendarOpen) return
+      setIsHorizontalDaySwipeActive(
+        shouldLockHomeScroll({
+          translationX: nativeEvent.translationX,
+          translationY: nativeEvent.translationY,
+        }),
+      )
+    },
+    [isCalendarOpen],
+  )
 
   const finishDaySwipe = useCallback(
     (translationX: number, translationY: number) => {
       setIsHorizontalDaySwipeActive(false)
+      if (isCalendarOpen) return
 
       const action = getDaySwipeAction({ translationX, translationY })
 
@@ -259,7 +266,7 @@ export const HomeScreen: FC = () => {
         moveToNextDay()
       }
     },
-    [moveToNextDay, moveToPreviousDay],
+    [isCalendarOpen, moveToNextDay, moveToPreviousDay],
   )
 
   const scrollY = useSharedValue(0)
@@ -394,7 +401,11 @@ export const HomeScreen: FC = () => {
           </View>
 
           {isCalendarOpen ? (
-            <Animated.View entering={FadeIn.duration(200)} exiting={FadeOut.duration(150)}>
+            <Animated.View
+              entering={FadeIn.duration(200)}
+              exiting={FadeOut.duration(150)}
+              style={$calendarBleed}
+            >
               <HomeDateCalendar
                 selectedDate={selectedDate}
                 monthCursor={calendarMonthCursor}
@@ -586,6 +597,15 @@ const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   paddingHorizontal: 20,
   paddingTop: 18,
 })
+
+// Breaks out of the container's horizontal padding + nudges against the
+// surrounding gap so the calendar band reads as edge-to-edge with only a
+// tight rhythm gap below the date strip.
+const $calendarBleed: ViewStyle = {
+  marginHorizontal: -20,
+  marginTop: -24,
+  marginBottom: -20,
+}
 
 const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
   backgroundColor: colors.screenBackground,
