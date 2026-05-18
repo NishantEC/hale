@@ -1,4 +1,10 @@
-import { useEffect, useRef } from "react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type Shortcut = { keys: string; action: string }
 
@@ -24,70 +30,35 @@ const DATE: Shortcut[] = [
 ]
 
 export function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const triggerRef = useRef<HTMLElement | null>(null)
-  const closeRef = useRef<HTMLButtonElement>(null)
-
-  useEffect(() => {
-    if (open) {
-      triggerRef.current = document.activeElement as HTMLElement | null
-      requestAnimationFrame(() => closeRef.current?.focus())
-    } else if (triggerRef.current) {
-      triggerRef.current.focus()
-    }
-  }, [open])
-
-  if (!open) return null
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Keyboard shortcuts"
-      onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") {
-          e.preventDefault()
-          onClose()
-        }
-      }}
-    >
-      <div
-        className="w-full max-w-md bg-surface-2 border border-border-strong rounded-2xl shadow-2xl p-6"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold">Keyboard shortcuts</h2>
-          <button
-            ref={closeRef}
-            type="button"
-            onClick={onClose}
-            className="text-text-2 hover:text-text-0 cursor-pointer text-xl leading-none"
-            aria-label="Close help"
-          >
-            ×
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Keyboard shortcuts</DialogTitle>
+          <DialogDescription className="sr-only">
+            Reference for keyboard shortcuts available in the inspector
+          </DialogDescription>
+        </DialogHeader>
 
         <Section title="Navigation" items={NAV} />
         <Section title="Actions" items={ACTIONS} />
         <Section title="Date" items={DATE} />
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 function Section({ title, items }: { title: string; items: Shortcut[] }) {
   return (
-    <div className="mb-4 last:mb-0">
-      <p className="text-text-2 text-[10px] uppercase tracking-widest font-semibold mb-2">
+    <div className="mb-2 last:mb-0">
+      <p className="text-muted-foreground text-[10px] uppercase tracking-widest font-semibold mb-2">
         {title}
       </p>
       <div className="space-y-1.5">
         {items.map((s) => (
           <div key={s.keys} className="flex items-center justify-between text-sm">
-            <span className="text-text-1">{s.action}</span>
-            <kbd className="text-xs font-mono px-2 py-0.5 rounded-md bg-surface border border-border text-text-0">
+            <span className="text-foreground">{s.action}</span>
+            <kbd className="text-xs font-mono px-2 py-0.5 rounded-md bg-muted border text-foreground">
               {s.keys}
             </kbd>
           </div>

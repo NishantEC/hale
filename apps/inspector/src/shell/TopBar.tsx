@@ -1,4 +1,11 @@
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useMemo } from "react"
+
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 
 import type { PipelineRunOptions, PipelineState } from "../api"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
@@ -9,10 +16,10 @@ import { TOP_BAR_HEIGHT } from "./tokens"
 type Tone = "ok" | "warn" | "error" | "neutral"
 
 const DOT_BG: Record<Tone, string> = {
-  ok: "bg-green",
-  warn: "bg-yellow",
-  error: "bg-red",
-  neutral: "bg-text-2",
+  ok: "bg-success",
+  warn: "bg-warning",
+  error: "bg-destructive",
+  neutral: "bg-muted-foreground",
 }
 
 function shiftDate(iso: string, deltaDays: number): string {
@@ -64,92 +71,124 @@ export function TopBar({
 
   return (
     <header
-      className="flex items-center gap-4 px-4 border-b border-border bg-surface shrink-0"
+      className="flex items-center gap-4 px-4 border-b bg-background shrink-0"
       style={{ height: TOP_BAR_HEIGHT }}
     >
       <div className="flex items-baseline gap-2 shrink-0">
         <h1 className="text-sm font-semibold tracking-tight">Noop Inspector</h1>
-        <span className="text-text-2 text-xs truncate max-w-[180px]" title={apiHost}>
+        <span className="text-muted-foreground text-xs truncate max-w-[180px]" title={apiHost}>
           {apiHost}
         </span>
       </div>
 
       <div className="flex items-center gap-1 mx-auto">
-        <button
-          type="button"
-          onClick={() => onDateChange(shiftDate(date, -1))}
-          className="px-2 py-1 rounded-md text-text-1 hover:bg-surface-2 hover:text-text-0 cursor-pointer transition-colors"
-          aria-label="Previous day"
-          title="Previous day ( [ )"
-        >
-          ‹
-        </button>
-        <input
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => onDateChange(shiftDate(date, -1))}
+              aria-label="Previous day"
+              className="h-8 w-8"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Previous day ([)</TooltipContent>
+        </Tooltip>
+
+        <Input
           type="date"
           value={date}
           onChange={(e) => onDateChange(e.target.value)}
-          className="bg-surface-1 border border-border rounded-md px-2 py-1 text-sm outline-none focus:border-border-strong tabular-nums"
+          className="h-8 w-auto px-2 text-sm tabular-nums"
         />
-        <button
-          type="button"
-          onClick={() => onDateChange(shiftDate(date, 1))}
-          className="px-2 py-1 rounded-md text-text-1 hover:bg-surface-2 hover:text-text-0 cursor-pointer transition-colors"
-          aria-label="Next day"
-          title="Next day ( ] )"
-        >
-          ›
-        </button>
-        <button
-          type="button"
-          onClick={() => onDateChange(todayIso())}
-          className="ml-1 px-2 py-1 rounded-md text-text-2 hover:text-text-0 hover:bg-surface-2 text-xs font-medium cursor-pointer transition-colors"
-          title="Today ( T )"
-        >
-          Today
-        </button>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => onDateChange(shiftDate(date, 1))}
+              aria-label="Next day"
+              className="h-8 w-8"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Next day (])</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => onDateChange(todayIso())}
+              className="h-8 text-xs"
+            >
+              Today
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Jump to today (T)</TooltipContent>
+        </Tooltip>
       </div>
 
-      <div className="flex items-center gap-3 shrink-0">
-        <div
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-1 border border-border"
-          title={pipelineLabel}
-        >
-          <span className={`w-2 h-2 rounded-full ${DOT_BG[pipelineTone]}`} />
-          <span className="text-[12px] text-text-1 font-medium">{pipelineLabel}</span>
-        </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <Badge variant="outline" className="gap-2 px-3 py-1 font-medium" title={pipelineLabel}>
+          <span className={cn("w-2 h-2 rounded-full", DOT_BG[pipelineTone])} />
+          <span className="text-xs">{pipelineLabel}</span>
+        </Badge>
 
-        <button
-          type="button"
-          onClick={onToggleLive}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
-            live
-              ? "bg-green-soft text-green"
-              : "bg-surface-1 border border-border text-text-2 hover:text-text-0"
-          }`}
-          title="Toggle live tail ( L )"
-        >
-          <span
-            className={`w-1.5 h-1.5 rounded-full ${live ? "bg-green animate-pulse" : "bg-text-2"}`}
-          />
-          {live ? "Live" : "Off"}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant={live ? "default" : "outline"}
+              size="sm"
+              onClick={onToggleLive}
+              className={cn(
+                "gap-1.5 rounded-full h-8",
+                live && "bg-success/15 text-success hover:bg-success/25 border-success/20",
+              )}
+            >
+              <span
+                className={cn(
+                  "w-1.5 h-1.5 rounded-full",
+                  live ? "bg-success animate-pulse" : "bg-muted-foreground",
+                )}
+              />
+              {live ? "Live" : "Off"}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Toggle live tail (L)</TooltipContent>
+        </Tooltip>
 
         <ThemeToggle />
 
-        <span className="text-text-2 text-xs tabular-nums">
+        <span className="text-muted-foreground text-xs tabular-nums hidden lg:inline">
           {lastRefreshedAt ? `Refreshed ${relativeTime(lastRefreshedAt)}` : "—"}
         </span>
 
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={busy}
-          aria-busy={busy}
-          className="px-3 py-1.5 rounded-md bg-surface-2 border border-border text-sm font-medium cursor-pointer hover:bg-surface-3 transition-colors disabled:opacity-40"
-          title="Refresh ( R )"
-        >
-          {busy ? "..." : "Refresh"}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={onRefresh}
+              disabled={busy}
+              aria-busy={busy}
+              className="h-8"
+            >
+              {busy ? "..." : "Refresh"}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh data (R)</TooltipContent>
+        </Tooltip>
 
         <RunPipelineMenu
           busy={busy}
