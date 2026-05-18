@@ -93,13 +93,13 @@ describe("deriveCandidate", () => {
     ).toBe<AccessoryState>("idle")
   })
 
-  it("stale_sync when connected and last sync > 24h ago", () => {
+  it("stale_sync when ready and last sync > 24h ago", () => {
     const now = 1_800_000_000_000
     expect(
       deriveCandidate(
         snap({
           now,
-          connectionState: "connected",
+          connectionState: "ready",
           lastSyncAt: now - 25 * 60 * 60 * 1000,
         }),
       ),
@@ -124,11 +124,14 @@ describe("deriveCandidate", () => {
     expect(deriveCandidate(snap({ connectionState: "connecting" }))).toBe<AccessoryState>(
       "ble_connecting",
     )
+    expect(deriveCandidate(snap({ connectionState: "discovering" }))).toBe<AccessoryState>(
+      "ble_connecting",
+    )
   })
 
-  it("ble_syncing requires connected", () => {
+  it("ble_syncing requires ready", () => {
     expect(
-      deriveCandidate(snap({ connectionState: "connected", bleIsSyncing: true })),
+      deriveCandidate(snap({ connectionState: "ready", bleIsSyncing: true })),
     ).toBe<AccessoryState>("ble_syncing")
     expect(
       deriveCandidate(snap({ connectionState: "disconnected", bleIsSyncing: true })),

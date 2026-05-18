@@ -21,7 +21,7 @@ export type AccessoryTone = "red" | "amber" | "teal" | "blue" | "green" | "indig
 
 export type AccessorySnapshot = {
   bleError: string | null
-  connectionState: "disconnected" | "scanning" | "connecting" | "connected"
+  connectionState: "disconnected" | "scanning" | "connecting" | "discovering" | "ready"
   wasWornRecently: boolean
   disconnectedAt: number | null
   lastSyncAt: number | null
@@ -91,13 +91,16 @@ const PREDICATES: Array<{ state: Exclude<AccessoryState, "idle">; test: (s: Acce
     s.disconnectedAt != null &&
     s.now - s.disconnectedAt > DISCONNECT_GRACE_MS },
   { state: "stale_sync",            test: (s) =>
-    s.connectionState === "connected" &&
+    s.connectionState === "ready" &&
     s.lastSyncAt != null &&
     s.now - s.lastSyncAt > ONE_DAY_MS },
   { state: "app_update",            test: (s) => s.isAppUpdateAvailable },
   { state: "low_power_paused",      test: (s) => s.isLowPowerMode && s.pendingCount > 0 },
-  { state: "ble_connecting",        test: (s) => s.connectionState === "scanning" || s.connectionState === "connecting" },
-  { state: "ble_syncing",           test: (s) => s.connectionState === "connected" && s.bleIsSyncing },
+  { state: "ble_connecting",        test: (s) =>
+    s.connectionState === "scanning" ||
+    s.connectionState === "connecting" ||
+    s.connectionState === "discovering" },
+  { state: "ble_syncing",           test: (s) => s.connectionState === "ready" && s.bleIsSyncing },
   { state: "pipeline_running",      test: (s) => s.pipelineState === "running" },
   { state: "upload_draining",       test: (s) => s.queueIsSyncing && s.pendingCount > 0 },
   { state: "offline_with_backlog",  test: (s) => !s.isOnline && s.pendingCount > 0 },
