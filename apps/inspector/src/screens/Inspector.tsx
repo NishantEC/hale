@@ -1,5 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react"
 import type { ReactNode } from "react"
+import {
+  HomeSkeleton,
+  SleepSkeleton,
+  PipelineSkeleton,
+  RawSkeleton,
+  TrendsSkeleton,
+  InsightsSkeleton,
+  TelemetrySkeleton,
+} from "../tabs/skeletons"
 
 import { API_BASE_URL, type PipelineRunOptions } from "../api"
 import { useUrlState } from "../hooks/useUrlState"
@@ -45,6 +54,17 @@ const PipelineTab = lazy(() => import("../tabs/Pipeline").then((m) => ({ default
 const TelemetryTab = lazy(() => import("../tabs/Telemetry").then((m) => ({ default: m.TelemetryTab })))
 
 type TabId = "home" | "sleep" | "pipeline" | "raw" | "trends" | "insights" | "telemetry"
+
+const TAB_SKELETONS: Record<string, ReactNode> = {
+  home: <HomeSkeleton />,
+  overview: <HomeSkeleton />,
+  sleep: <SleepSkeleton />,
+  pipeline: <PipelineSkeleton />,
+  raw: <RawSkeleton />,
+  trends: <TrendsSkeleton />,
+  insights: <InsightsSkeleton />,
+  telemetry: <TelemetrySkeleton />,
+}
 
 const RAIL_TABS: { id: TabId; label: string; icon: ReactNode; shortcut: string }[] = [
   {
@@ -404,7 +424,7 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
           )}
 
           <div className="px-8 py-6">
-            <Suspense fallback={<div className="text-muted-foreground text-sm">Loading…</div>}>
+            <Suspense fallback={TAB_SKELETONS[tab] ?? <div className="text-muted-foreground text-sm">Loading…</div>}>
               {(tab === "home" || tab === "overview") && (
                 <HomeTab
                   overview={overview.data ?? null}
