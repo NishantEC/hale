@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import type {
   PipelineResults,
   PipelineRunOptions,
@@ -17,7 +17,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { formatDuration, formatTimestamp, relativeTime } from "../format"
+import { ChevronDown, ChevronUp } from "lucide-react"
 
 export function PipelineTab({
   state,
@@ -84,6 +94,21 @@ export function PipelineTab({
           />
         </CardContent>
       </Card>
+
+      {runs && runs.runs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Run history</CardTitle>
+            <CardDescription>Click a row to open the detail drawer</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <PipelineRunsTable
+              rows={runs.runs}
+              onRowClick={(id) => setSelectedRunId(id)}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <PipelineResultsBlock results={results} />
 
@@ -280,6 +305,123 @@ function PipelineStateBlock({ state }: { state: PipelineState | null }) {
         </Card>
       </div>
     </div>
+  )
+}
+
+type SortCol = "startedAt" | "durationMs" | "detections" | "sleepStages" | "features"
+type SortDir = "asc" | "desc"
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <ChevronDown className="ml-1 h-3 w-3 opacity-30 inline" />
+  return dir === "asc"
+    ? <ChevronUp className="ml-1 h-3 w-3 inline" />
+    : <ChevronDown className="ml-1 h-3 w-3 inline" />
+}
+
+function PipelineRunsTable({
+  rows,
+  onRowClick,
+}: {
+  rows: PipelineRunRow[]
+  onRowClick: (id: string) => void
+}) {
+  const [sort, setSort] = useState<{ col: SortCol; dir: SortDir }>({
+    col: "startedAt",
+    dir: "desc",
+  })
+
+  function handleSort(col: SortCol) {
+    setSort((prev) =>
+      prev.col === col
+        ? { col, dir: prev.dir === "asc" ? "desc" : "asc" }
+        : { col, dir: "desc" },
+    )
+  }
+
+  const sortedRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      let aVal: number
+      let bVal: number
+      switch (sort.col) {
+        case "startedAt":
+          aVal = new Date(a.startedAt).getTime()
+          bVal = new Date(b.startedAt).getTime()
+          break
+        case "durationMs":
+          aVal = a.skipped ? -1 : a.durationMs
+          bVal = b.skipped ? -1 : b.durationMs
+          break
+        case "detections":
+          aVal = a.detections
+          bVal = b.detections
+          break
+        case "sleepStages":
+          aVal = a.sleepStages
+          bVal = b.sleepStages
+          break
+        case "features":
+          aVal = a.features
+          bVal = b.features
+          break
+      }
+      return sort.dir === "asc" ? aVal - bVal : bVal - aVal
+    })
+  }, [rows, sort])
+
+  function headProps(col: SortCol) {
+    return {
+      className: "cursor-pointer select-none",
+      onClick: () => handleSort(col),
+    }
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead {...headProps("startedAt")}>
+            Started <SortIcon active={sort.col === "startedAt"} dir={sort.dir} />
+          </TableHead>
+          <TableHead {...headProps("durationMs")}>
+            Duration <SortIcon active={sort.col === "durationMs"} dir={sort.dir} />
+          </TableHead>
+          <TableHead {...headProps("detections")}>
+            Detections <SortIcon active={sort.col === "detections"} dir={sort.dir} />
+          </TableHead>
+          <TableHead {...headProps("sleepStages")}>
+            Sleep stages <SortIcon active={sort.col === "sleepStages"} dir={sort.dir} />
+          </TableHead>
+          <TableHead {...headProps("features")}>
+            Features <SortIcon active={sort.col === "features"} dir={sort.dir} />
+          </TableHead>
+          <TableHead>Status</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {sortedRows.map((run) => (
+          <TableRow
+            key={run.id}
+            className="cursor-pointer"
+            onClick={() => onRowClick(run.id)}
+          >
+            <TableCell className="font-mono text-xs">{formatTimestamp(run.startedAt)}</TableCell>
+            <TableCell>{run.skipped ? "skipped" : formatDuration(run.durationMs)}</TableCell>
+            <TableCell>{run.detections}</TableCell>
+            <TableCell>{run.sleepStages}</TableCell>
+            <TableCell>{run.features}</TableCell>
+            <TableCell>
+              {run.skipped ? (
+                <Badge variant="outline" className="text-muted-foreground">skipped</Badge>
+              ) : run.forced ? (
+                <Badge variant="outline" className="border-warning/60 text-warning bg-warning/10">forced</Badge>
+              ) : (
+                <Badge variant="outline" className="border-success/60 text-success bg-success/10">ok</Badge>
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   )
 }
 
