@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository, MoreThanOrEqual } from 'typeorm';
+import { DataSource, EntityManager, Repository, MoreThanOrEqual } from 'typeorm';
 
 import { SleepDetection } from '../sleep/entities/sleep-detection.entity.js';
 import { SleepStage } from '../sleep/entities/sleep-stage.entity.js';
@@ -95,7 +95,24 @@ export class PipelineService {
     private pipelineRunRepo: Repository<PipelineRun>,
     @InjectRepository(DeviceEvent)
     private deviceEventRepo: Repository<DeviceEvent>,
+    private dataSource: DataSource,
   ) {}
+
+  // Per-user TZ fallback. `user.timeZone` is populated by SessionGuard whenever
+  // a request lands with ?timeZone=<IANA>. Returns undefined if not stored,
+  // letting resolveTimeZone fall back to UTC.
+  private async userTimeZone(userId: string): Promise<string | undefined> {
+    try {
+      const rows = await this.dataSource.query(
+        'SELECT "timeZone" FROM "user" WHERE id = $1 LIMIT 1',
+        [userId],
+      );
+      const tz = rows?.[0]?.timeZone;
+      return typeof tz === 'string' && tz.length > 0 ? tz : undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   // ------------------------------------------------------------------ ingest
   async ingest(userId: string, dto: IngestDto) {
@@ -252,7 +269,8 @@ export class PipelineService {
     timeZoneInput?: string,
     opts: { from?: Date; to?: Date; force?: boolean } = {},
   ) {
-    const timeZone = resolveTimeZone(timeZoneInput);
+    const resolvedTzInput = timeZoneInput ?? (await this.userTimeZone(userId));
+    const timeZone = resolveTimeZone(resolvedTzInput);
     const now = opts.to ?? new Date();
     const cutoff =
       opts.from ?? new Date(now.getTime() - 45 * 24 * 60 * 60 * 1000);

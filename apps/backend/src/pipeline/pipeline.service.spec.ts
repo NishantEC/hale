@@ -59,6 +59,7 @@ describe('PipelineService raw_sensor_records ingest', () => {
       {} as any, // pipelineState
       {} as any, // pipelineRun
       {} as any, // deviceEvent
+      {} as any, // dataSource
     );
 
     await service.ingest('user-1', {
@@ -114,6 +115,7 @@ describe('PipelineService derived cleanup', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any, // dataSource
     );
 
     await (service as any).pruneStaleCalendarDayRows(
@@ -150,6 +152,7 @@ describe('PipelineService derived cleanup', () => {
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any,
       {} as any,
+      {} as any, // dataSource
     );
 
     await (service as any).pruneStaleCalendarDayRows(
@@ -171,6 +174,7 @@ describe('PipelineService derived cleanup', () => {
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any,
       {} as any,
+      {} as any, // dataSource
     );
 
     // Two timestamps that fall on the same calendar day in the target TZ.
@@ -214,6 +218,7 @@ describe('PipelineService.findOneByCalendarDay merge invariant', () => {
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any,
       {} as any,
+      {} as any, // dataSource
     );
 
     const result = await (service as any).findOneByCalendarDay(
@@ -247,6 +252,7 @@ describe('PipelineService.findOneByCalendarDay merge invariant', () => {
       {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
       {} as any, {} as any, {} as any,
       {} as any,
+      {} as any, // dataSource
     );
 
     const result = await (service as any).findOneByCalendarDay(
