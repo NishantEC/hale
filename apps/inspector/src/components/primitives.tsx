@@ -1,21 +1,22 @@
 import type { ReactNode } from "react"
 
+import { cn } from "@/lib/utils"
+
 export type Status = "ok" | "warn" | "error" | "stale"
 
 const STATUS_BAR: Record<Status, string> = {
-  ok: "border-l-green",
-  warn: "border-l-yellow",
-  error: "border-l-red",
-  stale: "border-l-text-2",
+  ok: "border-l-success",
+  warn: "border-l-warning",
+  error: "border-l-destructive",
+  stale: "border-l-muted-foreground",
 }
 const STATUS_TEXT: Record<Status, string> = {
-  ok: "text-green",
-  warn: "text-yellow",
-  error: "text-red",
-  stale: "text-text-2",
+  ok: "text-success",
+  warn: "text-warning",
+  error: "text-destructive",
+  stale: "text-muted-foreground",
 }
 
-// Big-number tile used at the top of most tabs.
 export function Num({
   label,
   value,
@@ -31,25 +32,23 @@ export function Num({
   const valueColor = status ? STATUS_TEXT[status] : ""
   return (
     <div className={bar}>
-      <p className="text-text-2 text-sm">{label}</p>
-      <p className={`text-3xl font-semibold tracking-tight mt-1 tabular-nums ${valueColor}`}>
+      <p className="text-muted-foreground text-sm">{label}</p>
+      <p className={cn("text-3xl font-semibold tracking-tight mt-1 tabular-nums", valueColor)}>
         {value}
       </p>
-      <p className="text-text-2 text-sm mt-0.5">{sub}</p>
+      <p className="text-muted-foreground text-sm mt-0.5">{sub}</p>
     </div>
   )
 }
 
-// Small uppercase section header.
 export function SectionHead({ children }: { children: ReactNode }) {
   return (
-    <h3 className="text-xs font-semibold text-text-2 uppercase tracking-widest">
+    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
       {children}
     </h3>
   )
 }
 
-// Two-column key/value row with subtle bottom border.
 export function Row({
   k,
   v,
@@ -66,15 +65,20 @@ export function Row({
   const valueColor = highlight ? STATUS_TEXT[highlight] : ""
   return (
     <div
-      className={`flex items-baseline justify-between ${padding} border-b border-border/60 gap-4 ${size}`}
+      className={cn(
+        "flex items-baseline justify-between gap-4 border-b border-border/60",
+        padding,
+        size,
+      )}
     >
-      <span className="text-text-2 shrink-0">{k}</span>
-      <span className={`text-right max-w-[60%] truncate tabular-nums ${valueColor}`}>{v}</span>
+      <span className="text-muted-foreground shrink-0">{k}</span>
+      <span className={cn("text-right max-w-[60%] truncate tabular-nums", valueColor)}>{v}</span>
     </div>
   )
 }
 
-// Status pill — used for "dirty / clean" pipeline state, etc.
+// Tone pill used in older screens — Phase 2 prefers shadcn <Badge> directly.
+// Kept for backwards compatibility; semantics same as before.
 export function Pill({
   tone,
   children,
@@ -84,15 +88,18 @@ export function Pill({
 }) {
   const toneClass =
     tone === "green"
-      ? "bg-green-soft text-green"
+      ? "bg-success/15 text-success"
       : tone === "yellow"
-      ? "bg-yellow-soft text-yellow"
+      ? "bg-warning/15 text-warning"
       : tone === "red"
-      ? "bg-red-soft text-red"
-      : "bg-surface-2 text-text-1 border border-border"
+      ? "bg-destructive/10 text-destructive"
+      : "bg-muted text-muted-foreground border border-border"
   return (
     <span
-      className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full ${toneClass}`}
+      className={cn(
+        "inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full",
+        toneClass,
+      )}
     >
       {children}
     </span>
