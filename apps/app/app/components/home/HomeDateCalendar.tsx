@@ -38,6 +38,11 @@ export const HomeDateCalendar: FC<Props> = ({
       <Calendar
         current={monthInitial}
         minDate={minDate}
+        // Render the chrome-less variant — we own the month header in the
+        // top-strip DateSwitcher and don't want a second one inside the grid.
+        renderHeader={() => null}
+        hideArrows
+        enableSwipeMonths
         onDayPress={(day: DateData) => onSelectDate(day.dateString)}
         onMonthChange={(d: DateData) => {
           onMonthCursorChange(`${d.year}-${String(d.month).padStart(2, "0")}`)

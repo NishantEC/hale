@@ -214,6 +214,30 @@ export const HomeScreen: FC = () => {
     goToNextDay()
   }, [goToNextDay])
 
+  const shiftCalendarMonth = useCallback(
+    (delta: -1 | 1) => {
+      const [y, m] = calendarMonthCursor.split("-").map(Number)
+      const next = new Date(Date.UTC(y, m - 1 + delta, 1))
+      const ny = next.getUTCFullYear()
+      const nm = String(next.getUTCMonth() + 1).padStart(2, "0")
+      const candidate = `${ny}-${nm}`
+      // 12-month back cap on the prev arrow.
+      const now = new Date()
+      const min = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 12, 1))
+      if (delta === -1 && next < min) return
+      setCalendarMonthCursor(candidate)
+    },
+    [calendarMonthCursor],
+  )
+
+  const calendarMonthLabel = useMemo(() => {
+    const [y, m] = calendarMonthCursor.split("-").map(Number)
+    return new Date(y, m - 1, 1).toLocaleDateString([], {
+      month: "long",
+      year: "numeric",
+    })
+  }, [calendarMonthCursor])
+
   const handleDaySwipeChanged = useCallback(({ nativeEvent }: PanGestureHandlerGestureEvent) => {
     setIsHorizontalDaySwipeActive(
       shouldLockHomeScroll({
@@ -354,9 +378,9 @@ export const HomeScreen: FC = () => {
         >
           <View style={themed($topStrip)}>
             <DateSwitcher
-              title={selectedDateTitle}
-              onPrevious={moveToPreviousDay}
-              onNext={moveToNextDay}
+              title={isCalendarOpen ? calendarMonthLabel : selectedDateTitle}
+              onPrevious={isCalendarOpen ? () => shiftCalendarMonth(-1) : moveToPreviousDay}
+              onNext={isCalendarOpen ? () => shiftCalendarMonth(1) : moveToNextDay}
               onOpenCalendar={() => setCalendarOpen((v) => !v)}
               isOpen={isCalendarOpen}
             />
