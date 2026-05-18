@@ -7,24 +7,35 @@ export type DateSwitcherProps = {
   title: string
   onPrevious: () => void
   onNext: () => void
+  // Tap the title (not the chevrons) to open the calendar picker. Optional
+  // so existing callers without a picker still work unchanged.
+  onOpenCalendar?: () => void
+  // Visual hint that the calendar is currently open.
+  isOpen?: boolean
 }
 
-export function DateSwitcher({ title, onPrevious, onNext }: DateSwitcherProps) {
+export function DateSwitcher({ title, onPrevious, onNext, onOpenCalendar, isOpen }: DateSwitcherProps) {
   const colors = LOCAL_THEME.colors
 
   return (
-    <View style={themed($dateSwitcher)}>
+    <View style={[themed($dateSwitcher), isOpen ? { borderColor: colors.tint } : null]}>
       <TouchableOpacity style={themed($switcherButton)} onPress={onPrevious}>
         <CaretLeft size={20} color={colors.text} />
       </TouchableOpacity>
-      <Animated.Text
-        key={title}
-        entering={FadeInRight.duration(200)}
-        exiting={FadeOutLeft.duration(150)}
-        style={themed($switcherTitle)}
+      <TouchableOpacity
+        onPress={onOpenCalendar}
+        disabled={!onOpenCalendar}
+        accessibilityLabel="Open calendar"
       >
-        {title}
-      </Animated.Text>
+        <Animated.Text
+          key={title}
+          entering={FadeInRight.duration(200)}
+          exiting={FadeOutLeft.duration(150)}
+          style={themed($switcherTitle)}
+        >
+          {title}
+        </Animated.Text>
+      </TouchableOpacity>
       <TouchableOpacity style={themed($switcherButton)} onPress={onNext}>
         <CaretRight size={20} color={colors.text} />
       </TouchableOpacity>
@@ -36,6 +47,8 @@ const $dateSwitcher: ThemedStyle<ViewStyle> = ({ colors }) => ({
   alignItems: "center",
   backgroundColor: colors.surfaceSubtle,
   borderRadius: 999,
+  borderColor: "transparent",
+  borderWidth: 1,
   flexDirection: "row",
   paddingHorizontal: 6,
   paddingVertical: 4,
