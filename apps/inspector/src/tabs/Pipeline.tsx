@@ -8,8 +8,15 @@ import type {
 } from "../api"
 import { PipelineRunDrawer } from "../components/PipelineRunDrawer"
 import { PipelineRunsChart } from "../components/PipelineRunsChart"
-import { Num, Pill, Row, SectionHead } from "../components/primitives"
+import { Num, Pill, Row } from "../components/primitives"
 import { StatusBadge, type StatusTone } from "../components/StatusBadge"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { formatDuration, formatTimestamp, relativeTime } from "../format"
 
 export function PipelineTab({
@@ -35,7 +42,7 @@ export function PipelineTab({
   const hero = computeHeroStatus(state, () => onRunPipeline({ day: date }))
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-8">
       <div>
         <StatusBadge
           tone={hero.tone}
@@ -45,27 +52,39 @@ export function PipelineTab({
           size="lg"
         />
         {hero.watermarkDetail && (
-          <div className="mt-3 bg-surface-1 border border-border rounded-xl px-4 py-3 text-[13px] space-y-0">
-            <Row
-              k="Input high-water mark (prev run)"
-              v={formatTimestamp(state?.state?.lastInputMaxUpdatedAt)}
-              dense
-              highlight="warn"
-            />
-            <Row
-              k="Current input high-water mark"
-              v={formatTimestamp(state?.currentMaxUpdatedAt)}
-              dense
-            />
-          </div>
+          <Card className="mt-3 border-warning/40 bg-warning/5">
+            <CardContent className="py-3 px-4 space-y-0">
+              <Row
+                k="Input high-water mark (prev run)"
+                v={formatTimestamp(state?.state?.lastInputMaxUpdatedAt)}
+                dense
+                highlight="warn"
+              />
+              <Row
+                k="Current input high-water mark"
+                v={formatTimestamp(state?.currentMaxUpdatedAt)}
+                dense
+              />
+            </CardContent>
+          </Card>
         )}
       </div>
 
       <PipelineStateBlock state={state} />
-      <PipelineRunsChart
-        history={runs}
-        onRunClick={(id) => setSelectedRunId(id)}
-      />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent pipeline runs</CardTitle>
+          <CardDescription>Clickable bars open the drill-in</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <PipelineRunsChart
+            history={runs}
+            onRunClick={(id) => setSelectedRunId(id)}
+          />
+        </CardContent>
+      </Card>
+
       <PipelineResultsBlock results={results} />
 
       {selectedRun && (
@@ -143,56 +162,63 @@ function PipelineStateBlock({ state }: { state: PipelineState | null }) {
   const inputs = state?.inputs
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between mb-4">
-        <SectionHead>Pipeline state</SectionHead>
-        {hasRun ? (
-          dirty ? (
-            <Pill tone="yellow">DIRTY — would recompute</Pill>
-          ) : (
-            <Pill tone="green">CLEAN — would skip</Pill>
-          )
-        ) : (
-          <Pill tone="neutral">never run</Pill>
-        )}
-      </div>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Pipeline state</CardTitle>
+            {hasRun ? (
+              dirty ? (
+                <Pill tone="yellow">DIRTY — would recompute</Pill>
+              ) : (
+                <Pill tone="green">CLEAN — would skip</Pill>
+              )
+            ) : (
+              <Pill tone="neutral">never run</Pill>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-4 gap-8">
+            <Num
+              label="Last run"
+              value={s?.lastRunAt ? relativeTime(s.lastRunAt) : "—"}
+              sub={s?.lastRunAt ? formatTimestamp(s.lastRunAt) : "no runs yet"}
+              status={!hasRun ? "error" : undefined}
+            />
+            <Num
+              label="Last duration"
+              value={formatDuration(s?.lastRunDurationMs)}
+              sub="end-to-end"
+            />
+            <Num
+              label="Sensor records (45d)"
+              value={inputs?.rawSensorRecords.count ?? 0}
+              sub={
+                inputs?.rawSensorRecords.latestTimestamp
+                  ? `latest ${relativeTime(inputs.rawSensorRecords.latestTimestamp)}`
+                  : "—"
+              }
+            />
+            <Num
+              label="Signal samples (45d)"
+              value={inputs?.signalSamples.count ?? 0}
+              sub={
+                inputs?.signalSamples.latestTimestamp
+                  ? `latest ${relativeTime(inputs.signalSamples.latestTimestamp)}`
+                  : "—"
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid grid-cols-4 gap-8 mt-4">
-        <Num
-          label="Last run"
-          value={s?.lastRunAt ? relativeTime(s.lastRunAt) : "—"}
-          sub={s?.lastRunAt ? formatTimestamp(s.lastRunAt) : "no runs yet"}
-          status={!hasRun ? "error" : undefined}
-        />
-        <Num
-          label="Last duration"
-          value={formatDuration(s?.lastRunDurationMs)}
-          sub="end-to-end"
-        />
-        <Num
-          label="Sensor records (45d)"
-          value={inputs?.rawSensorRecords.count ?? 0}
-          sub={
-            inputs?.rawSensorRecords.latestTimestamp
-              ? `latest ${relativeTime(inputs.rawSensorRecords.latestTimestamp)}`
-              : "—"
-          }
-        />
-        <Num
-          label="Signal samples (45d)"
-          value={inputs?.signalSamples.count ?? 0}
-          sub={
-            inputs?.signalSamples.latestTimestamp
-              ? `latest ${relativeTime(inputs.signalSamples.latestTimestamp)}`
-              : "—"
-          }
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-16 mt-8">
-        <div>
-          <SectionHead>Watermark</SectionHead>
-          <div className="mt-4 space-y-0">
+      <div className="grid grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Watermark</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-0">
             <Row
               k="Last run at"
               v={s?.lastRunAt ? formatTimestamp(s.lastRunAt) : "—"}
@@ -222,11 +248,14 @@ function PipelineStateBlock({ state }: { state: PipelineState | null }) {
               v={state?.windowStart ? formatTimestamp(state.windowStart) : "—"}
               dense
             />
-          </div>
-        </div>
-        <div>
-          <SectionHead>Input freshness</SectionHead>
-          <div className="mt-4 space-y-0">
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Input freshness</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-0">
             <Row
               k="Sensor records — latest insert"
               v={formatTimestamp(inputs?.rawSensorRecords.latestUpdatedAt)}
@@ -247,8 +276,8 @@ function PipelineStateBlock({ state }: { state: PipelineState | null }) {
               v={formatTimestamp(inputs?.signalSamples.latestTimestamp)}
               dense
             />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
@@ -256,37 +285,46 @@ function PipelineStateBlock({ state }: { state: PipelineState | null }) {
 
 function PipelineResultsBlock({ results }: { results: PipelineResults | null }) {
   return (
-    <div>
-      <SectionHead>Output</SectionHead>
-      <div className="grid grid-cols-4 gap-8 mt-4">
-        <Num
-          label="Sensor records"
-          value={results?.rawRecordCount ?? 0}
-          sub="total ingested"
-        />
-        <Num
-          label="Sleep detections"
-          value={results?.results.sleepDetections.length ?? 0}
-          sub="persisted"
-          status={!results?.results.sleepDetections.length ? "warn" : undefined}
-        />
-        <Num
-          label="Sleep stages"
-          value={results?.results.sleepStages.length ?? 0}
-          sub="persisted"
-          status={!results?.results.sleepStages.length ? "warn" : undefined}
-        />
-        <Num
-          label="Daily scores"
-          value={results?.results.dailyScores.length ?? 0}
-          sub="persisted"
-          status={!results?.results.dailyScores.length ? "warn" : undefined}
-        />
-      </div>
-      <div className="grid grid-cols-2 gap-16 mt-8">
-        <div>
-          <SectionHead>Tables</SectionHead>
-          <div className="mt-4 space-y-0">
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Output</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-4 gap-8">
+            <Num
+              label="Sensor records"
+              value={results?.rawRecordCount ?? 0}
+              sub="total ingested"
+            />
+            <Num
+              label="Sleep detections"
+              value={results?.results.sleepDetections.length ?? 0}
+              sub="persisted"
+              status={!results?.results.sleepDetections.length ? "warn" : undefined}
+            />
+            <Num
+              label="Sleep stages"
+              value={results?.results.sleepStages.length ?? 0}
+              sub="persisted"
+              status={!results?.results.sleepStages.length ? "warn" : undefined}
+            />
+            <Num
+              label="Daily scores"
+              value={results?.results.dailyScores.length ?? 0}
+              sub="persisted"
+              status={!results?.results.dailyScores.length ? "warn" : undefined}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Tables</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-0">
             <Row
               k="Night features"
               v={String(results?.results.nightFeatures.length ?? 0)}
@@ -319,15 +357,18 @@ function PipelineResultsBlock({ results }: { results: PipelineResults | null }) 
               v={String(results?.results.journalCorrelations.length ?? 0)}
               dense
             />
-          </div>
-        </div>
-        <div>
-          <SectionHead>Time range</SectionHead>
-          <div className="mt-4 space-y-0">
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Time range</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-0">
             <Row k="Earliest" v={formatTimestamp(results?.earliestRawTimestamp)} dense />
             <Row k="Latest" v={formatTimestamp(results?.latestRawTimestamp)} dense />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

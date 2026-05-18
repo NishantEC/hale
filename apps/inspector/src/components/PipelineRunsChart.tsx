@@ -22,7 +22,7 @@ type ChartTooltipProps = {
   active?: boolean
   payload?: TooltipPayloadEntry[]
 }
-import { SectionHead, Pill } from "./primitives"
+import { Pill } from "./primitives"
 import { formatDuration } from "../format"
 
 function describeWindow(run: PipelineRunRow): string {
@@ -76,8 +76,7 @@ export function PipelineRunsChart({
   if (!history || history.runs.length === 0) {
     return (
       <div>
-        <SectionHead>Recent pipeline runs</SectionHead>
-        <p className="text-text-2 text-sm mt-3">
+        <p className="text-muted-foreground text-sm">
           No runs recorded yet. The pipeline writes a history row each time
           it runs (or skips via the watermark).
         </p>
@@ -141,15 +140,14 @@ export function PipelineRunsChart({
 
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-3">
-        <SectionHead>Recent pipeline runs</SectionHead>
-        <span className="text-text-2 text-xs">
+      <div className="flex items-baseline justify-end mb-3">
+        <span className="text-muted-foreground text-xs">
           {history.count} runs · median{" "}
           {formatDuration(medianTotal || null)} · 2× threshold{" "}
           {formatDuration(outlierThreshold || null)}
         </span>
       </div>
-      <div className="bg-surface-1 border border-border rounded-2xl p-4">
+      <div>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart
             data={data}
