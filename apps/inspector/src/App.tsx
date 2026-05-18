@@ -1,6 +1,6 @@
 import { useState } from "react"
 
-import { tokenStorage } from "./api"
+import { signOut, tokenStorage } from "./api"
 import { Inspector } from "./screens/Inspector"
 import { SignIn } from "./screens/SignIn"
 
@@ -12,6 +12,7 @@ export default function App() {
     <Inspector
       token={token}
       onLogout={() => {
+        void signOut(token)
         tokenStorage.clear()
         setToken("")
       }}

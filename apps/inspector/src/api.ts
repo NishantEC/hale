@@ -95,6 +95,26 @@ export async function signUp(
   return { token: data.token, email };
 }
 
+// Revoke the session row server-side before clearing the local token,
+// so a forgotten browser tab doesn't leave a usable session in the DB.
+// Failures are swallowed: if the network's down or the token already
+// expired the user still wants to sign out locally.
+export async function signOut(token: string): Promise<void> {
+  if (!token) return;
+  try {
+    await safeFetch(`${API_BASE_URL}/api/auth/sign-out`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "ngrok-skip-browser-warning": "true",
+      },
+    });
+  } catch {
+    // Best-effort. Local clear in tokenStorage.clear() runs regardless.
+  }
+}
+
 // Token lives in sessionStorage so it dies with the tab. This avoids the
 // "logged in forever after a backend rotation" footgun. Email persists in
 // localStorage as a UX nicety for the sign-in form.
