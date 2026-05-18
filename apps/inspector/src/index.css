@@ -1,21 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-@font-face {
-  font-family: "JetBrains Mono";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 800;
-  src: url("https://fonts.gstatic.com/s/jetbrainsmono/v24/tDb-2o-flEEny0FZhsfKu5WU4xD-IQ-PuZJJXxfpAO-Lflg.woff2")
-    format("woff2");
-}
-@font-face {
-  font-family: "Inter";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 100 900;
-  src: url("https://fonts.gstatic.com/s/inter/v22/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2") format("woff2");
-}
+/* Google Fonts CSS API — resolves to the right woff2 subset per UA. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@100..800&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
