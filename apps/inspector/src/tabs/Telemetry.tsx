@@ -12,14 +12,14 @@ import {
 import type { BatteryHistory, Telemetry } from "../api"
 import { Pill, SectionHead } from "../components/primitives"
 import { Alert, AlertDescription, AlertTitle } from "../components/ui/alert"
-import { Badge } from "../components/ui/badge"
-import { Button } from "../components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "../components/ui/collapsible"
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "../components/ui/accordion"
+import { Badge } from "../components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
 import { Input } from "../components/ui/input"
 import { ScrollArea } from "../components/ui/scroll-area"
 import {
@@ -30,6 +30,7 @@ import {
   TableHeader,
   TableRow,
 } from "../components/ui/table"
+import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
 import { BlurFade } from "../components/magicui/blur-fade"
 import { Marquee } from "../components/magicui/marquee"
 import { NumberTicker } from "../components/magicui/number-ticker"
@@ -44,22 +45,26 @@ function normaliseLevel(raw: string | null): LogLevel {
   return "info"
 }
 
-const LEVEL_STYLE: Record<LogLevel, { active: string; badge: string }> = {
+const LEVEL_STYLE: Record<LogLevel, { badge: string; itemClass: string; label: string }> = {
   error: {
-    active: "bg-destructive text-white hover:bg-destructive/90",
     badge: "bg-destructive/10 text-destructive",
+    itemClass: "data-[state=on]:bg-destructive/15 data-[state=on]:text-destructive data-[state=on]:border-destructive/40",
+    label: "Error",
   },
   warn: {
-    active: "bg-warning text-warning-foreground hover:bg-warning/90",
     badge: "bg-warning/10 text-warning",
+    itemClass: "data-[state=on]:bg-warning/15 data-[state=on]:text-warning data-[state=on]:border-warning/40",
+    label: "Warn",
   },
   info: {
-    active: "bg-primary text-primary-foreground hover:bg-primary/90",
     badge: "",
+    itemClass: "data-[state=on]:bg-primary/15 data-[state=on]:text-primary data-[state=on]:border-primary/40",
+    label: "Info",
   },
   debug: {
-    active: "bg-muted text-muted-foreground hover:bg-muted/80",
     badge: "text-muted-foreground",
+    itemClass: "data-[state=on]:bg-muted data-[state=on]:text-muted-foreground data-[state=on]:border-border",
+    label: "Debug",
   },
 }
 
@@ -104,17 +109,9 @@ export function TelemetryTab({
   const [logSearch, setLogSearch] = useState("")
   const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(new Set(ALL_LEVELS))
 
-  function toggleLevel(level: LogLevel) {
-    setEnabledLevels((prev) => {
-      const next = new Set(prev)
-      if (next.has(level)) {
-        if (next.size === 1) return prev
-        next.delete(level)
-      } else {
-        next.add(level)
-      }
-      return next
-    })
+  function handleLevelChange(values: string[]) {
+    if (values.length === 0) return
+    setEnabledLevels(new Set(values as LogLevel[]))
   }
 
   const filteredLogs = useMemo(() => {
@@ -313,27 +310,23 @@ export function TelemetryTab({
                   placeholder="Filter messages..."
                   className="flex-1 min-w-[200px] h-8 text-sm"
                 />
-                <div className="flex items-center gap-1">
-                  {ALL_LEVELS.map((level) => {
-                    const enabled = enabledLevels.has(level)
-                    return (
-                      <Button
-                        key={level}
-                        type="button"
-                        size="sm"
-                        variant={enabled ? "default" : "outline"}
-                        aria-pressed={enabled}
-                        onClick={() => toggleLevel(level)}
-                        className={cn(
-                          "h-7 px-2.5 text-xs font-semibold",
-                          enabled ? LEVEL_STYLE[level].active : "opacity-50",
-                        )}
-                      >
-                        {level}
-                      </Button>
-                    )
-                  })}
-                </div>
+                <ToggleGroup
+                  type="multiple"
+                  variant="outline"
+                  value={Array.from(enabledLevels)}
+                  onValueChange={handleLevelChange}
+                  className="gap-1"
+                >
+                  {ALL_LEVELS.map((level) => (
+                    <ToggleGroupItem
+                      key={level}
+                      value={level}
+                      className={cn("h-7 px-2.5 text-xs font-semibold", LEVEL_STYLE[level].itemClass)}
+                    >
+                      {LEVEL_STYLE[level].label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
               </div>
             </CardHeader>
             <CardContent className="p-0">
@@ -414,8 +407,6 @@ function RealtimeSessions({
   sessions: Record<string, { dataType: string; count: number; earliest: string; latest: string }>
   recent: Array<{ dataType: string; heartRate: number | null; sessionId: string; capturedAt: string }>
 }) {
-  const [openSessions, setOpenSessions] = useState<Set<string>>(new Set())
-
   const sessionEntries = useMemo(() => {
     return Object.entries(sessions).sort(
       (a, b) => new Date(b[1].latest).getTime() - new Date(a[1].latest).getTime(),
@@ -432,15 +423,6 @@ function RealtimeSessions({
     return map
   }, [recent])
 
-  function toggleSession(id: string) {
-    setOpenSessions((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
   if (sessionEntries.length === 0) {
     return (
       <div className="rounded-xl border border-border px-4 py-6 text-muted-foreground text-sm text-center">
@@ -450,9 +432,8 @@ function RealtimeSessions({
   }
 
   return (
-    <div className="space-y-2">
+    <Accordion type="multiple" className="rounded-xl border border-border overflow-hidden divide-y divide-border">
       {sessionEntries.map(([sessionId, meta]) => {
-        const isOpen = openSessions.has(sessionId)
         const elapsedMs =
           new Date(meta.latest).getTime() - new Date(meta.earliest).getTime()
         const elapsedSec = Math.round(elapsedMs / 1000)
@@ -463,94 +444,72 @@ function RealtimeSessions({
         const sessionRecent = recentBySession.get(sessionId) ?? []
 
         return (
-          <Collapsible
-            key={sessionId}
-            open={isOpen}
-            onOpenChange={() => toggleSession(sessionId)}
-          >
-            <div className="rounded-xl border border-border overflow-hidden">
-              <CollapsibleTrigger asChild>
-                <button
-                  type="button"
-                  className="w-full flex items-center justify-between px-4 py-3 bg-card hover:bg-muted/50 transition-colors cursor-pointer text-left"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={cn(
-                        "w-1.5 h-1.5 rounded-full shrink-0",
-                        isOpen ? "bg-success" : "bg-muted-foreground",
-                      )}
-                    />
-                    <span className="font-mono text-xs truncate">
-                      {sessionId.slice(0, 12)}
-                    </span>
-                    <Badge variant="secondary" className="text-xs shrink-0">
-                      {meta.dataType}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-4 shrink-0 ml-3">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {meta.count} samples
-                    </span>
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {elapsedLabel}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatTime(meta.latest)}
-                    </span>
-                    <span className="text-muted-foreground text-xs">
-                      {isOpen ? "▲" : "▼"}
-                    </span>
-                  </div>
-                </button>
-              </CollapsibleTrigger>
+          <AccordionItem key={sessionId} value={sessionId} className="border-b-0">
+            <AccordionTrigger className="px-4 py-3 hover:bg-muted/50 hover:no-underline transition-colors">
+              <div className="flex items-center gap-3 min-w-0 flex-1 mr-3">
+                <span className="font-mono text-xs truncate max-w-[100px]">
+                  {sessionId.slice(0, 12)}
+                </span>
+                <Badge variant="secondary" className="text-xs shrink-0">
+                  {meta.dataType}
+                </Badge>
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                  {meta.count} samples
+                </span>
+                <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                  {elapsedLabel}
+                </span>
+                <span className="text-xs text-muted-foreground shrink-0">
+                  {formatTime(meta.latest)}
+                </span>
+              </div>
+            </AccordionTrigger>
 
-              <CollapsibleContent>
-                <div className="border-t border-border">
-                  <div className="px-4 py-2 flex gap-6 text-xs text-muted-foreground bg-muted/30">
-                    <span>Start: {formatTime(meta.earliest)}</span>
-                    <span>Latest: {formatTime(meta.latest)}</span>
-                    <span>Elapsed: {elapsedLabel}</span>
-                    <span>{meta.count} total samples</span>
-                  </div>
-                  {sessionRecent.length > 0 ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          {["Type", "HR", "Captured"].map((h) => (
-                            <TableHead
-                              key={h}
-                              className="text-xs uppercase tracking-wider text-muted-foreground"
-                            >
-                              {h}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sessionRecent.slice(0, 20).map((s, i) => (
-                          <TableRow key={i}>
-                            <TableCell>{s.dataType}</TableCell>
-                            <TableCell>{s.heartRate ?? "—"}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {formatTime(s.capturedAt)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  ) : (
-                    <p className="px-4 py-3 text-muted-foreground text-xs">
-                      No recent samples buffered for this session
-                    </p>
-                  )}
+            <AccordionContent className="pb-0">
+              <div className="border-t border-border">
+                <div className="px-4 py-2 flex gap-6 text-xs text-muted-foreground bg-muted/30">
+                  <span>Start: {formatTime(meta.earliest)}</span>
+                  <span>Latest: {formatTime(meta.latest)}</span>
+                  <span>Elapsed: {elapsedLabel}</span>
+                  <span>{meta.count} total samples</span>
                 </div>
-              </CollapsibleContent>
-            </div>
-          </Collapsible>
+                {sessionRecent.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {["Data type", "Heart rate", "Captured"].map((h) => (
+                          <TableHead
+                            key={h}
+                            className="text-xs uppercase tracking-wider text-muted-foreground"
+                          >
+                            {h}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sessionRecent.slice(0, 20).map((s, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{s.dataType}</TableCell>
+                          <TableCell>{s.heartRate != null ? `${s.heartRate} bpm` : "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatTime(s.capturedAt)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="px-4 py-3 text-muted-foreground text-xs">
+                    No recent samples buffered for this session
+                  </p>
+                )}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
         )
       })}
-    </div>
+    </Accordion>
   )
 }
 
@@ -603,7 +562,7 @@ function EventBreakdown({ summary }: { summary: Record<string, number> }) {
                 <div key={name} className="flex items-baseline justify-between">
                   <div className="flex items-baseline gap-2">
                     <span className="font-mono text-sm">
-                      evt {Number.isFinite(num) ? num : numStr}
+                      Event {Number.isFinite(num) ? num : numStr}
                     </span>
                     {Number.isFinite(num) ? (
                       <span className="text-muted-foreground text-xs">
