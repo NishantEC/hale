@@ -32,17 +32,26 @@ const DATE: Shortcut[] = [
 export function HelpModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Keyboard shortcuts</DialogTitle>
-          <DialogDescription className="sr-only">
-            Reference for keyboard shortcuts available in the inspector
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-md rounded-none bg-paper p-0 border-0 shadow-none">
+        <div className="px-6 py-5 rule-strong">
+          <DialogHeader>
+            <p className="eyebrow text-muted-foreground mb-1">
+              reference · keyboard
+            </p>
+            <DialogTitle className="font-display text-h1 leading-tight tracking-tight">
+              Shortcuts
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Reference for keyboard shortcuts available in the inspector
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <Section title="Navigation" items={NAV} />
-        <Section title="Actions" items={ACTIONS} />
-        <Section title="Date" items={DATE} />
+        <div className="px-6 pb-6 space-y-6">
+          <Section title="Navigation" items={NAV} />
+          <Section title="Actions" items={ACTIONS} />
+          <Section title="Date" items={DATE} />
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -50,20 +59,23 @@ export function HelpModal({ open, onClose }: { open: boolean; onClose: () => voi
 
 function Section({ title, items }: { title: string; items: Shortcut[] }) {
   return (
-    <div className="mb-5 last:mb-0">
-      <p className="text-muted-foreground text-[10px] uppercase tracking-widest font-semibold mb-2">
+    <section>
+      <p className="eyebrow text-[var(--vermillion)] mb-3 rule-hair pt-3">
         {title}
       </p>
-      <div className="space-y-1.5">
+      <div className="space-y-0">
         {items.map((s) => (
-          <div key={s.keys} className="flex items-center justify-between text-sm">
-            <span className="text-foreground">{s.action}</span>
-            <kbd className="text-xs font-mono px-2 py-0.5 rounded-md bg-muted border text-foreground">
+          <div
+            key={s.keys}
+            className="flex items-center justify-between py-2 rule-hair-b last:border-b-0"
+          >
+            <span className="text-sm text-foreground">{s.action}</span>
+            <kbd className="font-mono text-xs px-2 py-0.5 bg-foreground/[0.06] border border-foreground/15 text-foreground tabular-nums">
               {s.keys}
             </kbd>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   )
 }

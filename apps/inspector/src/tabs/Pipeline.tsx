@@ -8,7 +8,7 @@ import type {
 } from "../api"
 import { PipelineRunDrawer } from "../components/PipelineRunDrawer"
 import { PipelineRunsChart } from "../components/PipelineRunsChart"
-import { Num, Pill, Row } from "../components/primitives"
+import { Num, Pill, Row, SectionHead } from "../components/primitives"
 import { StatusBadge, type StatusTone } from "../components/StatusBadge"
 import {
   Card,
@@ -52,8 +52,16 @@ export function PipelineTab({
   const hero = computeHeroStatus(state, () => onRunPipeline({ day: date }))
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-10">
+      <SectionHead
+        n="00"
+        kicker="Every batch run that produced sleep stages and daily scores."
+        meta="/debug/pipeline"
+      >
+        Pipeline
+      </SectionHead>
+
+      <section>
         <StatusBadge
           tone={hero.tone}
           label={hero.label}
@@ -62,55 +70,65 @@ export function PipelineTab({
           size="lg"
         />
         {hero.watermarkDetail && (
-          <Card className="mt-3 border-warning/40 bg-warning/5">
-            <CardContent className="py-3 px-4 space-y-0">
-              <Row
-                k="Input high-water mark (prev run)"
-                v={formatTimestamp(state?.state?.lastInputMaxUpdatedAt)}
-                dense
-                highlight="warn"
-              />
-              <Row
-                k="Current input high-water mark"
-                v={formatTimestamp(state?.currentMaxUpdatedAt)}
-                dense
-              />
-            </CardContent>
-          </Card>
+          <div className="mt-4 rule-hair pt-3">
+            <Row
+              k="Input high-water mark (prev run)"
+              v={formatTimestamp(state?.state?.lastInputMaxUpdatedAt)}
+              dense
+              highlight="warn"
+            />
+            <Row
+              k="Current input high-water mark"
+              v={formatTimestamp(state?.currentMaxUpdatedAt)}
+              dense
+            />
+          </div>
         )}
-      </div>
+      </section>
 
-      <PipelineStateBlock state={state} />
+      <section>
+        <SectionHead n={1} kicker="The state of the pipeline at this instant.">
+          State
+        </SectionHead>
+        <div className="mt-6">
+          <PipelineStateBlock state={state} />
+        </div>
+      </section>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent pipeline runs</CardTitle>
-          <CardDescription>Clickable bars open the drill-in</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <section>
+        <SectionHead n={2} kicker="Click a bar to open the drill-in.">
+          Recent runs
+        </SectionHead>
+        <div className="mt-6">
           <PipelineRunsChart
             history={runs}
             onRunClick={(id) => setSelectedRunId(id)}
           />
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       {runs && runs.runs.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Run history</CardTitle>
-            <CardDescription>Click a row to open the detail drawer</CardDescription>
-          </CardHeader>
-          <CardContent className="p-0">
+        <section>
+          <SectionHead n={3} kicker="Click a row to open the detail drawer.">
+            Run history
+          </SectionHead>
+          <div className="mt-6">
             <PipelineRunsTable
               rows={runs.runs}
               onRowClick={(id) => setSelectedRunId(id)}
             />
-          </CardContent>
-        </Card>
+          </div>
+        </section>
       )}
 
-      <PipelineResultsBlock results={results} />
+      <section>
+        <SectionHead n="A" kicker="Most recent pipeline output, by section.">
+          Results
+        </SectionHead>
+        <div className="mt-6">
+          <PipelineResultsBlock results={results} />
+        </div>
+      </section>
 
       {selectedRun && (
         <>
