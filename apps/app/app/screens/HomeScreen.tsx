@@ -279,6 +279,15 @@ export const HomeScreen: FC = () => {
     },
   })
 
+  // Snap the home back to the top whenever the calendar closes — picking
+  // a date or tapping outside should put the user at the rings, not where
+  // they happened to be scrolled.
+  const scrollRef = useRef<Animated.ScrollView>(null)
+  const closeCalendarAndScrollToTop = useCallback(() => {
+    setCalendarOpen(false)
+    scrollRef.current?.scrollTo({ y: 0, animated: true })
+  }, [])
+
   // Animated dim — drives the rings/monitors wrapper down to 0.55 opacity
   // while the calendar's up, matching the calendar's own fade timing.
   const dimProgress = useSharedValue(0)
@@ -400,6 +409,7 @@ export const HomeScreen: FC = () => {
     >
       <SafeAreaView style={themed($screenWrap)} edges={["top"]}>
         <Animated.ScrollView
+          ref={scrollRef}
           contentContainerStyle={themed($container)}
           onScroll={onScroll}
           scrollEventThrottle={16}
@@ -417,7 +427,13 @@ export const HomeScreen: FC = () => {
               title={isCalendarOpen ? calendarMonthLabel : selectedDateTitle}
               onPrevious={isCalendarOpen ? () => shiftCalendarMonth(-1) : moveToPreviousDay}
               onNext={isCalendarOpen ? () => shiftCalendarMonth(1) : moveToNextDay}
-              onOpenCalendar={() => setCalendarOpen((v) => !v)}
+              onOpenCalendar={() => {
+                if (isCalendarOpen) {
+                  closeCalendarAndScrollToTop()
+                } else {
+                  setCalendarOpen(true)
+                }
+              }}
               isOpen={isCalendarOpen}
             />
 
@@ -438,18 +454,18 @@ export const HomeScreen: FC = () => {
               monthCursor={calendarMonthCursor}
               coverageByDate={coverageByDate}
               onSelectDate={(date) => {
-                setCalendarOpen(false)
                 setSelectedDate(date)
+                closeCalendarAndScrollToTop()
               }}
               onMonthCursorChange={setCalendarMonthCursor}
-              onClose={() => setCalendarOpen(false)}
+              onClose={closeCalendarAndScrollToTop}
             />
           </Animated.View>
 
           <TouchableOpacity
             activeOpacity={1}
             disabled={!isCalendarOpen}
-            onPress={isCalendarOpen ? () => setCalendarOpen(false) : undefined}
+            onPress={isCalendarOpen ? closeCalendarAndScrollToTop : undefined}
           >
           <Animated.View
             layout={LinearTransition.duration(220)}

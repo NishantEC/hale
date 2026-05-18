@@ -142,7 +142,10 @@ const styles = StyleSheet.create({
   } as ViewStyle,
   heroRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    // Vertically center the recovery hero against the sleep+strain stack
+    // so the hero's ring center lands on the midpoint between the two
+    // right-column rings' centers.
+    alignItems: "center",
     justifyContent: "space-between",
     marginTop: 4,
     marginBottom: 36,
