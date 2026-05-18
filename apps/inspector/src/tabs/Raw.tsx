@@ -8,7 +8,6 @@ import { formatNumber } from "../format"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 const ROW_HEIGHT = 40
@@ -220,11 +219,10 @@ export function RawTab({
 
   if (raw?.count === 0) {
     return (
-      <div>
-        <div className="flex items-baseline justify-between mb-4">
-          <SectionHead>Raw sensor records</SectionHead>
-          <span className="text-muted-foreground text-sm">{date}</span>
-        </div>
+      <div className="space-y-6">
+        <SectionHead n="00" meta={date}>
+          Raw sensor records
+        </SectionHead>
         <Alert>
           <AlertDescription>
             No sensor records for {date}. Select a different date or check that the strap synced.
@@ -235,54 +233,50 @@ export function RawTab({
   }
 
   return (
-    <div>
-      <div className="flex items-baseline justify-between mb-4">
-        <SectionHead>Raw sensor records</SectionHead>
-        <span className="text-muted-foreground text-sm">{rowCountLabel}</span>
+    <div className="space-y-6">
+      <SectionHead
+        n="00"
+        kicker="The day's records, straight from the strap — filter by time, focus a row to copy."
+        meta={rowCountLabel}
+      >
+        Raw sensor records
+      </SectionHead>
+
+      <div className="flex items-center gap-3 rule-hair pt-3 pb-3 rule-hair-b">
+        <Input
+          type="text"
+          value={filterInput}
+          onChange={(e) => setFilterInput(e.target.value)}
+          placeholder="Filter by time — e.g. 02:00-03:00 or 14:30"
+          aria-invalid={inputInvalid || undefined}
+          className={cn("w-72", inputInvalid && "border-[var(--vermillion)]")}
+        />
+        {filterActive && (
+          <Button variant="ghost" size="sm" onClick={() => setFilterInput("")}>
+            Clear
+          </Button>
+        )}
+        {inputInvalid && (
+          <p className="text-xs text-[var(--vermillion)]">
+            Use HH:MM or HH:MM-HH:MM (24-hour). Example: 02:00-03:30
+          </p>
+        )}
       </div>
 
-      <Card>
-        <CardHeader className="py-4">
-          <div className="flex items-center gap-3">
-            <Input
-              type="text"
-              value={filterInput}
-              onChange={(e) => setFilterInput(e.target.value)}
-              placeholder="Filter by time — e.g. 02:00-03:00 or 14:30"
-              aria-invalid={inputInvalid || undefined}
-              className={cn(
-                "w-72",
-                inputInvalid && "border-destructive focus-visible:ring-destructive/20",
-              )}
-            />
-            {filterActive && (
-              <Button variant="ghost" size="sm" onClick={() => setFilterInput("")}>
-                Clear
-              </Button>
-            )}
-          </div>
-          {inputInvalid && (
-            <p className="text-xs text-destructive">
-              Use HH:MM or HH:MM-HH:MM (24-hour). Example: 02:00-03:30
-            </p>
-          )}
-        </CardHeader>
-
-        <CardContent className="px-0 pb-0">
-          <VirtualTable
-            rows={filteredRows}
-            rowHeight={ROW_HEIGHT}
-            renderHeader={renderHeader}
-            renderRow={renderRow}
-            maxHeight={window.innerHeight - 260}
-          />
-          <p className="px-6 py-3 text-xs text-muted-foreground">
-            Focus a row, then press{" "}
-            <kbd className="font-mono bg-muted border border-border rounded px-1 py-0.5">Cmd C</kbd>{" "}
-            to copy the record as JSON.
-          </p>
-        </CardContent>
-      </Card>
+      <VirtualTable
+        rows={filteredRows}
+        rowHeight={ROW_HEIGHT}
+        renderHeader={renderHeader}
+        renderRow={renderRow}
+        maxHeight={window.innerHeight - 280}
+      />
+      <p className="text-xs text-muted-foreground italic">
+        Focus a row, then press{" "}
+        <kbd className="font-mono bg-foreground/[0.06] border border-foreground/15 px-1 py-0.5">
+          Cmd C
+        </kbd>{" "}
+        to copy the record as JSON.
+      </p>
     </div>
   )
 }

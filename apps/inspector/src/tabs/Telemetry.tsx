@@ -133,10 +133,33 @@ export function TelemetryTab({
   }, [live, logTerms, telemetry?.consoleLogs?.recent])
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
+      <SectionHead
+        n="00"
+        kicker="Live device events, BLE samples, console logs, and battery, sampled from the strap."
+        meta={
+          <span
+            className={cn(
+              "eyebrow inline-flex items-center gap-1.5",
+              live ? "text-[var(--vermillion)]" : "text-muted-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                live ? "bg-[var(--vermillion)] animate-pulse" : "bg-foreground/30",
+              )}
+            />
+            {live ? "live · 5s poll" : "live off"}
+          </span>
+        }
+      >
+        Telemetry
+      </SectionHead>
+
       {tabHidden && (
         <Alert>
-          <span className="w-2 h-2 rounded-full bg-muted-foreground shrink-0 inline-block mt-1" />
+          <span className="w-2 h-2 rounded-full bg-foreground/30 shrink-0 inline-block mt-1" />
           <AlertTitle>Polling paused</AlertTitle>
           <AlertDescription>
             Data will refresh automatically when you return to this tab.
@@ -147,7 +170,7 @@ export function TelemetryTab({
       {!tabHidden && pausedMs !== null && (
         <BlurFade key={pausedMs} duration={0.3}>
           <Alert>
-            <span className="w-2 h-2 rounded-full bg-success shrink-0 inline-block mt-1" />
+            <span className="w-2 h-2 rounded-full bg-[var(--sage)] shrink-0 inline-block mt-1" />
             <AlertTitle>Resumed</AlertTitle>
             <AlertDescription>
               Refreshing after {Math.round(pausedMs / 1000)}s pause.
@@ -156,46 +179,26 @@ export function TelemetryTab({
         </BlurFade>
       )}
 
-      <div className="flex items-center gap-3">
-        <Badge
-          className={cn(
-            "gap-1.5 px-3 py-1",
-            live
-              ? "bg-success/15 text-success border-success/20"
-              : "bg-secondary text-secondary-foreground",
-          )}
-          variant={live ? "outline" : "secondary"}
-        >
-          <span
-            className={cn(
-              "inline-block w-1.5 h-1.5 rounded-full shrink-0",
-              live ? "bg-success animate-pulse" : "bg-muted-foreground",
-            )}
-          />
-          {live ? "Live tail active — polling every 5s via TopBar" : "Live tail off — toggle in TopBar"}
-        </Badge>
-      </div>
-
-      <div className="grid grid-cols-2 gap-8">
-        <Card className="p-4 gap-1">
-          <p className="text-muted-foreground text-sm">Device events</p>
-          <p className="text-3xl font-semibold tracking-tight tabular-nums">
+      <section className="grid grid-cols-2 gap-x-8">
+        <div className="rule-strong pt-3 flex flex-col gap-2">
+          <p className="eyebrow text-muted-foreground">Device events</p>
+          <p className="font-display-tight text-[3rem] leading-none tabular-nums tracking-tight">
             <NumberTicker value={telemetry?.events.totalCount ?? 0} />
           </p>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-xs text-muted-foreground">
             {Object.keys(telemetry?.events.summary ?? {}).length} distinct event types received from strap
           </p>
-        </Card>
-        <Card className="p-4 gap-1">
-          <p className="text-muted-foreground text-sm">BLE realtime samples</p>
-          <p className="text-3xl font-semibold tracking-tight tabular-nums">
+        </div>
+        <div className="rule-strong pt-3 flex flex-col gap-2">
+          <p className="eyebrow text-muted-foreground">BLE realtime samples</p>
+          <p className="font-display-tight text-[3rem] leading-none tabular-nums tracking-tight">
             <NumberTicker value={telemetry?.realtime.totalCount ?? 0} />
           </p>
-          <p className="text-muted-foreground text-sm">
+          <p className="text-xs text-muted-foreground">
             {Object.keys(telemetry?.realtime.sessions ?? {}).length} streaming sessions — heart rate, accel, etc.
           </p>
-        </Card>
-      </div>
+        </div>
+      </section>
 
       <BatterySection
         history={batteryHistory}
