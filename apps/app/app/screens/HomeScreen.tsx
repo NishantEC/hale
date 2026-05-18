@@ -16,8 +16,11 @@ import Animated, {
   FadeInRight,
   FadeOut,
   FadeOutLeft,
+  LinearTransition,
   useAnimatedScrollHandler,
+  useAnimatedStyle,
   useSharedValue,
+  withTiming,
 } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -276,6 +279,16 @@ export const HomeScreen: FC = () => {
     },
   })
 
+  // Animated dim — drives the rings/monitors wrapper down to 0.55 opacity
+  // while the calendar's up, matching the calendar's own fade timing.
+  const dimProgress = useSharedValue(0)
+  useEffect(() => {
+    dimProgress.value = withTiming(isCalendarOpen ? 1 : 0, { duration: 220 })
+  }, [isCalendarOpen, dimProgress])
+  const dimStyle = useAnimatedStyle(() => ({
+    opacity: 1 - dimProgress.value * 0.45,
+  }))
+
   const recoveryProgress = homeView?.rings.recovery.progress ?? 0
   const recoveryLabelText = homeView?.rings.recovery.value ?? "--"
   const recoveryNumeric = homeView?.rings.recovery.value
@@ -420,19 +433,14 @@ export const HomeScreen: FC = () => {
             </Animated.View>
           ) : null}
 
-          {isCalendarOpen ? (
-            <TouchableOpacity
-              style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1 }}
-              activeOpacity={1}
-              onPress={() => setCalendarOpen(false)}
-            />
-          ) : null}
-
-          <View
-            style={[
-              themed($dayContentWrap),
-              isCalendarOpen ? { opacity: 0.55 } : null,
-            ]}
+          <TouchableOpacity
+            activeOpacity={1}
+            disabled={!isCalendarOpen}
+            onPress={isCalendarOpen ? () => setCalendarOpen(false) : undefined}
+          >
+          <Animated.View
+            layout={LinearTransition.duration(220)}
+            style={[themed($dayContentWrap), dimStyle]}
             pointerEvents={isCalendarOpen ? "none" : "auto"}
           >
             {isHomeViewLoading ? (
@@ -495,7 +503,8 @@ export const HomeScreen: FC = () => {
                 <TodayCard events={tapeEvents} onEventPress={handleTapePress} />
               </Animated.View>
             )}
-          </View>
+          </Animated.View>
+          </TouchableOpacity>
         </Animated.ScrollView>
 
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
