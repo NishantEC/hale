@@ -283,10 +283,26 @@ export const HomeScreen: FC = () => {
   // while the calendar's up, matching the calendar's own fade timing.
   const dimProgress = useSharedValue(0)
   useEffect(() => {
-    dimProgress.value = withTiming(isCalendarOpen ? 1 : 0, { duration: 220 })
+    dimProgress.value = withTiming(isCalendarOpen ? 1 : 0, { duration: 260 })
   }, [isCalendarOpen, dimProgress])
   const dimStyle = useAnimatedStyle(() => ({
     opacity: 1 - dimProgress.value * 0.45,
+  }))
+
+  // Animated height for the calendar so content below actually slides down
+  // (rather than snapping to the new layout). The calendar is always
+  // mounted; the container clips it via overflow:hidden when collapsed.
+  // 360 is the measured natural height for a 6-row month with our chrome —
+  // good enough for the slide; small misalignment is invisible because
+  // the calendar fills its own surface.
+  const CALENDAR_OPEN_HEIGHT = 360
+  const calOpenness = useSharedValue(0)
+  useEffect(() => {
+    calOpenness.value = withTiming(isCalendarOpen ? 1 : 0, { duration: 260 })
+  }, [isCalendarOpen, calOpenness])
+  const calendarHeightStyle = useAnimatedStyle(() => ({
+    height: calOpenness.value * CALENDAR_OPEN_HEIGHT,
+    opacity: calOpenness.value,
   }))
 
   const recoveryProgress = homeView?.rings.recovery.progress ?? 0
@@ -413,25 +429,22 @@ export const HomeScreen: FC = () => {
             />
           </View>
 
-          {isCalendarOpen ? (
-            <Animated.View
-              entering={FadeIn.duration(200)}
-              exiting={FadeOut.duration(150)}
-              style={$calendarBleed}
-            >
-              <HomeDateCalendar
-                selectedDate={selectedDate}
-                monthCursor={calendarMonthCursor}
-                coverageByDate={coverageByDate}
-                onSelectDate={(date) => {
-                  setCalendarOpen(false)
-                  setSelectedDate(date)
-                }}
-                onMonthCursorChange={setCalendarMonthCursor}
-                onClose={() => setCalendarOpen(false)}
-              />
-            </Animated.View>
-          ) : null}
+          <Animated.View
+            style={[$calendarBleed, calendarHeightStyle, { overflow: "hidden" }]}
+            pointerEvents={isCalendarOpen ? "auto" : "none"}
+          >
+            <HomeDateCalendar
+              selectedDate={selectedDate}
+              monthCursor={calendarMonthCursor}
+              coverageByDate={coverageByDate}
+              onSelectDate={(date) => {
+                setCalendarOpen(false)
+                setSelectedDate(date)
+              }}
+              onMonthCursorChange={setCalendarMonthCursor}
+              onClose={() => setCalendarOpen(false)}
+            />
+          </Animated.View>
 
           <TouchableOpacity
             activeOpacity={1}
