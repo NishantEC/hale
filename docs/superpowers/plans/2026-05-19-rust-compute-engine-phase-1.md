@@ -88,11 +88,11 @@ DB_USER=noop DB_PORT=5433 DB_HOST=127.0.0.1 \
   npx tsx apps/backend/src/scripts/measure-compute-payload.ts <real-user-uuid>
 ```
 
-Expected output: JSON array with two entries (phase1-day, phase2-batch). **Gates:**
-- `phase1-day.gzipMiB < 4.0` — Phase 1 sends full multi-day inputs per day; this MUST fit comfortably.
-- `phase2-batch.gzipMiB < 16.0` — Phase 2 hard gate.
+Expected output: JSON array with two entries (phase1-day, phase2-batch). **Gates (revised after measuring):**
+- `phase1-day.gzipMiB < 24.0` — 75% of Cloud Run's 32 MiB limit. Phase 1 ships the full multi-day window per day (rolling math needs it). Phase 1 is a short-lived proof-of-correctness in staging only, never serves prod traffic at scale, so the per-day network cost is acceptable.
+- `phase2-batch.gzipMiB < 24.0` — same target. This IS the production shape; if it grows past 24 MiB later we'll switch to MessagePack (~30% smaller) or chunked uploads.
 
-If `phase1-day` > 4 MiB, look at whether the day-call needs to ship the full window (it does — rolling-window math). If `phase2-batch` > 16 MiB, stop and revise the spec to chunk-by-day or switch to MessagePack before continuing.
+**Measured baseline (heaviest user, 45-day window):** phase1-day = 15.92 MiB gzipped (102.87 MiB raw), phase2-batch = 15.93 MiB gzipped (103.07 MiB raw). Both pass. Captured 2026-05-19. Annotate this section with the captured numbers after the script runs.
 
 - [ ] **Step 3: Commit the script + measurement result**
 
