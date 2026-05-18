@@ -1,15 +1,29 @@
 import { useMemo, useState } from "react"
 
 import type { PipelineRunOptions, TrendsView } from "../api"
-import { Num, Pill, SectionHead } from "../components/primitives"
+import { Num, SectionHead } from "../components/primitives"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { TrendChart } from "../components/TrendChart"
+import { Badge } from "../components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
+import { Label } from "../components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select"
+import { Switch } from "../components/ui/switch"
 import { formatNumber } from "../format"
+import { cn } from "@/lib/utils"
 
 const RANGE_OPTIONS = [
-  { days: 30, label: "30d" },
-  { days: 60, label: "60d" },
-  { days: 90, label: "90d" },
+  { days: 7, label: "Last 7 days" },
+  { days: 14, label: "Last 14 days" },
+  { days: 30, label: "Last 30 days" },
+  { days: 60, label: "Last 60 days" },
+  { days: 90, label: "Last 90 days" },
 ] as const
 
 const CHART_COLORS = {
@@ -25,11 +39,22 @@ const CHART_COLORS = {
   training: "#94a3b8",
 }
 
-function trendPill(trend: "improving" | "declining" | "stable" | null) {
-  if (trend === "improving") return <Pill tone="green">improving</Pill>
-  if (trend === "declining") return <Pill tone="yellow">declining</Pill>
-  if (trend === "stable") return <Pill tone="neutral">stable</Pill>
-  return <Pill tone="neutral">—</Pill>
+function trendBadge(trend: "improving" | "declining" | "stable" | null) {
+  if (trend === "improving")
+    return (
+      <Badge className="bg-success/15 text-success border-transparent hover:bg-success/20">
+        improving
+      </Badge>
+    )
+  if (trend === "declining")
+    return (
+      <Badge className="bg-warning/15 text-warning border-transparent hover:bg-warning/20">
+        declining
+      </Badge>
+    )
+  if (trend === "stable")
+    return <Badge variant="secondary">stable</Badge>
+  return <Badge variant="secondary">—</Badge>
 }
 
 export function TrendsTab({
@@ -52,14 +77,14 @@ export function TrendsTab({
   const [cursorMs, setCursorMs] = useState<number | null>(null)
 
   const chartHeight = compact ? 90 : 180
+  const cardPadding = compact ? "py-3" : undefined
 
   const hrvDelta = useMemo(() => {
     if (!summaries?.hrv.current || !summaries?.hrv.weekAgo) return null
     return summaries.hrv.current - summaries.hrv.weekAgo
   }, [summaries])
   const rhrDelta = useMemo(() => {
-    if (!summaries?.restingHr.current || !summaries?.restingHr.weekAgo)
-      return null
+    if (!summaries?.restingHr.current || !summaries?.restingHr.weekAgo) return null
     return summaries.restingHr.current - summaries.restingHr.weekAgo
   }, [summaries])
 
@@ -72,40 +97,45 @@ export function TrendsTab({
     compact,
   }
 
+  const currentRangeLabel =
+    RANGE_OPTIONS.find((r) => r.days === rangeDays)?.label ?? `Last ${rangeDays} days`
+
   return (
     <div className="space-y-10">
+      {/* Header row */}
       <div className="flex items-center justify-between">
-        <div>
-          <p className="text-text-1 text-sm">
-            {trends?.dataPoints ?? 0} nights in the last {rangeDays} days
-          </p>
-        </div>
+        <p className="text-muted-foreground text-sm">
+          {trends?.dataPoints ?? 0} nights in the last {rangeDays} days
+        </p>
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => setCompact((c) => !c)}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
-              compact
-                ? "bg-surface-3 border-border text-text-0"
-                : "bg-surface-1 border-border text-text-2 hover:text-text-1"
-            }`}
-          >
-            {compact ? "Comfortable" : "Compact"}
-          </button>
-          <div className="flex gap-1.5 bg-surface-1 border border-border rounded-lg p-1">
-            {RANGE_OPTIONS.map((r) => (
-              <button
-                key={r.days}
-                onClick={() => onRangeChange(r.days)}
-                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
-                  rangeDays === r.days
-                    ? "bg-surface-3 text-text-0"
-                    : "text-text-2 hover:text-text-1"
-                }`}
-              >
-                {r.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            <Switch
+              id="compact-toggle"
+              checked={compact}
+              onCheckedChange={setCompact}
+              size="sm"
+            />
+            <Label htmlFor="compact-toggle" className="text-xs text-muted-foreground cursor-pointer">
+              Compact
+            </Label>
           </div>
+
+          <Select
+            value={String(rangeDays)}
+            onValueChange={(v) => onRangeChange(Number(v))}
+          >
+            <SelectTrigger size="sm" className="w-[130px]">
+              <SelectValue>{currentRangeLabel}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {RANGE_OPTIONS.map((r) => (
+                <SelectItem key={r.days} value={String(r.days)}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           <RunPipelineMenu
             busy={busy}
             variant="secondary"
@@ -123,11 +153,17 @@ export function TrendsTab({
         </div>
       </div>
 
+      {/* Summary cards */}
       <div>
         <SectionHead>Week-over-week</SectionHead>
-        <div className="grid grid-cols-3 gap-8 mt-4">
-          <div>
-            <div className="flex items-baseline gap-2">
+        <div className="grid grid-cols-3 gap-4 mt-4">
+          <Card className={cn("gap-3", cardPadding)}>
+            <CardHeader className="px-5 pb-0 pt-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                HRV (RMSSD)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-0">
               <Num
                 label="HRV (RMSSD)"
                 value={formatNumber(summaries?.hrv.current, 1)}
@@ -137,33 +173,55 @@ export function TrendsTab({
                     : "—"
                 }
               />
-            </div>
-            <div className="mt-1">{trendPill(summaries?.hrv.trend ?? null)}</div>
-          </div>
-          <div>
-            <Num
-              label="Resting HR"
-              value={formatNumber(summaries?.restingHr.current, 0)}
-              sub={
-                rhrDelta != null
-                  ? `${rhrDelta > 0 ? "+" : ""}${rhrDelta.toFixed(0)} bpm vs week ago`
-                  : "—"
-              }
-            />
-            <div className="mt-1">{trendPill(summaries?.restingHr.trend ?? null)}</div>
-          </div>
-          <Num
-            label="Sleep avg"
-            value={
-              summaries?.sleepDuration.avgHours != null
-                ? `${formatNumber(summaries.sleepDuration.avgHours, 1)}h`
-                : "—"
-            }
-            sub={`${summaries?.sleepDuration.nights ?? 0} nights`}
-          />
+              <div className="mt-2">{trendBadge(summaries?.hrv.trend ?? null)}</div>
+            </CardContent>
+          </Card>
+
+          <Card className={cn("gap-3", cardPadding)}>
+            <CardHeader className="px-5 pb-0 pt-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                Resting HR
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-5 pb-0">
+              <Num
+                label="Resting HR"
+                value={formatNumber(summaries?.restingHr.current, 0)}
+                sub={
+                  rhrDelta != null
+                    ? `${rhrDelta > 0 ? "+" : ""}${rhrDelta.toFixed(0)} bpm vs week ago`
+                    : "—"
+                }
+              />
+              <div className="mt-2">{trendBadge(summaries?.restingHr.trend ?? null)}</div>
+            </CardContent>
+          </Card>
+
+          <Card className={cn("gap-3", cardPadding)}>
+            <CardHeader className="px-5 pb-0 pt-0">
+              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                Sleep avg
+              </CardTitle>
+              <CardDescription>
+                {summaries?.sleepDuration.nights ?? 0} nights
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="px-5 pb-0">
+              <Num
+                label="Sleep avg"
+                value={
+                  summaries?.sleepDuration.avgHours != null
+                    ? `${formatNumber(summaries.sleepDuration.avgHours, 1)}h`
+                    : "—"
+                }
+                sub={`${summaries?.sleepDuration.nights ?? 0} nights`}
+              />
+            </CardContent>
+          </Card>
         </div>
       </div>
 
+      {/* Chart grid */}
       <div className="grid grid-cols-2 gap-6">
         <TrendChart
           title="HRV (RMSSD)"
