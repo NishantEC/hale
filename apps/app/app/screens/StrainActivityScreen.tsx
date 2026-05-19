@@ -1,8 +1,11 @@
-import { FC, useEffect, useRef } from "react"
+import { FC, useMemo, useRef } from "react"
 import { RefreshControl, View, ViewStyle, useWindowDimensions } from "react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { router } from "expo-router"
 
+import { BoutCard, DayTimeline, GapRule, type DayTimelineBout } from "@/components/activity"
+import { PendingActivityCards } from "@/components/home/PendingActivityCards"
 import { InlineLineChart } from "@/components/InlineLineChart"
 import { LabsAccordion } from "@/components/LabsAccordion"
 import { MetricHero } from "@/components/MetricHero"
@@ -40,25 +43,20 @@ export const StrainActivityScreen: FC = () => {
   })
   const scrollTopPadding = insets.top + SCREEN_HEADER_HEIGHT + 8
 
-  useEffect(() => {
-    if (error && error !== lastShownError.current) {
-      lastShownError.current = error
-      Toast.show(error, { type: "error", position: "top", duration: 4000 })
-      clearError()
-    } else if (!error) {
-      lastShownError.current = null
-    }
-  }, [error, clearError])
+  if (error && error !== lastShownError.current) {
+    lastShownError.current = error
+    Toast.show(error, { type: "error", position: "top", duration: 4000 })
+    clearError()
+  } else if (!error) {
+    lastShownError.current = null
+  }
 
   const chartWidth = width - 48
 
   const formattedDate = (() => {
-    const [year, month, day] = selectedDate.split("-").map(Number)
-    return new Intl.DateTimeFormat("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    }).format(new Date(year, month - 1, day, 12))
+    const [y, m, d] = selectedDate.split("-").map(Number)
+    return new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" })
+      .format(new Date(y, m - 1, d, 12))
   })()
 
   const strainValue = homeView?.rings.strain.value ?? "--"
@@ -75,10 +73,7 @@ export const StrainActivityScreen: FC = () => {
   })()
 
   const trendPoints = homeView?.strainTrend ?? []
-  const sevenDayStrain = trendPoints.map((p) => ({
-    date: p.timestamp.slice(0, 10),
-    value: p.value,
-  }))
+  const sevenDayStrain = trendPoints.map((p) => ({ date: p.timestamp.slice(0, 10), value: p.value }))
   const sevenDayStress = (homeView?.stressTrend ?? []).map((p) => ({
     date: p.timestamp.slice(0, 10),
     value: p.value,
@@ -94,13 +89,46 @@ export const StrainActivityScreen: FC = () => {
     return Math.round((strainNumeric - mean) * 10) / 10
   })()
 
+  const feed = homeView?.activities.activityFeed ?? []
+  const candidates = homeView?.pendingActivityCards ?? []
+
+  const dayBounds = useMemo(() => {
+    const [y, m, d] = selectedDate.split("-").map(Number)
+    const dayStart = new Date(y, m - 1, d, 0, 0, 0, 0)
+    const dayEnd = new Date(y, m - 1, d, 23, 59, 59, 999)
+    return { dayStart, dayEnd }
+  }, [selectedDate])
+
+  const timelineBouts: DayTimelineBout[] = useMemo(
+    () => [
+      ...feed
+        .filter((a) => a.startTime && a.endTime)
+        .map((a) => ({
+          startTime: new Date(a.startTime as string),
+          endTime: new Date(a.endTime as string),
+          activityType: a.type,
+        })),
+      ...candidates.map((c) => ({
+        startTime: new Date(c.startTime),
+        endTime: new Date(c.endTime ?? c.startTime),
+        activityType: "Candidate" as const,
+      })),
+    ],
+    [feed, candidates],
+  )
+
+  const namedCount = feed.filter((a) => a.source === "detected").length
+  const candidateCount = candidates.length
+  const offWristCount = feed.filter((a) => a.type === "Off-Wrist" || a.type === "No Data").length
+  const activeMinutes = homeView?.activities.totalActiveMinutes ?? "--"
+
   const labsRows = [
     { label: "Training Load Ratio", value: homeView?.activities.trainingLoad ?? "--" },
     { label: "Load Risk Zone", value: homeView?.activities.trainingLoadRiskZone ?? "--" },
     { label: "Stress Load", value: homeView?.activities.stress ?? "--" },
     { label: "SpO₂", value: homeView?.activities.spo2 ?? "--" },
     { label: "SpO₂ Dips", value: homeView?.activities.spo2Dips ?? "--" },
-    { label: "Active Minutes", value: homeView?.activities.totalActiveMinutes ?? "--" },
+    { label: "Active Minutes", value: activeMinutes },
   ]
 
   return (
@@ -118,21 +146,85 @@ export const StrainActivityScreen: FC = () => {
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
-        <MetricHero
-          value={validStrain ? strainNumeric.toFixed(1) : "--"}
-          valueDetail="0 – 21 scale"
-          badge={{ label: classification.label, tint: classification.tint }}
-          delta={strainDelta}
-          deltaUnit=""
-          detail={`${homeView?.activities.totalActiveMinutes ?? "--"} active min · ${homeView?.activities.activityCount ?? 0} activities logged`}
+        <View style={{ paddingHorizontal: 16 }}>
+          <MetricHero
+            value={validStrain ? strainNumeric.toFixed(1) : "--"}
+            valueDetail="0 – 21 scale"
+            badge={{ label: classification.label, tint: classification.tint }}
+            delta={strainDelta}
+            deltaUnit=""
+            detail={`${namedCount} named · ${candidateCount} candidate · ${offWristCount} off-wrist · ${activeMinutes} active min`}
+          />
+        </View>
+
+        <View style={{ marginHorizontal: 16 }}>
+          <DayTimeline bouts={timelineBouts} dayStart={dayBounds.dayStart} dayEnd={dayBounds.dayEnd} />
+        </View>
+
+        <PendingActivityCards cards={candidates} onResolved={refreshDashboard} />
+
+        <Text
+          text="TODAY"
+          style={{
+            color: colors.textDim,
+            fontSize: 11,
+            fontWeight: "700",
+            letterSpacing: 1.8,
+            marginTop: 18,
+            marginHorizontal: 16,
+          }}
         />
+        {feed.length === 0 ? (
+          <Text
+            text="No confirmed activities yet."
+            style={{ color: colors.textMuted, fontSize: 13, marginHorizontal: 16, marginTop: 6 }}
+          />
+        ) : (
+          feed.map((a, i) => {
+            const startIso = a.startTime
+            const endIso = a.endTime
+            if (a.type === "Off-Wrist" || a.type === "No Data") {
+              if (!startIso || !endIso) return null
+              return (
+                <GapRule
+                  key={a.id ?? `gap-${i}`}
+                  kind={a.type as "Off-Wrist" | "No Data"}
+                  startTime={new Date(startIso)}
+                  endTime={new Date(endIso)}
+                />
+              )
+            }
+            const intensity =
+              a.intensity === "moderate" || a.intensity === "hard" || a.intensity === "light"
+                ? (a.intensity as "light" | "moderate" | "hard")
+                : "light"
+            return (
+              <BoutCard
+                key={a.id ?? `bout-${i}`}
+                activityType={a.type}
+                startTime={startIso ? new Date(startIso) : new Date()}
+                durationMinutes={a.durationMinutes ?? 0}
+                heartRateAvg={a.heartRateAvg ?? 0}
+                intensity={intensity}
+                strainScore={parseFloat(a.strain) || 0}
+                onPress={
+                  a.id
+                    ? () => router.push({ pathname: "/bout-detail", params: { id: a.id! } })
+                    : undefined
+                }
+              />
+            )
+          })
+        )}
 
         {sevenDayStrain.length ? (
           <View
             style={{
+              marginTop: 24,
               padding: 14,
               backgroundColor: colors.surfaceCard,
               borderRadius: 12,
+              marginHorizontal: 16,
             }}
           >
             <Text
@@ -149,36 +241,35 @@ export const StrainActivityScreen: FC = () => {
           </View>
         ) : null}
 
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
-          <VitalCard
-            label="Live HR"
-            value={realtimeHeartRate ? `${realtimeHeartRate}` : "--"}
-            unit="bpm"
-            delta={null}
-          />
-          <VitalCard
-            label="Stress"
-            value={homeView?.activities.stress ?? "--"}
-            delta={null}
-          />
-        </View>
-        <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
-          <VitalCard
-            label="Recovery"
-            value={homeView?.todayOverview.dailyBalance ?? "--"}
-            unit="%"
-            delta={null}
-          />
-          <VitalCard
-            label="Load Pressure"
-            value={homeView?.todayOverview.loadPressure ?? "--"}
-            delta={null}
-          />
+        <View style={{ marginTop: 18, marginHorizontal: 16 }}>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <VitalCard
+              label="Live HR"
+              value={realtimeHeartRate ? `${realtimeHeartRate}` : "--"}
+              unit="bpm"
+              delta={null}
+            />
+            <VitalCard label="Stress" value={homeView?.activities.stress ?? "--"} delta={null} />
+          </View>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            <VitalCard
+              label="Recovery"
+              value={homeView?.todayOverview.dailyBalance ?? "--"}
+              unit="%"
+              delta={null}
+            />
+            <VitalCard
+              label="Load Pressure"
+              value={homeView?.todayOverview.loadPressure ?? "--"}
+              delta={null}
+            />
+          </View>
         </View>
 
         <View
           style={{
-            marginTop: 22,
+            marginTop: 18,
+            marginHorizontal: 16,
             padding: 14,
             backgroundColor: colors.surfaceCard,
             borderRadius: 12,
@@ -201,7 +292,9 @@ export const StrainActivityScreen: FC = () => {
           />
         </View>
 
-        <LabsAccordion rows={labsRows} />
+        <View style={{ marginHorizontal: 16 }}>
+          <LabsAccordion rows={labsRows} />
+        </View>
       </Animated.ScrollView>
     </View>
   )
@@ -213,8 +306,7 @@ const $screenWrap: ThemedStyle<ViewStyle> = ({ colors }) => ({
 })
 
 const $container: ThemedStyle<ViewStyle> = () => ({
-  gap: 24,
-  paddingBottom: 60,
-  paddingHorizontal: 24,
+  gap: 18,
+  paddingBottom: 80,
   paddingTop: 12,
 })
