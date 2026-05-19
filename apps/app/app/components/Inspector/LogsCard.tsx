@@ -1,5 +1,7 @@
 import { FC, useCallback, useEffect, useState } from "react"
 import { ScrollView, TouchableOpacity, View, ViewStyle } from "react-native"
+import { Copy as CopyIcon, Export as ExportIcon } from "phosphor-react-native"
+import * as Clipboard from "expo-clipboard"
 import * as Sharing from "expo-sharing"
 
 import { Text } from "@/components/Text"
@@ -12,13 +14,11 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 import { InspectorCard } from "./InspectorCard"
 import { StatusPill } from "./StatusPill"
 
-// Tail of today's log file. Auto-refreshes every 3s while expanded.
-// Tap "Export" to hand the file to iOS share sheet — AirDrop to Mac,
-// paste into a Slack message, etc.
 export const LogsCard: FC = () => {
   const { colors } = LOCAL_THEME
   const [lines, setLines] = useState<string[]>([])
-  const [isExporting, setIsExporting] = useState(false)
+  const [busyKind, setBusyKind] = useState<"copy" | "export" | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -35,14 +35,32 @@ export const LogsCard: FC = () => {
     return () => clearInterval(id)
   }, [refresh])
 
+  const flashToast = (msg: string) => {
+    setToast(msg)
+    setTimeout(() => setToast(null), 1500)
+  }
+
+  const onCopy = useCallback(async () => {
+    setBusyKind("copy")
+    try {
+      await Clipboard.setStringAsync(lines.join("\n"))
+      flashToast("Copied")
+    } catch (err) {
+      console.warn("[LogsCard] copy failed", err)
+      flashToast("Couldn't copy")
+    } finally {
+      setBusyKind(null)
+    }
+  }, [lines])
+
   const onExport = useCallback(async () => {
-    setIsExporting(true)
+    setBusyKind("export")
     try {
       const path = await getTodayLogPath()
       if (!path) return
       const available = await Sharing.isAvailableAsync()
       if (!available) {
-        console.warn("[LogsCard] sharing not available on this device")
+        flashToast("Sharing unavailable")
         return
       }
       await Sharing.shareAsync(path, {
@@ -52,8 +70,9 @@ export const LogsCard: FC = () => {
       })
     } catch (err) {
       console.warn("[LogsCard] export failed", err)
+      flashToast("Couldn't export")
     } finally {
-      setIsExporting(false)
+      setBusyKind(null)
     }
   }, [])
 
@@ -65,31 +84,45 @@ export const LogsCard: FC = () => {
     >
       <View style={$header}>
         <Text
-          text="Today's persistent log (newest first). 7-day rolling retention."
+          text={toast ?? "Today's persistent log · 7-day retention"}
           size="xxs"
           style={{ color: colors.textDim }}
         />
-        <TouchableOpacity
-          onPress={onExport}
-          disabled={isExporting || lines.length === 0}
-          style={[
-            $exportBtn,
-            { backgroundColor: colors.surfaceElevated },
-            (isExporting || lines.length === 0) ? { opacity: 0.4 } : null,
-          ]}
-        >
-          <Text
-            text={isExporting ? "Exporting…" : "Export"}
-            size="xxs"
-            weight="semiBold"
-            style={{ color: colors.text }}
-          />
-        </TouchableOpacity>
+        <View style={$btnRow}>
+          <TouchableOpacity
+            onPress={onCopy}
+            disabled={busyKind != null || lines.length === 0}
+            style={[
+              $iconBtn,
+              { backgroundColor: colors.surfaceElevated },
+              busyKind != null || lines.length === 0 ? { opacity: 0.4 } : null,
+            ]}
+            accessibilityLabel="Copy logs"
+          >
+            <CopyIcon size={13} color={colors.text} weight="regular" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onExport}
+            disabled={busyKind != null || lines.length === 0}
+            style={[
+              $iconBtn,
+              { backgroundColor: colors.surfaceElevated },
+              busyKind != null || lines.length === 0 ? { opacity: 0.4 } : null,
+            ]}
+            accessibilityLabel="Export logs"
+          >
+            <ExportIcon size={13} color={colors.text} weight="regular" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView style={$scroller} nestedScrollEnabled>
         {lines.length === 0 ? (
-          <Text text="No entries yet" size="xs" style={{ color: colors.textDim, padding: 8 }} />
+          <Text
+            text="No entries yet"
+            size="xs"
+            style={{ color: colors.textDim, padding: 8 }}
+          />
         ) : (
           lines.map((line, idx) => (
             <Text
@@ -124,13 +157,12 @@ const $header: ViewStyle = {
   paddingBottom: 8,
   gap: 8,
 }
-
-const $exportBtn: ViewStyle = {
-  paddingHorizontal: 10,
-  paddingVertical: 6,
+const $btnRow: ViewStyle = { flexDirection: "row", gap: 6 }
+const $iconBtn: ViewStyle = {
+  width: 26,
+  height: 26,
   borderRadius: 8,
+  alignItems: "center",
+  justifyContent: "center",
 }
-
-const $scroller: ViewStyle = {
-  maxHeight: 280,
-}
+const $scroller: ViewStyle = { maxHeight: 280 }
