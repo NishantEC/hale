@@ -386,7 +386,11 @@ export const HomeScreen: FC = () => {
         navigateTo("HomeMetric", "home-metric", { metric: "recovery" })
         break
       case "workout":
-        navigateTo("StrainActivity", "strain-activity")
+        if (event.payload?.boutId) {
+          navigateTo("BoutDetail", "bout-detail", { id: event.payload.boutId })
+        } else {
+          navigateTo("StrainActivity", "strain-activity")
+        }
         break
     }
   }

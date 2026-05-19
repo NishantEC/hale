@@ -42,6 +42,7 @@ export default function AppLayout() {
         name="dev-activity-strip"
         options={{ headerShown: true, title: "Activity Strip" }}
       />
+      <Stack.Screen name="bout-detail" options={{ headerShown: false }} />
     </Stack>
   )
 }

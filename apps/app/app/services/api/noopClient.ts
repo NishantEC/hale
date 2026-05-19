@@ -817,6 +817,39 @@ export async function dismissActivity(id: string): Promise<{ ok: boolean }> {
   return apiPost(`/activities/${encodeURIComponent(id)}/dismiss`, {});
 }
 
+export interface ActivityBoutDetail {
+  id: string;
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  activityType: string;
+  intensity: "light" | "moderate" | "hard";
+  source: "detected" | "candidate" | "healthkit" | "manual";
+  confidence: number;
+  heartRateAvg: number;
+  heartRateMax: number;
+  strainScore: number;
+  hrCurve: { t: number; hr: number }[];
+  zonePercents: number[];
+  zoneMinutes: number[];
+  motionIntensity?: number[];
+}
+
+export async function fetchActivityBout(id: string): Promise<ActivityBoutDetail> {
+  return apiGet(`/activities/${encodeURIComponent(id)}`);
+}
+
+export async function deleteActivity(id: string): Promise<{ ok: boolean }> {
+  return requestJson(
+    `/activities/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: withBaseHeaders({ Authorization: `Bearer ${sessionToken}` }),
+    },
+    REQUEST_TIMEOUT_MS,
+  );
+}
+
 export async function fetchSleepView(date: string): Promise<SleepViewModel> {
   return apiGet(
     withDeviceTimeZone(`/views/sleep?date=${encodeURIComponent(date)}`),
