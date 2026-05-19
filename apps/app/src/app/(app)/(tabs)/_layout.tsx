@@ -1,7 +1,7 @@
 import { Platform } from "react-native"
 import { NativeTabs } from "expo-router/unstable-native-tabs"
 
-import { ActivityStrip } from "@/components/ActivityStrip"
+import { ActivityStrip, useActivityStripState } from "@/components/ActivityStrip"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { useColorMode } from "@/context/ThemeContext"
 
@@ -14,12 +14,14 @@ function supportsBottomAccessory(): boolean {
 export default function TabsLayout() {
   useColorMode()
   const { colors } = LOCAL_THEME
+  const view = useActivityStripState()
+  const showAccessory = supportsBottomAccessory() && view.state !== "idle"
 
   return (
     <NativeTabs tintColor={colors.tint} minimizeBehavior="automatic" blurEffect="systemChromeMaterial">
-      {supportsBottomAccessory() && (
+      {showAccessory && (
         <NativeTabs.BottomAccessory>
-          <ActivityStrip />
+          <ActivityStrip view={view} />
         </NativeTabs.BottomAccessory>
       )}
       <NativeTabs.Trigger name="index">

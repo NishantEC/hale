@@ -3,7 +3,7 @@ import { AccessibilityInfo, Animated, Pressable, StyleSheet, Text } from "react-
 import { SymbolView } from "expo-symbols"
 import { NativeTabs } from "expo-router/unstable-native-tabs"
 
-import { useActivityStripState } from "./useActivityStripState"
+import type { ActivityStripView } from "./useActivityStripState"
 import type { AccessoryState, AccessoryTone } from "./states"
 
 const TONE_COLOR: Record<AccessoryTone, string> = {
@@ -23,8 +23,8 @@ const SPIN_STATES: ReadonlySet<AccessoryState> = new Set<AccessoryState>([
   "ble_connecting",
 ])
 
-export const ActivityStrip = memo(function ActivityStrip() {
-  const { state, copy, icon, tone, onPress, announcement } = useActivityStripState()
+export const ActivityStrip = memo(function ActivityStrip({ view }: { view: ActivityStripView }) {
+  const { state, copy, icon, tone, onPress, announcement } = view
   const placement = NativeTabs.BottomAccessory.usePlacement()
   const fade = useRef(new Animated.Value(0)).current
   const spin = useRef(new Animated.Value(0)).current
