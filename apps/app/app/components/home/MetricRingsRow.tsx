@@ -94,7 +94,7 @@ const RingItem: FC<{ ring: Ring; size: RingSize }> = ({ ring, size }) => {
         gap={0}
         onPress={ring.onPress}
         renderIcon={() => (
-          <View style={styles.center}>
+          <View style={styles.centerRow}>
             <Text
               text={ring.value}
               style={{
@@ -111,7 +111,9 @@ const RingItem: FC<{ ring: Ring; size: RingSize }> = ({ ring, size }) => {
               style={{
                 color: colors.textDim,
                 fontSize: dims.unitSize,
-                marginTop: 1,
+                fontWeight: "600",
+                marginLeft: 2,
+                lineHeight: dims.valueLineHeight,
               }}
             />
           </View>
@@ -153,6 +155,11 @@ const styles = StyleSheet.create({
   } as ViewStyle,
   heroLeftCol: {
     alignItems: "center",
+    // flex: 1 stretches this column to the row's tallest sibling (the
+    // right stack). Without justifyContent: center, the hero ring sticks
+    // to the stretched column's top. Centering puts the ring's vertical
+    // mid roughly on the midpoint between sleep and strain rings.
+    justifyContent: "center",
     flex: 1,
   } as ViewStyle,
   heroRightCol: {
@@ -165,6 +172,11 @@ const styles = StyleSheet.create({
   } as ViewStyle,
   center: {
     alignItems: "center",
+    justifyContent: "center",
+  } as ViewStyle,
+  centerRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
     justifyContent: "center",
   } as ViewStyle,
 })
