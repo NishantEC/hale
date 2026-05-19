@@ -1,5 +1,6 @@
 import { and, asc, eq, gte, lte } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
+import { withWrite } from "../transaction"
 import {
   dailyMetrics,
   dailyScores,
@@ -44,42 +45,52 @@ function normalizeRow(row: Record<string, unknown>): Record<string, unknown> {
   )
 }
 
-async function upsertMany(db: NoopDatabase, table: any, rows: any[]): Promise<void> {
+async function upsertMany(
+  db: NoopDatabase,
+  table: any,
+  tableName: string,
+  rows: any[],
+): Promise<void> {
   if (rows.length === 0) return
   const userId = peekActiveUserId()
   if (!userId) return
   const mirror = backendMirror()
-  for (const row of rows) {
-    const clean = normalizeRow(row)
-    await db
-      .insert(table)
-      .values({ ...clean, userId, ...mirror })
-      .onConflictDoUpdate({
-        target: table.id,
-        set: { ...clean, ...mirror, _origin: "backend" },
-      })
-  }
-  notifyTable(table._ ? String(table._.name) : "unknown")
+  // One transaction for the whole page — pre-op-sqlite this was N
+  // implicit transactions and a SQLITE_BUSY landmine; now it's also a
+  // ~Nx speedup since we fsync once instead of N times.
+  await withWrite(db, async (tx) => {
+    for (const row of rows) {
+      const clean = normalizeRow(row)
+      await tx
+        .insert(table)
+        .values({ ...clean, userId, ...mirror })
+        .onConflictDoUpdate({
+          target: table.id,
+          set: { ...clean, ...mirror, _origin: "backend" },
+        })
+    }
+  })
+  notifyTable(tableName)
 }
 
 export const upsertDailyMetrics = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, dailyMetrics, rows)
+  upsertMany(db, dailyMetrics, "daily_metrics", rows)
 export const upsertDailyScores = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, dailyScores, rows)
+  upsertMany(db, dailyScores, "daily_scores", rows)
 export const upsertSleepDetections = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, sleepDetections, rows)
+  upsertMany(db, sleepDetections, "sleep_detections", rows)
 export const upsertSleepStages = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, sleepStages, rows)
+  upsertMany(db, sleepStages, "sleep_stages", rows)
 export const upsertNightFeatures = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, nightFeatures, rows)
+  upsertMany(db, nightFeatures, "night_features", rows)
 export const upsertSignalSamples = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, signalSamples, rows)
+  upsertMany(db, signalSamples, "signal_samples", rows)
 export const upsertActivityDetections = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, activityDetections, rows)
+  upsertMany(db, activityDetections, "activity_detections", rows)
 export const upsertBaselineProfile = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, baselineProfile, rows)
+  upsertMany(db, baselineProfile, "baseline_profile", rows)
 export const upsertSleepPlans = (db: NoopDatabase, rows: any[]) =>
-  upsertMany(db, sleepPlans, rows)
+  upsertMany(db, sleepPlans, "sleep_plans", rows)
 
 // Common read helpers used by screens
 

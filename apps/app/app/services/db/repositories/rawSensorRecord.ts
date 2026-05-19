@@ -1,9 +1,10 @@
-import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm"
+import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
+import { withWrite, type WriteTx } from "../transaction"
 import { rawSensorRecords } from "../schema"
 import { getActiveUserId, peekActiveUserId } from "../session"
 import { notifyTable } from "../observable"
-import { enqueueOutbound } from "./outboundQueue"
+import { enqueueOutboundTx } from "./outboundQueue"
 
 export interface RawSensorRecordInput {
   id: string
@@ -27,17 +28,39 @@ export interface RawSensorRecordInput {
   signalQuality: number | null
 }
 
-// Tx-scoped insert: must be called inside a db.transaction() callback. The
-// caller is responsible for firing notifyTable once after the surrounding
-// transaction commits — firing it per-record inside a tight loop causes
-// subscriber refetches to keep prepared statements open on the connection,
-// which makes the next iteration's COMMIT fail with SQLITE_BUSY
-// ("cannot commit transaction - SQL statements in progress").
+// Tx-scoped insert. Must be called inside a withWrite() callback — the
+// caller is responsible for notifyTable() once after the surrounding
+// transaction commits.
 export async function insertRawSensorRecordTx(
-  tx: NoopDatabase,
+  tx: WriteTx,
   input: RawSensorRecordInput,
   userId: string,
 ): Promise<void> {
+  // Strap re-deliveries from flash bring records we already uploaded. Looking
+  // up the existing row first lets us skip re-enqueueing rows that are already
+  // synced — otherwise outbound_queue bloats with no-op POSTs every cycle.
+  // We still run the upsert so any merged-in field (e.g. HR going from 0 to a
+  // real value via the CASE in onConflictDoUpdate) keeps that improvement
+  // locally; we just don't ship it again unless it materially changed.
+  const existing = await tx
+    .select({
+      _syncedAt: rawSensorRecords._syncedAt,
+      heartRate: rawSensorRecords.heartRate,
+      skinContact: rawSensorRecords.skinContact,
+    })
+    .from(rawSensorRecords)
+    .where(eq(rawSensorRecords.id, input.id))
+    .limit(1)
+
+  const prior = existing[0]
+  const wasSynced = prior?._syncedAt != null
+  // If we already synced this row and the new payload doesn't recover HR
+  // (going from 0 to a real value) or fill in a skinContact reading, this is
+  // a pure re-delivery — no reason to re-enqueue.
+  const recoversHR = prior != null && prior.heartRate === 0 && input.heartRate > 0
+  const fillsSkinContact = prior != null && prior.skinContact == null && input.skinContact != null
+  const skipEnqueue = wasSynced && !recoversHR && !fillsSkinContact
+
   await tx
     .insert(rawSensorRecords)
     .values({
@@ -69,11 +92,21 @@ export async function insertRawSensorRecordTx(
         signalQuality: sql`COALESCE(excluded.signal_quality, ${rawSensorRecords.signalQuality})`,
       },
     })
-  await enqueueOutbound(tx, {
+  if (skipEnqueue) return
+  await enqueueOutboundTx(tx, {
     tableName: "raw_sensor_records",
     rowId: input.id,
     payload: input,
   })
+  // If we're re-enqueueing a previously-synced row because the payload
+  // genuinely improved (HR recovered, skinContact filled), clear _syncedAt so
+  // the drainer treats it as fresh and re-marks it after a successful upload.
+  if (wasSynced) {
+    await tx
+      .update(rawSensorRecords)
+      .set({ _syncedAt: null })
+      .where(eq(rawSensorRecords.id, input.id))
+  }
 }
 
 export async function insertRawSensorRecord(
@@ -81,7 +114,7 @@ export async function insertRawSensorRecord(
   input: RawSensorRecordInput,
 ): Promise<void> {
   const userId = getActiveUserId()
-  await db.transaction(async (tx) => {
+  await withWrite(db, async (tx) => {
     await insertRawSensorRecordTx(tx, input, userId)
   })
   notifyTable("raw_sensor_records")
@@ -111,12 +144,9 @@ export async function backfillUnsyncedRawSensorRecords(
     .orderBy(asc(rawSensorRecords.timestamp))
     .limit(limit)
 
-  // Wrap the enqueue loop in ONE transaction — each enqueueOutbound is
-  // an implicit transaction otherwise, and N COMMITs in a row race
-  // against subscriber cursors. Same SQLite race that broke ingest.
-  await db.transaction(async (tx) => {
+  await withWrite(db, async (tx) => {
     for (const row of unsynced) {
-      await enqueueOutbound(tx, {
+      await enqueueOutboundTx(tx, {
         tableName: "raw_sensor_records",
         rowId: row.id,
         payload: row,
@@ -151,17 +181,15 @@ export async function markRawSensorRecordsSynced(
   syncedAt: number,
 ): Promise<void> {
   if (ids.length === 0) return
-  // Wrap per-row updates in ONE transaction. The previous per-row
-  // implicit-transaction pattern hit SQLITE_BUSY in release builds
-  // because subscriber refetches (useDbQuery) held cursors open across
-  // each COMMIT. Same bug we already fixed for ingestBleRecords; this
-  // is the symmetric fix for the drainer's "mark synced" path.
-  await db.transaction(async (tx) => {
-    for (const id of ids) {
+  // SQLite's default parameter cap is 999. Chunk at 500 for safety.
+  const CHUNK = 500
+  await withWrite(db, async (tx) => {
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK)
       await tx
         .update(rawSensorRecords)
         .set({ _syncedAt: syncedAt })
-        .where(eq(rawSensorRecords.id, id))
+        .where(inArray(rawSensorRecords.id, slice))
     }
   })
 }

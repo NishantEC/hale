@@ -13,6 +13,7 @@ module.exports = function (api) {
           disableExtraction: process.env.NODE_ENV === "development",
         },
       ],
+      ["inline-import", { extensions: [".sql"] }],
     ],
   }
 }

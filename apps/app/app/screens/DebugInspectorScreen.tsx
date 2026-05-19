@@ -1,20 +1,27 @@
 import { FC, useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, Alert, RefreshControl, View, ViewStyle } from "react-native"
+import {
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  TouchableOpacity,
+  View,
+  ViewStyle,
+} from "react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
-import { ActionsCard } from "@/components/Inspector/ActionsCard"
-import { SyncProgressCard } from "@/components/Inspector/SyncProgressCard"
-import { DiagnosticsCard } from "@/components/Inspector/DiagnosticsCard"
+import { ActionsRow } from "@/components/Inspector/ActionsRow"
+import { DaemonDrilldown } from "@/components/Inspector/DaemonDrilldown"
+import { buildEvents, EventsCard } from "@/components/Inspector/EventsCard"
+import { ExpertActions } from "@/components/Inspector/ExpertActions"
+import { HealthStrip } from "@/components/Inspector/HealthStrip"
 import { LogsCard } from "@/components/Inspector/LogsCard"
-import { LiveMonitorCard } from "@/components/Inspector/LiveMonitorCard"
+import { SyncProgressCard } from "@/components/Inspector/SyncProgressCard"
+import { useExpertMode } from "@/components/Inspector/useExpertMode"
 import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
 import { useDashboard } from "@/context/DashboardContext"
-import { openDatabase } from "@/services/db"
-import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
-import { runForceUpload } from "@/services/sync/forceUpload"
-import { recordPipelineRun } from "@/services/sync/syncTelemetry"
+import { useOutboundQueueStats } from "@/hooks/useOutboundQueueStats"
 import {
   apiPost,
   DebugOverview,
@@ -23,37 +30,78 @@ import {
   INSPECTOR_WEB_URL,
   runDebugPipeline,
 } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
+import {
+  DEFAULT_INTERVAL_MS,
+  getContinuousSyncStats,
+} from "@/services/sync/continuousSyncDaemon"
+import { runForceUpload } from "@/services/sync/forceUpload"
+import {
+  getSyncTelemetry,
+  recordPipelineRun,
+  subscribeSyncTelemetry,
+} from "@/services/sync/syncTelemetry"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
+
+// Earliest timestamp confirmed in the GetDataRange response (offset 35
+// of the 69-byte payload): 2026-05-05 23:25:47 UTC. The strap reports
+// data on flash back to this point, so this is the rewind target until
+// we have a date picker.
+const REWIND_TARGET_UNIX_TS = 1778025947
+
+function tsMs(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const t = new Date(iso).getTime()
+  return Number.isNaN(t) ? null : t
+}
 
 export const DebugInspectorScreen: FC = () => {
   const { colors } = LOCAL_THEME
   const { selectedDate, refreshDashboard } = useDashboard()
   const ble = useBle()
-  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange, rewindAndResync, probeRewindProbe, probeRewindVerbose, forceTrimRewindAndSync, whoopsiInitThenForceTrim } = ble
+  const {
+    syncNow,
+    rebootStrap,
+    powerCycleStrap,
+    probeDataRange,
+    rewindAndResync,
+    forceTrimRewindAndSync,
+    whoopsiInitThenForceTrim,
+  } = ble
 
-  // Earliest timestamp confirmed in the GetDataRange response (offset 35
-  // of the 69-byte payload): 2026-05-05 23:25:47 UTC. The strap reports
-  // data on flash back to this point, so this is the rewind target until
-  // we have a date picker.
-  const REWIND_TARGET_UNIX_TS = 1778025947
+  const queueStats = useOutboundQueueStats()
+  const { expert, handleLongPress } = useExpertMode()
+
   const [overview, setOverview] = useState<DebugOverview | null>(null)
-  const [lastPipelineRun, setLastPipelineRun] = useState<{
-    startedAt: string
-    durationMs: number
-    detections: number
-    sleepStages: number
-    computeMs: number | null
-    skipped: boolean
-  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [banner, setBanner] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [drilldownOpen, setDrilldownOpen] = useState(false)
+  const [nowMs, setNowMs] = useState(Date.now())
+  const [daemonStats, setDaemonStats] = useState(getContinuousSyncStats)
+  const [telemetry, setTelemetry] = useState(getSyncTelemetry)
+
+  // Tick once a second so chip sub-text (ages, "synced Nm ago") stays fresh.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setNowMs(Date.now())
+      setDaemonStats(getContinuousSyncStats())
+    }, 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Subscribe to telemetry so apiFailures / detectedGaps / syncSessions
+  // update in real time without polling.
+  useEffect(() => {
+    const unsub = subscribeSyncTelemetry(() => setTelemetry(getSyncTelemetry()))
+    return unsub
+  }, [])
 
   const refreshInspector = useCallback(async () => {
     setIsLoading(true)
     setError(null)
-
     try {
       const nextOverview = await fetchDebugOverview(selectedDate)
       setOverview(nextOverview)
@@ -62,24 +110,10 @@ export const DebugInspectorScreen: FC = () => {
     } finally {
       setIsLoading(false)
     }
-
     try {
-      const runs = await fetchDebugPipelineRuns(1)
-      if (runs.runs.length > 0) {
-        const r = runs.runs[0]
-        setLastPipelineRun({
-          startedAt: r.startedAt,
-          durationMs: r.durationMs,
-          detections: r.detections,
-          sleepStages: r.sleepStages,
-          computeMs: r.stages?.compute ?? null,
-          skipped: r.skipped,
-        })
-      } else {
-        setLastPipelineRun(null)
-      }
+      await fetchDebugPipelineRuns(1)
     } catch {
-      setLastPipelineRun(null)
+      /* swallow */
     }
   }, [selectedDate])
 
@@ -95,28 +129,15 @@ export const DebugInspectorScreen: FC = () => {
     setBanner("Mobile sync completed.")
   }, [refreshDashboard, refreshInspector, syncNow])
 
-  const handleClearQueue = useCallback(() => {
-    Alert.alert(
-      "Clear outbound queue?",
-      "Drops every pending and dead-lettered upload row. The records themselves stay in raw_sensor_records — only the queue is purged. Use after shipping a backend fix that lets the drainer succeed.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const db = openDatabase()
-              const purged = await purgeOutboundQueue(db)
-              setBanner(`Cleared ${purged} queue rows.`)
-              await refreshInspector()
-            } catch (err: any) {
-              setError(err?.message ?? "Failed to clear queue")
-            }
-          },
-        },
-      ],
-    )
+  const handleClearQueue = useCallback(async () => {
+    try {
+      const db = openDatabase()
+      const purged = await purgeOutboundQueue(db)
+      setBanner(`Cleared ${purged} queue rows.`)
+      await refreshInspector()
+    } catch (err: any) {
+      setError(err?.message ?? "Failed to clear queue")
+    }
   }, [refreshInspector])
 
   const handleForceUpload = useCallback(async () => {
@@ -130,20 +151,18 @@ export const DebugInspectorScreen: FC = () => {
           apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }, 60_000),
         onProgress: (progress) => {
           setBanner(
-            `Uploading ${progress.tableName} batch (${progress.batchSize})… ${progress.uploaded} / ${progress.total}`,
+            `Uploading ${progress.tableName} (${progress.batchSize})… ${progress.uploaded}/${progress.total}`,
           )
         },
       })
-
       if (result.depthAfter === 0 && result.uploaded === 0 && !result.error) {
-        setBanner("Queue is empty — nothing to upload.")
-        return
-      }
-
-      if (result.error) {
-        setError(`Upload failed after ${result.uploaded} records: ${result.error}`)
+        setBanner("Queue empty — nothing to upload.")
+      } else if (result.error) {
+        setError(`Upload failed after ${result.uploaded}: ${result.error}`)
       } else {
-        setBanner(`Uploaded ${result.uploaded} records. ${result.depthAfter} still queued. ${result.deadCount} dead.`)
+        setBanner(
+          `Uploaded ${result.uploaded}. ${result.depthAfter} queued. ${result.deadCount} dead.`,
+        )
       }
     } catch (err: any) {
       setError(err?.message ?? "Upload failed")
@@ -166,7 +185,7 @@ export const DebugInspectorScreen: FC = () => {
           `Pipeline reran. Detections ${computed.sleepDetections ?? 0}, stages ${computed.sleepStages ?? 0}.`,
         )
       } else if (result.runResult?.skipped) {
-        setBanner("Pipeline skipped — no new input since the last run.")
+        setBanner("Pipeline skipped — no new input.")
       } else {
         setBanner("Pipeline finished.")
       }
@@ -180,36 +199,50 @@ export const DebugInspectorScreen: FC = () => {
   }, [refreshDashboard, refreshInspector, selectedDate])
 
   const handleRebootStrap = useCallback(() => {
-    Alert.alert(
-      "Reboot strap?",
-      "Sends a soft-reboot command over BLE. The strap will disconnect and re-connect after a few seconds.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reboot",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await rebootStrap()
-              setBanner("Reboot command sent.")
-            } catch (e: any) {
-              setError(e?.message ?? "Failed to send reboot")
-            }
-          },
+    Alert.alert("Reboot strap?", "Sends a soft-reboot over BLE.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Reboot",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await rebootStrap()
+            setBanner("Reboot command sent.")
+          } catch (e: any) {
+            setError(e?.message ?? "Failed to send reboot")
+          }
         },
-      ],
-    )
+      },
+    ])
   }, [rebootStrap])
+
+  const handlePowerCycleStrap = useCallback(() => {
+    Alert.alert("Power-cycle strap?", "Firmware-level power-cycle.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Power-cycle",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await powerCycleStrap()
+            setBanner("Power-cycle command sent.")
+          } catch (e: any) {
+            setError(e?.message ?? "Failed to send power-cycle")
+          }
+        },
+      },
+    ])
+  }, [powerCycleStrap])
 
   const handleRewind = useCallback(
     async (shape: "ts" | "ack" | "bare") => {
       setError(null)
-      setBanner(`Rewind ${shape} → re-syncing from ${new Date(REWIND_TARGET_UNIX_TS * 1000).toISOString().slice(0, 16).replace("T", " ")}…`)
+      setBanner(`Rewind ${shape}…`)
       try {
         await rewindAndResync(REWIND_TARGET_UNIX_TS, shape)
         await refreshDashboard()
         await refreshInspector()
-        setBanner(`Rewind ${shape} complete. Check Metro logs for record counts.`)
+        setBanner(`Rewind ${shape} complete.`)
       } catch (e: any) {
         setError(`Rewind ${shape} failed: ${e?.message ?? "unknown error"}`)
       }
@@ -217,34 +250,11 @@ export const DebugInspectorScreen: FC = () => {
     [refreshDashboard, refreshInspector, rewindAndResync],
   )
 
-  const handleProbeRewindProbe = useCallback(
-    async (sector: number, offset: number) => {
-      setError(null)
-      setBanner(`A/B/A: GetDataRange → SetReadPointer(${sector},${offset}) → GetDataRange…`)
-      try {
-        const result = await probeRewindProbe(sector, offset)
-        const verdict = result.movedStart
-          ? "✓ READ POINTER MOVED"
-          : "✗ no movement"
-        Alert.alert(
-          `Probe (sector=${sector}, offset=${offset})`,
-          `BEFORE:\n${result.before}\n\nSetReadPointer response:\n${result.response}\n\nAFTER:\n${result.after}\n\n${verdict}`,
-        )
-        setBanner(
-          `${verdict} — ${result.before} → ${result.after}`,
-        )
-      } catch (e: any) {
-        setError(`Probe failed: ${e?.message ?? "unknown error"}`)
-      }
-    },
-    [probeRewindProbe],
-  )
-
-  const handleForceTrimRewindWithFraming = useCallback(
+  const handleForceTrim = useCallback(
     (framing: "legacy" | "maverick") => {
       Alert.alert(
         `FORCE_TRIM(0, 0) [${framing}]?`,
-        `Sends WHOOP cmd 25 with payload (sector=0, offset=0) in ${framing} framing, then re-syncs if the read pointer moves. Per whoopsi, this only exposes the wrap-around segment of flash. The dangerous 0xFEFEFEFE 'Trim All' sentinel is hard-rejected.`,
+        `Sends cmd 25 with payload (0, 0) in ${framing} framing.`,
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -252,15 +262,10 @@ export const DebugInspectorScreen: FC = () => {
             style: "destructive",
             onPress: async () => {
               setError(null)
-              setBanner(`Probe → FORCE_TRIM(0,0) [${framing}] → Probe → Sync (if rewound)…`)
+              setBanner(`FORCE_TRIM(0,0) [${framing}]…`)
               try {
                 const result = await forceTrimRewindAndSync(0, 0, framing)
-                const verdict = result.rewound ? "✓ REWOUND, syncing" : "✗ no movement"
-                Alert.alert(
-                  `FORCE_TRIM(0, 0) [${framing}]`,
-                  `BEFORE:\n${result.before}\n\nFORCE_TRIM response:\n${result.trimResponse}\n\nAFTER:\n${result.after}\n\n${verdict}`,
-                )
-                setBanner(`${verdict} — ${result.before} → ${result.after}`)
+                setBanner(result.rewound ? "✓ REWOUND" : "✗ no movement")
               } catch (e: any) {
                 setError(`FORCE_TRIM failed: ${e?.message ?? "unknown error"}`)
               }
@@ -272,136 +277,40 @@ export const DebugInspectorScreen: FC = () => {
     [forceTrimRewindAndSync],
   )
 
-  const handleForceTrimRewind = useCallback(
-    () => handleForceTrimRewindWithFraming("legacy"),
-    [handleForceTrimRewindWithFraming],
-  )
-  const handleForceTrimRewindMaverick = useCallback(
-    () => handleForceTrimRewindWithFraming("maverick"),
-    [handleForceTrimRewindWithFraming],
-  )
-
-  const handleWhoopsiInitThenForceTrim = useCallback(() => {
-    Alert.alert(
-      "Whoopsi full init + FORCE_TRIM?",
-      "Mimics whoopsi's complete connect+sync init sequence end-to-end: ABORT_HISTORICAL → GET_HELLO_EXT (Maverick) → battery → GET_DATA_RANGE → FORCE_TRIM(0,0) → GET_DATA_RANGE. Triggers syncNow on backward cursor movement. Hypothesis: strap gates FORCE_TRIM behind the Maverick identity handshake we've been skipping.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Run",
-          style: "destructive",
-          onPress: async () => {
-            setError(null)
-            setBanner("Running whoopsi init + FORCE_TRIM…")
-            try {
-              const result = await whoopsiInitThenForceTrim()
-              const verdict = result.rewound ? "✓ REWOUND, syncing" : "✗ no movement"
-              Alert.alert(
-                "Whoopsi init + FORCE_TRIM result",
-                `GET_HELLO_EXT response:\n${result.helloExtResponse}\n\nBEFORE:\n${result.before}\n\nFORCE_TRIM response:\n${result.trimResponse}\n\nAFTER:\n${result.after}\n\n${verdict}`,
-              )
-              setBanner(`${verdict} — ${result.before} → ${result.after}`)
-            } catch (e: any) {
-              setError(`Whoopsi init failed: ${e?.message ?? "unknown error"}`)
-            }
-          },
+  const handleWhoopsiInit = useCallback(() => {
+    Alert.alert("Whoopsi init + FORCE_TRIM?", "Full Maverick handshake then FORCE_TRIM(0,0).", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Run",
+        style: "destructive",
+        onPress: async () => {
+          setError(null)
+          setBanner("Whoopsi init + FORCE_TRIM…")
+          try {
+            const result = await whoopsiInitThenForceTrim()
+            setBanner(result.rewound ? "✓ REWOUND" : "✗ no movement")
+          } catch (e: any) {
+            setError(`Whoopsi init failed: ${e?.message ?? "unknown error"}`)
+          }
         },
-      ],
-    )
+      },
+    ])
   }, [whoopsiInitThenForceTrim])
-
-  const handleProbeRewindVerbose = useCallback(async () => {
-    setError(null)
-    setBanner("Verbose probe: capturing all packets for 5s after SetReadPointer(10,0)…")
-    try {
-      const result = await probeRewindVerbose(10, 0, 5000)
-      // Show packet count in banner; the full per-packet table is in
-      // Metro logs (one console.log per packet for easy copy/paste).
-      setBanner(
-        `Verbose capture done: ${result.packetCount} packets in 5s. See Metro logs for the table.`,
-      )
-    } catch (e: any) {
-      setError(`Verbose probe failed: ${e?.message ?? "unknown error"}`)
-    }
-  }, [probeRewindVerbose])
 
   const handleProbeDataRange = useCallback(async () => {
     setError(null)
     setBanner("Probing strap data range…")
     try {
       const result = await probeDataRange()
-      // Surface every byte so we can decode the format from the response.
-      // Logged to console.log so it lands in the JS log stream, AND shown
-      // in an Alert so it's visible without re-attaching Console.app.
-      console.log(
-        "[probeDataRange] response bytes:",
-        result.hex,
-        "\ndecoded attempt:\n",
-        result.decoded,
-      )
       Alert.alert(
-        "GetDataRange response",
-        `hex (${result.raw.length} bytes):\n${result.hex}\n\nbest-effort decode:\n${result.decoded}`,
+        "GetDataRange",
+        `hex (${result.raw.length}B):\n${result.hex}\n\n${result.decoded}`,
       )
-      setBanner(`Probe ok — ${result.raw.length} bytes (see alert / console).`)
+      setBanner(`Probe ok — ${result.raw.length}B`)
     } catch (e: any) {
       setError(e?.message ?? "Probe failed")
     }
   }, [probeDataRange])
-
-  const handleRecoverBacklog = useCallback(() => {
-    Alert.alert(
-      "Recover backlog? (experimental)",
-      "Runs the full WHOOPSI init sequence (HELLO_EXT Maverick + battery probes + GET_DATA_RANGE) then FORCE_TRIM(0,0) Maverick. Per the open hypothesis from the #89 RE notes, the strap may gate FORCE_TRIM behind a Maverick identity handshake we usually skip — this is the path we never fully tested. If it works the cursor rewinds and a full resync runs; skip-enqueue dedups already-synced rows so only the gaps fill. If it doesn't, the result alert will say 'no movement' and nothing is touched.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Try Recovery",
-          style: "destructive",
-          onPress: async () => {
-            setError(null)
-            setBanner("WHOOPSI init → FORCE_TRIM(0,0) → probe → resync (if rewound)…")
-            try {
-              const result = await whoopsiInitThenForceTrim()
-              const verdict = result.rewound
-                ? "Rewound ✓ — sync started"
-                : "No movement — WHOOPSI-gated FORCE_TRIM didn't move the cursor either"
-              Alert.alert(
-                "Recover Backlog (WHOOPSI init)",
-                `GET_HELLO_EXT:\n${result.helloExtResponse}\n\nBefore:\n${result.before}\n\nFORCE_TRIM response:\n${result.trimResponse}\n\nAfter:\n${result.after}\n\n${verdict}`,
-              )
-              setBanner(verdict)
-              await refreshInspector()
-            } catch (e: any) {
-              setError(`Recover failed: ${e?.message ?? "unknown error"}`)
-            }
-          },
-        },
-      ],
-    )
-  }, [whoopsiInitThenForceTrim, refreshInspector])
-
-  const handlePowerCycleStrap = useCallback(() => {
-    Alert.alert(
-      "Power-cycle strap?",
-      "Sends a firmware-level power-cycle. Stronger than a reboot — use if reboot didn't help.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Power-cycle",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await powerCycleStrap()
-              setBanner("Power-cycle command sent.")
-            } catch (e: any) {
-              setError(e?.message ?? "Failed to send power-cycle")
-            }
-          },
-        },
-      ],
-    )
-  }, [powerCycleStrap])
 
   const scrollY = useSharedValue(0)
   const onScroll = useAnimatedScrollHandler({
@@ -409,6 +318,27 @@ export const DebugInspectorScreen: FC = () => {
       scrollY.value = e.contentOffset.y
     },
   })
+
+  const coveragePercent =
+    overview?.todayCoverageMinutes != null
+      ? Math.min(100, Math.max(0, (overview.todayCoverageMinutes / 1440) * 100))
+      : 0
+
+  const lastSyncAt = tsMs(overview?.latestRawUpdatedAt ?? null)
+  const lastStreamAt = tsMs(overview?.latestSignalSampleAt ?? null)
+
+  // Treat 2+ apiFailures within last 5 min as "consecutive" for chip purposes.
+  const consecutiveApiFailures = (() => {
+    const recent = telemetry.apiFailures.filter((f) => nowMs - f.at < 5 * 60_000)
+    return recent.length
+  })()
+
+  const strapConn: "ready" | "connecting" | "disconnected" =
+    ble.connectionState === "ready"
+      ? "ready"
+      : ble.connectionState === "disconnected"
+        ? "disconnected"
+        : "connecting"
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.screenBackground }} edges={["top"]}>
@@ -424,45 +354,127 @@ export const DebugInspectorScreen: FC = () => {
           />
         }
       >
-        <Text text="Inspector" size="lg" weight="semiBold" style={{ marginBottom: 14, color: colors.text }} />
+        <TouchableOpacity
+          activeOpacity={1}
+          onLongPress={handleLongPress}
+          delayLongPress={600}
+          style={{ marginBottom: 14 }}
+        >
+          <Text
+            text="Inspector"
+            size="lg"
+            weight="semiBold"
+            style={{ color: expert ? "#fbbf24" : colors.text }}
+          />
+          <Text
+            text={expert ? "EXPERT" : "long-press for expert"}
+            size="xxs"
+            style={{ color: expert ? "#fbbf24" : colors.iconDim, paddingTop: 2 }}
+          />
+        </TouchableOpacity>
 
         {error ? (
-          <View style={{ backgroundColor: colors.errorBackground, padding: 10, borderRadius: 12, marginBottom: 8 }}>
+          <View
+            style={{
+              backgroundColor: colors.errorBackground,
+              padding: 10,
+              borderRadius: 12,
+              marginBottom: 8,
+            }}
+          >
             <Text text={error} size="xs" weight="semiBold" style={{ color: colors.error }} />
           </View>
         ) : null}
         {banner ? (
-          <View style={{ backgroundColor: colors.surfaceElevated, padding: 10, borderRadius: 12, marginBottom: 8 }}>
+          <View
+            style={{
+              backgroundColor: colors.surfaceElevated,
+              padding: 10,
+              borderRadius: 12,
+              marginBottom: 8,
+            }}
+          >
             <Text text={banner} size="xs" weight="semiBold" style={{ color: colors.text }} />
           </View>
         ) : null}
 
-        <LiveMonitorCard overview={overview} />
-        <SyncProgressCard />
-        <DiagnosticsCard overview={overview} lastPipelineRun={lastPipelineRun} />
-        <LogsCard />
-        <ActionsCard
-          isSyncing={ble.isSyncing}
-          onSync={handleSync}
-          onForceUpload={handleForceUpload}
-          onRunPipeline={handleRunPipeline}
-          onRefreshView={() => void refreshInspector()}
-          onRebootStrap={handleRebootStrap}
-          onPowerCycleStrap={handlePowerCycleStrap}
-          onClearQueue={handleClearQueue}
-          onOpenWebInspector={() => openLinkInBrowser(INSPECTOR_WEB_URL)}
-          onProbeDataRange={handleProbeDataRange}
-          onRewindTs={() => handleRewind("ts")}
-          onRewindAck={() => handleRewind("ack")}
-          onRewindBare={() => handleRewind("bare")}
-          onProbeRewindSector0={() => handleProbeRewindProbe(0, 0)}
-          onProbeRewindSector10={() => handleProbeRewindProbe(10, 0)}
-          onProbeRewindVerbose={handleProbeRewindVerbose}
-          onForceTrimRewind={handleForceTrimRewind}
-          onForceTrimRewindMaverick={handleForceTrimRewindMaverick}
-          onWhoopsiInitThenForceTrim={handleWhoopsiInitThenForceTrim}
-          onRecoverBacklog={handleRecoverBacklog}
+        <HealthStrip
+          strap={{
+            connectionState: strapConn,
+            isWorn: ble.isWorn,
+            batteryLevel: ble.batteryLevel,
+            lastStreamAt,
+            backlogChunks: 0,
+            nowMs,
+          }}
+          phone={{
+            daemonRunning: daemonStats.isRunning,
+            lastTickAt: daemonStats.lastTickAt,
+            daemonTicks: daemonStats.ticks,
+            nowMs,
+            appErrorsLast5min: 0,
+          }}
+          backend={{
+            queueDepth: queueStats.depth ?? 0,
+            queueDead: queueStats.deadCount ?? 0,
+            lastSyncAt,
+            consecutiveApiFailures,
+            nowMs,
+          }}
+          coveragePercent={coveragePercent}
+          onTapPhone={() => setDrilldownOpen((v) => !v)}
         />
+
+        {ble.isSyncing ? <SyncProgressCard /> : null}
+
+        <EventsCard
+          events={buildEvents({
+            apiFailures: telemetry.apiFailures,
+            detectedGaps: telemetry.detectedGaps,
+            syncSessions: telemetry.syncSessions,
+            lastPipelineRunAt: telemetry.lastPipelineRunAt,
+            lastPipelineDurationMs: telemetry.lastPipelineDurationMs,
+            daemonRunning: daemonStats.isRunning,
+            lastTickAt: daemonStats.lastTickAt,
+            nowMs,
+          })}
+        />
+
+        <DaemonDrilldown
+          visible={drilldownOpen}
+          ticks={daemonStats.ticks}
+          skippedBusy={daemonStats.skippedBusy}
+          skippedDisconnected={daemonStats.skippedDisconnected}
+          intervalMs={DEFAULT_INTERVAL_MS}
+          running={daemonStats.isRunning}
+        />
+
+        <LogsCard />
+
+        <ActionsRow
+          isSyncing={ble.isSyncing}
+          queueDepth={queueStats.depth ?? 0}
+          onSync={handleSync}
+          onRefresh={() => void refreshInspector()}
+          onClearQueue={handleClearQueue}
+          onForceUpload={handleForceUpload}
+        />
+
+        {expert ? (
+          <ExpertActions
+            onProbeRange={handleProbeDataRange}
+            onRunPipeline={handleRunPipeline}
+            onOpenWebInspector={() => openLinkInBrowser(INSPECTOR_WEB_URL)}
+            onRewindTs={() => handleRewind("ts")}
+            onRewindAck={() => handleRewind("ack")}
+            onRewindBare={() => handleRewind("bare")}
+            onWhoopsiInit={handleWhoopsiInit}
+            onForceTrimLegacy={() => handleForceTrim("legacy")}
+            onForceTrimMaverick={() => handleForceTrim("maverick")}
+            onRebootStrap={handleRebootStrap}
+            onPowerCycleStrap={handlePowerCycleStrap}
+          />
+        ) : null}
 
         {isLoading && !overview ? (
           <View style={{ paddingVertical: 14, alignItems: "center" }}>
@@ -474,10 +486,6 @@ export const DebugInspectorScreen: FC = () => {
   )
 }
 
-// Tab-respecting layout: top edge is SafeArea, bottom is left to the
-// native tab bar (so content scrolls past it under the translucent
-// blur). paddingBottom is the runway so the last action button isn't
-// glued to the tab strip.
 const $container: ViewStyle = {
   paddingHorizontal: 14,
   paddingTop: 24,

@@ -39,8 +39,8 @@ export function SectionHead({
   kicker?: ReactNode
 }) {
   return (
-    <header className={cn("flex items-baseline justify-between gap-4 mb-3", className)}>
-      <h2 className="text-sm font-semibold tracking-tight text-foreground">
+    <header className={cn("flex items-baseline justify-between gap-4 mb-6", className)}>
+      <h2 className="text-base font-semibold tracking-tight text-foreground">
         {children}
       </h2>
       {meta && (

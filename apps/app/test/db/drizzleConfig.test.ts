@@ -16,7 +16,7 @@ describe("drizzle-kit configuration", () => {
 
   it("declares the runtime and devtool packages + db:generate script", () => {
     const pkg = JSON.parse(fs.readFileSync(path.resolve(root, "package.json"), "utf8"))
-    expect(pkg.dependencies["expo-sqlite"]).toBeDefined()
+    expect(pkg.dependencies["@op-engineering/op-sqlite"]).toBeDefined()
     expect(pkg.dependencies["drizzle-orm"]).toBeDefined()
     expect(pkg.devDependencies["drizzle-kit"]).toBeDefined()
     expect(pkg.scripts["db:generate"]).toBe("drizzle-kit generate")

@@ -24,7 +24,7 @@ describe("db runner + generated migrations", () => {
     expect(src).toContain("export function openDatabase")
     expect(src).toContain("export async function runMigrations")
     expect(src).toContain("export async function wipeDatabase")
-    expect(src).toContain("SQLite.openDatabaseSync")
+    expect(src).toContain("@op-engineering/op-sqlite")
     expect(src).toContain("PRAGMA busy_timeout")
     expect(src).toContain("drizzle(")
   })

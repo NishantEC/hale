@@ -2,6 +2,7 @@ import type { NoopDatabase } from "../db"
 import { isTransientApiError } from "../api/noopClient"
 import {
   claimOutboundBatch,
+  clearOutboundClaim,
   listDeadLetters,
   markOutboundSynced,
   queueDepth,
@@ -35,6 +36,7 @@ export interface ForceUploadResult {
 export interface ForceUploadDependencies {
   backfillUnsyncedRawSensorRecords: typeof backfillUnsyncedRawSensorRecords
   claimOutboundBatch: typeof claimOutboundBatch
+  clearOutboundClaim: typeof clearOutboundClaim
   listDeadLetters: typeof listDeadLetters
   markOutboundSynced: typeof markOutboundSynced
   markRawSensorRecordsSynced: typeof markRawSensorRecordsSynced
@@ -46,6 +48,7 @@ export interface ForceUploadDependencies {
 export const defaultForceUploadDependencies: ForceUploadDependencies = {
   backfillUnsyncedRawSensorRecords,
   claimOutboundBatch,
+  clearOutboundClaim,
   listDeadLetters,
   markOutboundSynced,
   markRawSensorRecordsSynced,
@@ -81,7 +84,7 @@ export async function runForceUpload(
   let firstError: string | null = null
 
   while (!firstError) {
-    const batch = await deps.claimOutboundBatch(db, batchSize)
+    const batch = await deps.claimOutboundBatch(db, batchSize, now(), "force-upload")
     if (batch.length === 0) break
 
     const groups = new Map<string, OutboundBatchRow[]>()
@@ -100,15 +103,31 @@ export async function runForceUpload(
         batchSize: rows.length,
       })
 
+      const ids = rows.map((r) => r.id)
+      // Phase 1: POST. POST failure → bump attempts.
       try {
         await opts.post(
           tableName,
           rows.map((r) => r.payload),
         )
-        await deps.markOutboundSynced(
-          db,
-          rows.map((r) => r.id),
-        )
+      } catch (err: any) {
+        const errorMessage = err?.message ?? String(err)
+        if (!firstError) firstError = errorMessage
+        batchHadError = true
+        const kind: "transient" | "permanent" = isTransientApiError(err)
+          ? "transient"
+          : "permanent"
+        await deps.recordOutboundFailureBatch(db, ids, errorMessage, { kind })
+        continue
+      }
+
+      // Phase 2: mark synced. Mark failure → backend has the data but
+      // we can't record local success. Don't bump attempts (would
+      // duplicate-POST). Release the lease and surface the error so
+      // the caller stops; backend idempotency on (tableName, rowId)
+      // handles the duplicate POST gracefully on the next attempt.
+      try {
+        await deps.markOutboundSynced(db, ids)
         if (tableName === "raw_sensor_records") {
           await deps.markRawSensorRecordsSynced(
             db,
@@ -118,26 +137,21 @@ export async function runForceUpload(
         }
         uploaded += rows.length
       } catch (err: any) {
-        const errorMessage = err?.message ?? String(err)
-        if (!firstError) firstError = errorMessage
-        batchHadError = true
-        const kind: "transient" | "permanent" = isTransientApiError(err)
-          ? "transient"
-          : "permanent"
-        // Batched failure update — see uplinkDrainer for the same fix.
-        // Per-row recordOutboundFailure was hitting SQLITE_BUSY on COMMIT.
-        await deps.recordOutboundFailureBatch(
-          db,
-          rows.map((row) => row.id),
-          errorMessage,
-          { kind },
+        const errorMessage = err?.message ?? "mark-synced failed"
+        console.error(
+          "[forceUpload] POST succeeded but markOutboundSynced failed —",
+          "rows will re-POST on next drain; backend must be idempotent on (tableName, rowId).",
+          "ids=", ids.slice(0, 5).join(","),
+          ids.length > 5 ? `+${ids.length - 5} more` : "",
+          "err=", errorMessage,
         )
+        await deps.clearOutboundClaim(db, ids).catch(() => undefined)
+        if (!firstError) firstError = `mark-synced failed: ${errorMessage}`
+        batchHadError = true
       }
     }
 
-    // Stop claiming more batches once anything in this batch failed — but
-    // only after every group in the current claim has been attempted, so
-    // claimed-but-unprocessed rows don't sit leased until expiry.
+    // Stop claiming more batches once anything in this batch failed.
     if (batchHadError) break
   }
 

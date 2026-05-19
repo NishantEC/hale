@@ -1,5 +1,6 @@
-import { and, asc, eq, gte, sql } from "drizzle-orm"
+import { and, asc, eq, gte, inArray, sql } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
+import { withWrite, type WriteTx } from "../transaction"
 import { outboundQueue } from "../schema"
 
 // Dead-letter threshold: rows with attempts >= this value are skipped
@@ -30,12 +31,11 @@ function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export async function enqueueOutbound(db: NoopDatabase, input: EnqueueInput): Promise<void> {
-  // On conflict (tableName, rowId): reset attempts to 0 and refresh the payload.
-  // This revives dead-letter rows (attempts ≥ MAX) and ensures the latest
-  // merged data is what gets uploaded, not a stale snapshot from a prior attempt.
+// Tx-scoped enqueue. Use this when you're already inside a withWrite()
+// callback; it composes with other tx writes into one COMMIT.
+export async function enqueueOutboundTx(tx: WriteTx, input: EnqueueInput): Promise<void> {
   const payloadStr = JSON.stringify(input.payload)
-  await db
+  await tx
     .insert(outboundQueue)
     .values({
       id: newId(),
@@ -60,35 +60,101 @@ export async function enqueueOutbound(db: NoopDatabase, input: EnqueueInput): Pr
     })
 }
 
+// Standalone async wrapper. Convenience for callers that aren't already
+// inside a withWrite() block.
+export async function enqueueOutbound(db: NoopDatabase, input: EnqueueInput): Promise<void> {
+  await withWrite(db, (tx) => enqueueOutboundTx(tx, input))
+}
+
 export async function purgeOutboundQueue(db: NoopDatabase): Promise<number> {
   const before = await queueDepth(db)
-  await db.delete(outboundQueue)
+  await withWrite(db, async (tx) => {
+    await tx.delete(outboundQueue)
+  })
   return before
 }
 
-export async function claimOutboundBatch(db: NoopDatabase, limit: number, now: number = Date.now()) {
-  const rows = await db
-    .select()
-    .from(outboundQueue)
-    .where(
-      and(
-        sql`${outboundQueue.attempts} < ${MAX_ATTEMPTS_BEFORE_DEAD_LETTER}`,
-        sql`${outboundQueue.nextAttemptAt} <= ${now}`,
-      ),
-    )
-    .orderBy(asc(outboundQueue.createdAt))
-    .limit(limit)
-  return rows.map((r) => ({ ...r, payload: JSON.parse(r.payload) as unknown }))
+// Soft lease window. Long enough to cover any reasonable single drain
+// (a normal drain finishes in under 30s, a Force Upload of a multi-day
+// backlog can run for a few minutes); short enough that a JS context
+// that died mid-drain doesn't strand rows for hours. The lease expires
+// passively; explicit release happens via clearOutboundClaim().
+export const CLAIM_TTL_MS = 5 * 60 * 1_000
+
+// Atomic claim: in a single transaction, SELECT eligible rows then
+// stamp them with `claimed_by` + `claim_expires_at` so concurrent
+// drainers (foreground + background + Force Upload) can't pull the
+// same rows. Eligibility: attempts < MAX, backoff window passed, AND
+// no live lease.
+//
+// `holder` identifies the claiming context for debug + targeted
+// release. `now` is injectable so tests can fast-forward.
+export async function claimOutboundBatch(
+  db: NoopDatabase,
+  limit: number,
+  now: number = Date.now(),
+  holder: string = "drainer",
+) {
+  return withWrite(db, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(outboundQueue)
+      .where(
+        and(
+          sql`${outboundQueue.attempts} < ${MAX_ATTEMPTS_BEFORE_DEAD_LETTER}`,
+          sql`${outboundQueue.nextAttemptAt} <= ${now}`,
+          sql`${outboundQueue.claimExpiresAt} <= ${now}`,
+        ),
+      )
+      .orderBy(asc(outboundQueue.createdAt))
+      .limit(limit)
+    if (rows.length === 0) return []
+    const ids = rows.map((r) => r.id)
+    const expires = now + CLAIM_TTL_MS
+    const CHUNK = 500
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK)
+      await tx
+        .update(outboundQueue)
+        .set({ claimedBy: holder, claimExpiresAt: expires })
+        .where(inArray(outboundQueue.id, slice))
+    }
+    return rows.map((r) => ({
+      ...r,
+      claimedBy: holder,
+      claimExpiresAt: expires,
+      payload: JSON.parse(r.payload) as unknown,
+    }))
+  })
+}
+
+// Release a set of claimed rows without changing attempts. Use this
+// when a drainer was interrupted before processing rows it claimed —
+// e.g. the JS context is shutting down, or batching across tables and
+// one POST errored so we want to free the rest of the same claim batch
+// for the next drainer.
+export async function clearOutboundClaim(db: NoopDatabase, ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const CHUNK = 500
+  await withWrite(db, async (tx) => {
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK)
+      await tx
+        .update(outboundQueue)
+        .set({ claimedBy: null, claimExpiresAt: 0 })
+        .where(inArray(outboundQueue.id, slice))
+    }
+  })
 }
 
 export async function markOutboundSynced(db: NoopDatabase, ids: string[]): Promise<void> {
   if (ids.length === 0) return
-  // Wrap per-row deletes in ONE transaction — see markRawSensorRecordsSynced
-  // for the rationale. Per-row implicit transactions race against
-  // subscriber cursors on COMMIT.
-  await db.transaction(async (tx) => {
-    for (const id of ids) {
-      await tx.delete(outboundQueue).where(eq(outboundQueue.id, id))
+  // SQLite's default parameter cap is 999. Chunk at 500 for safety.
+  const CHUNK = 500
+  await withWrite(db, async (tx) => {
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK)
+      await tx.delete(outboundQueue).where(inArray(outboundQueue.id, slice))
     }
   })
 }
@@ -106,43 +172,49 @@ export async function recordOutboundFailure(
   classification: FailureKind = { kind: "transient" },
 ): Promise<void> {
   const now = Date.now()
-  if (classification.kind === "permanent") {
-    // Jump straight to dead-letter. Backoff is irrelevant — the row will
-    // never succeed without operator intervention (resetOutboundQueueRow).
-    await db
+  await withWrite(db, async (tx) => {
+    if (classification.kind === "permanent") {
+      // Jump straight to dead-letter. Backoff is irrelevant — the row
+      // will never succeed without operator intervention. Clear the
+      // lease so a debug retry can re-claim it.
+      await tx
+        .update(outboundQueue)
+        .set({
+          attempts: MAX_ATTEMPTS_BEFORE_DEAD_LETTER,
+          lastAttemptAt: now,
+          lastError: errorMessage,
+          nextAttemptAt: now,
+          claimedBy: null,
+          claimExpiresAt: 0,
+        })
+        .where(eq(outboundQueue.id, id))
+      return
+    }
+    const [current] = await tx
+      .select({ attempts: outboundQueue.attempts })
+      .from(outboundQueue)
+      .where(eq(outboundQueue.id, id))
+    const nextAttempts = (current?.attempts ?? 0) + 1
+    await tx
       .update(outboundQueue)
       .set({
-        attempts: MAX_ATTEMPTS_BEFORE_DEAD_LETTER,
+        attempts: nextAttempts,
         lastAttemptAt: now,
         lastError: errorMessage,
-        nextAttemptAt: now,
+        nextAttemptAt: now + backoffDelayMs(nextAttempts),
+        // Release the lease so the row can be re-claimed once its
+        // backoff window opens, without waiting for CLAIM_TTL_MS to
+        // elapse.
+        claimedBy: null,
+        claimExpiresAt: 0,
       })
       .where(eq(outboundQueue.id, id))
-    return
-  }
-  const [current] = await db
-    .select({ attempts: outboundQueue.attempts })
-    .from(outboundQueue)
-    .where(eq(outboundQueue.id, id))
-  const nextAttempts = (current?.attempts ?? 0) + 1
-  await db
-    .update(outboundQueue)
-    .set({
-      attempts: nextAttempts,
-      lastAttemptAt: now,
-      lastError: errorMessage,
-      nextAttemptAt: now + backoffDelayMs(nextAttempts),
-    })
-    .where(eq(outboundQueue.id, id))
+  })
 }
 
 /**
- * Mark multiple outbound rows as failed in ONE transaction. The drainer
- * previously called recordOutboundFailure per-row in a tight loop on
- * upload failure; each call's implicit transaction commit could race
- * against subscriber cursors and trigger SQLITE_BUSY (the bug seen in
- * release builds as `[bg-packet-drain] failed [DrizzleError ... COMMIT]`).
- * All rows in `ids` share the same errorMessage and classification.
+ * Mark multiple outbound rows as failed in ONE transaction. All rows in
+ * `ids` share the same errorMessage and classification.
  */
 export async function recordOutboundFailureBatch(
   db: NoopDatabase,
@@ -152,10 +224,13 @@ export async function recordOutboundFailureBatch(
 ): Promise<void> {
   if (ids.length === 0) return
   const now = Date.now()
-  await db.transaction(async (tx) => {
+  const CHUNK = 500
+  await withWrite(db, async (tx) => {
     if (classification.kind === "permanent") {
-      // Single bulk update — all matching rows jump to dead-letter.
-      for (const id of ids) {
+      // Single bulk UPDATE — all matching rows jump to dead-letter.
+      // Release the lease so a debug retry can re-claim.
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK)
         await tx
           .update(outboundQueue)
           .set({
@@ -163,29 +238,34 @@ export async function recordOutboundFailureBatch(
             lastAttemptAt: now,
             lastError: errorMessage,
             nextAttemptAt: now,
+            claimedBy: null,
+            claimExpiresAt: 0,
           })
-          .where(eq(outboundQueue.id, id))
+          .where(inArray(outboundQueue.id, slice))
       }
       return
     }
-    // Transient: need to read current attempts per row, then update.
-    // Still inside the single transaction — selects don't hold cursors
-    // open across commits when scoped to the tx itself.
-    for (const id of ids) {
-      const [current] = await tx
-        .select({ attempts: outboundQueue.attempts })
-        .from(outboundQueue)
-        .where(eq(outboundQueue.id, id))
-      const nextAttempts = (current?.attempts ?? 0) + 1
+    // Transient: bump attempts in-place via SQL expression so we don't
+    // need a read-modify-write loop. Backoff schedule lives in SQL too
+    // (jitter omitted in batch path — close enough; per-row callsite
+    // still has jittered backoff). Release the lease so the row can
+    // be re-claimed when its backoff window opens.
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK)
       await tx
         .update(outboundQueue)
         .set({
-          attempts: nextAttempts,
+          attempts: sql`${outboundQueue.attempts} + 1`,
           lastAttemptAt: now,
           lastError: errorMessage,
-          nextAttemptAt: now + backoffDelayMs(nextAttempts),
+          nextAttemptAt: sql`${now} + MIN(
+            ${BACKOFF_MAX_MS},
+            ${BACKOFF_BASE_MS} * (1 << MIN(20, ${outboundQueue.attempts}))
+          )`,
+          claimedBy: null,
+          claimExpiresAt: 0,
         })
-        .where(eq(outboundQueue.id, id))
+        .where(inArray(outboundQueue.id, slice))
     }
   })
 }
@@ -197,17 +277,28 @@ export async function listDeadLetters(db: NoopDatabase) {
     .where(gte(outboundQueue.attempts, MAX_ATTEMPTS_BEFORE_DEAD_LETTER))
 }
 
-// Reset a dead-letter row so it ships on the next drain.
+// Reset a dead-letter row so it ships on the next drain. Also clear
+// any stale lease so the next drainer can claim it immediately.
 export async function retryOutboundRow(db: NoopDatabase, id: string): Promise<void> {
-  await db
-    .update(outboundQueue)
-    .set({ attempts: 0, lastError: null, nextAttemptAt: 0 })
-    .where(eq(outboundQueue.id, id))
+  await withWrite(db, async (tx) => {
+    await tx
+      .update(outboundQueue)
+      .set({
+        attempts: 0,
+        lastError: null,
+        nextAttemptAt: 0,
+        claimedBy: null,
+        claimExpiresAt: 0,
+      })
+      .where(eq(outboundQueue.id, id))
+  })
 }
 
 // Permanently discard a queue entry without uploading.
 export async function discardOutboundRow(db: NoopDatabase, id: string): Promise<void> {
-  await db.delete(outboundQueue).where(eq(outboundQueue.id, id))
+  await withWrite(db, async (tx) => {
+    await tx.delete(outboundQueue).where(eq(outboundQueue.id, id))
+  })
 }
 
 export async function queueDepth(db: NoopDatabase): Promise<number> {

@@ -249,6 +249,15 @@ export const outboundQueue = sqliteTable("outbound_queue", {
   // another claim. Set by the retry path to implement exponential
   // backoff. Defaults to 0 so freshly-enqueued rows ship immediately.
   nextAttemptAt: integer("next_attempt_at").notNull().default(0),
+  // Soft lease: identifies the drainer that currently holds this row
+  // and the wall-clock instant at which the lease expires. The drainer
+  // claims by setting both columns inside a single transaction with
+  // the SELECT, filtered to rows where claim_expires_at <= now(). This
+  // prevents two concurrent drainers (foreground + background, or a
+  // drainer + Force Upload) from pulling the same row and double-POSTing.
+  // claimedBy is null when no drainer holds the row.
+  claimedBy: text("claimed_by"),
+  claimExpiresAt: integer("claim_expires_at").notNull().default(0),
 })
 
 export const syncState = sqliteTable("sync_state", {

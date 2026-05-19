@@ -1,5 +1,6 @@
 import { and, eq, isNotNull, lt, sql } from "drizzle-orm"
 import type { NoopDatabase } from "../db"
+import { withWrite } from "../db/transaction"
 import {
   consoleLogs,
   deviceEvents,
@@ -30,66 +31,68 @@ export async function sweepRetention(db: NoopDatabase, opts: SweepOptions): Prom
   const userId = getActiveUserId()
   if (opts.rawDays <= 0) return // 0 or negative = keep forever
   const cutoff = Date.now() - opts.rawDays * MS_PER_DAY
-
-  await db
-    .delete(rawSensorRecords)
-    .where(
-      and(
-        eq(rawSensorRecords.userId, userId),
-        isNotNull(rawSensorRecords._syncedAt),
-        lt(rawSensorRecords.timestamp, cutoff),
-      ),
-    )
-
-  await db
-    .delete(realtimeSamples)
-    .where(
-      and(
-        eq(realtimeSamples.userId, userId),
-        isNotNull(realtimeSamples._syncedAt),
-        lt(realtimeSamples.capturedAt, cutoff),
-      ),
-    )
-
-  await db
-    .delete(deviceEvents)
-    .where(
-      and(
-        eq(deviceEvents.userId, userId),
-        isNotNull(deviceEvents._syncedAt),
-        lt(deviceEvents.capturedAt, cutoff),
-      ),
-    )
-
-  await db
-    .delete(consoleLogs)
-    .where(
-      and(
-        eq(consoleLogs.userId, userId),
-        isNotNull(consoleLogs._syncedAt),
-        lt(consoleLogs.capturedAt, cutoff),
-      ),
-    )
-
   const viewCacheDays = opts.viewCacheDays ?? DEFAULT_VIEW_CACHE_DAYS
-  if (viewCacheDays > 0) {
-    const viewCacheCutoff = Date.now() - viewCacheDays * MS_PER_DAY
-    await db
-      .delete(viewCache)
+  const viewCacheCutoff = viewCacheDays > 0 ? Date.now() - viewCacheDays * MS_PER_DAY : null
+
+  // All deletes in ONE atomic writer turn.
+  await withWrite(db, async (tx) => {
+    await tx
+      .delete(rawSensorRecords)
       .where(
         and(
-          eq(viewCache.userId, userId),
-          lt(viewCache.updatedAt, viewCacheCutoff),
+          eq(rawSensorRecords.userId, userId),
+          isNotNull(rawSensorRecords._syncedAt),
+          lt(rawSensorRecords.timestamp, cutoff),
         ),
       )
-  }
 
-  // WAL truncation. Without this, the -wal file grows monotonically and
-  // doubles the on-disk footprint after a month of continuous use.
-  // PASSIVE first (cheap, non-blocking); fall through to TRUNCATE if a
-  // checkpoint is overdue. Errors are non-fatal — the next sweep retries.
+    await tx
+      .delete(realtimeSamples)
+      .where(
+        and(
+          eq(realtimeSamples.userId, userId),
+          isNotNull(realtimeSamples._syncedAt),
+          lt(realtimeSamples.capturedAt, cutoff),
+        ),
+      )
+
+    await tx
+      .delete(deviceEvents)
+      .where(
+        and(
+          eq(deviceEvents.userId, userId),
+          isNotNull(deviceEvents._syncedAt),
+          lt(deviceEvents.capturedAt, cutoff),
+        ),
+      )
+
+    await tx
+      .delete(consoleLogs)
+      .where(
+        and(
+          eq(consoleLogs.userId, userId),
+          isNotNull(consoleLogs._syncedAt),
+          lt(consoleLogs.capturedAt, cutoff),
+        ),
+      )
+
+    if (viewCacheCutoff != null) {
+      await tx
+        .delete(viewCache)
+        .where(
+          and(
+            eq(viewCache.userId, userId),
+            lt(viewCache.updatedAt, viewCacheCutoff),
+          ),
+        )
+    }
+  })
+
+  // WAL truncation. PASSIVE is non-blocking; op-sqlite also runs
+  // wal_autocheckpoint in the background, so this is belt-and-suspenders.
+  // Errors are non-fatal — the next sweep retries.
   try {
-    await db.run(sql`PRAGMA wal_checkpoint(TRUNCATE)`)
+    await db.run(sql`PRAGMA wal_checkpoint(PASSIVE)`)
   } catch (err) {
     console.warn("[retention] wal_checkpoint failed", err)
   }

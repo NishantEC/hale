@@ -9,6 +9,8 @@ export { parseIMUPacket } from './imu-parser';
 export type { IMUSample } from './imu-parser';
 export { bleManager } from './ble-manager';
 export { HistoryDownloader } from './history-downloader';
+export { awaitCommandResponse } from './awaitable-response';
+export type { AwaitableResponse } from './awaitable-response';
 export {
   TelemetryForwarder,
   RealtimeSessionForwarder,

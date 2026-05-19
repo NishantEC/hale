@@ -1,6 +1,3 @@
-// Per-table observable: repositories call notifyTable() after writes; screens
-// subscribe via createObservable() (typically wrapped by useDbQuery).
-
 type Subscriber = () => void
 
 const subscribers = new Map<string, Set<Subscriber>>()
@@ -13,6 +10,16 @@ export function createObservable(tableName: string, subscriber: Subscriber): () 
 
 export function notifyTable(tableName: string): void {
   const set = subscribers.get(tableName)
-  if (!set) return
-  for (const sub of set) sub()
+  if (!set || set.size === 0) return
+  // Snapshot to avoid issues if a subscriber unsubscribes during dispatch.
+  const snapshot = Array.from(set)
+  queueMicrotask(() => {
+    for (const sub of snapshot) {
+      try {
+        sub()
+      } catch (err) {
+        console.warn("[observable] subscriber threw", err)
+      }
+    }
+  })
 }

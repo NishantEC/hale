@@ -1,8 +1,8 @@
 # On-device migrations
 
-Drizzle ORM + `expo-sqlite`. The migrator (`runMigrations()` in `../index.ts`)
-runs every app launch and tracks applied migrations in a hidden
-`__drizzle_migrations__` table inside `noop.db`.
+Drizzle ORM + `@op-engineering/op-sqlite`. The migrator (`runMigrations()` in
+`../index.ts`) runs every app launch and tracks applied migrations in a hidden
+`__drizzle_migrations` table inside `noop.db`.
 
 ## Rules
 
@@ -13,9 +13,9 @@ runs every app launch and tracks applied migrations in a hidden
    will silently miss the edit.
 
 2. **Each schema change ⇒ a new migration file.** Bump the index, write a new
-   `.sql`, and add a matching `m####` template literal + journal entry to
-   `migrations.js`. The pair must stay in sync — `migrations.js` is bundled
-   into the JS bundle (Metro doesn't import `.sql` directly).
+   `.sql`, and add a matching `m####` import + journal entry to `migrations.js`.
+   The pair must stay in sync. `.sql` files are inlined into the JS bundle at
+   build time via `babel-plugin-inline-import` (see `babel.config.js`).
 
 3. **Prefer idempotent statements** (`CREATE TABLE IF NOT EXISTS`, `CREATE
    INDEX IF NOT EXISTS`, defensive `DROP IF EXISTS` before `CREATE`). This
@@ -41,10 +41,15 @@ devices recover on next launch. No-op on healthy DBs.
 2. Generate the SQL: `pnpm --filter app drizzle-kit generate` (or follow
    `scripts/generate-migrations.sh`). This produces a new `####_*.sql` file
    plus a `meta/####_snapshot.json`.
-3. Inline the SQL into `migrations.js`:
-   - Add a `m####` template literal containing the SQL (escape backticks).
-   - Add a matching entry to `journal.entries` with the next `idx` and a
-     monotonically increasing `when` timestamp.
+3. Wire it into `migrations.js`:
+   - Add `import m#### from './####_*.sql'` at the top.
    - Add the new `m####` to the exported `migrations` object.
+   - Add a matching entry to `meta/_journal.json` with the next `idx` and a
+     `when` timestamp strictly greater than every prior entry's `when`. The
+     migrator skips any migration whose `when` is `<=` the last-applied
+     `created_at`, so a regressed `when` silently disables that migration on
+     every device that already ran a later one. drizzle-kit's `generate`
+     usually picks a monotonic value, but verify before committing — handwritten
+     entries are the usual culprit.
 4. Test on a device that already has the previous schema (don't just test on
    a fresh install — that masks the exact bug this README exists to prevent).

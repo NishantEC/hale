@@ -6,6 +6,7 @@ import {
 } from "../db/repositories/drainLock"
 import {
   claimOutboundBatch,
+  clearOutboundClaim,
   markOutboundSynced,
   oldestPendingAt,
   queueDepth,
@@ -25,6 +26,10 @@ export interface DrainOptions {
   // path isn't dominated by recovery work; ForceUpload uses a larger
   // limit to flush long offline periods.
   backfillLimit?: number
+  // Identifier stamped into the outbound_queue lease so a concurrent
+  // drainer can see whose rows are in flight. Should match the
+  // drainLoop holder for clarity.
+  holder?: string
 }
 
 const DEFAULT_BACKFILL_LIMIT = 100
@@ -59,7 +64,8 @@ export async function drainOnce(
     console.warn("[drainOnce] backfill failed", err)
   }
 
-  const batch = await claimOutboundBatch(db, opts.batchSize)
+  const holder = opts.holder ?? "drainer"
+  const batch = await claimOutboundBatch(db, opts.batchSize, Date.now(), holder)
   if (batch.length === 0) {
     outcome.durationMs = Date.now() - started
     return outcome
@@ -76,12 +82,38 @@ export async function drainOnce(
 
   for (const [tableName, rows] of groups) {
     const payloads = rows.map((r) => r.payload)
+    const ids = rows.map((r) => r.id)
+    // Phase 1: POST. Fail-and-bump-attempts is the right behavior for
+    // POST failures only — those rows haven't reached the backend.
+    let posted = false
     try {
       await opts.post(tableName, payloads)
-      await markOutboundSynced(
+      posted = true
+    } catch (err: any) {
+      const transient = isTransientApiError(err)
+      const errorMessage = err?.message ?? "unknown error"
+      // Batched failure update — single transaction across all rows.
+      // recordOutboundFailureBatch also clears the lease so the row
+      // becomes claimable again once its backoff window opens.
+      await recordOutboundFailureBatch(
         db,
-        rows.map((r) => r.id),
+        ids,
+        errorMessage,
+        { kind: transient ? "transient" : "permanent" },
       )
+      outcome.failed += rows.length
+      if (!outcome.error) outcome.error = errorMessage
+      continue
+    }
+
+    // Phase 2: mark synced. If THIS fails, the backend has the rows
+    // but we couldn't record local success — we must NOT bump
+    // attempts (would re-POST and duplicate). Surface as an error so
+    // the loop can decide to stop, but release the lease so the row
+    // can be re-claimed; on the next claim, the backend's idempotency
+    // on (tableName, rowId) handles the duplicate POST gracefully.
+    try {
+      await markOutboundSynced(db, ids)
       if (tableName === "raw_sensor_records") {
         await markRawSensorRecordsSynced(
           db,
@@ -91,19 +123,17 @@ export async function drainOnce(
       }
       outcome.succeeded += rows.length
     } catch (err: any) {
-      const transient = isTransientApiError(err)
-      const errorMessage = err?.message ?? "unknown error"
-      // Batched failure update — single transaction across all rows.
-      // Per-row recordOutboundFailure calls were hitting SQLITE_BUSY
-      // on COMMIT in release builds.
-      await recordOutboundFailureBatch(
-        db,
-        rows.map((r) => r.id),
-        errorMessage,
-        { kind: transient ? "transient" : "permanent" },
+      const errorMessage = err?.message ?? "mark-synced failed"
+      console.error(
+        "[drainOnce] POST succeeded but markOutboundSynced failed —",
+        "rows will re-POST on next drain; backend must be idempotent on (tableName, rowId).",
+        "ids=", ids.slice(0, 5).join(","),
+        ids.length > 5 ? `+${ids.length - 5} more` : "",
+        "err=", errorMessage,
       )
+      await clearOutboundClaim(db, ids).catch(() => {})
       outcome.failed += rows.length
-      if (!outcome.error) outcome.error = errorMessage
+      if (!outcome.error) outcome.error = `mark-synced failed: ${errorMessage}`
     }
   }
 
@@ -172,7 +202,7 @@ export async function drainLoop(
     while (Date.now() < deadline) {
       const before = await queueDepth(db)
       if (before === 0) break
-      const outcome = await drainOnce(db, { post, batchSize, backfillLimit })
+      const outcome = await drainOnce(db, { post, batchSize, backfillLimit, holder })
       drained += outcome.succeeded
       failed += outcome.failed
       if (!firstError && outcome.error) firstError = outcome.error

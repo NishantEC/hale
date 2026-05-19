@@ -1,6 +1,5 @@
 import type { ReactNode } from "react"
 import { Card } from "@/components/ui/card"
-import type { AccentKey } from "@/components/primitives"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
@@ -11,13 +10,6 @@ const TONE_DOT: Record<StatusTone, string> = {
   warn: "bg-[var(--accent-amber)]",
   error: "bg-[var(--accent-magenta)]",
   neutral: "bg-white/30",
-}
-
-const TONE_ACCENT: Record<StatusTone, AccentKey | undefined> = {
-  ok: "lime",
-  warn: "amber",
-  error: "magenta",
-  neutral: undefined,
 }
 
 export function StatusBadge({
@@ -40,7 +32,7 @@ export function StatusBadge({
       ? "text-xs font-semibold"
       : "text-sm font-semibold"
   return (
-    <Card accent={TONE_ACCENT[tone]} role="status">
+    <Card role="status">
       <div className="flex items-center gap-2">
         <span className={cn("size-1.5 rounded-full shrink-0", TONE_DOT[tone])} />
         <div className={cn("flex-1 min-w-0 leading-tight tracking-tight", titleClass)}>

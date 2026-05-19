@@ -138,7 +138,7 @@ export function App() {
       drainFn: async () => {
         await drainLoop(db, {
           post: (tableName, payloads) =>
-            apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
+            apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }, 60_000),
           batchSize: 200,
           maxMs: 25_000,
           holder: "foreground",

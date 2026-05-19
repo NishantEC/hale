@@ -67,10 +67,6 @@ function buildSegments(epochs: { stage: string }[]): Segment[] {
   return out
 }
 
-function lerp(v: number, a: number, b: number, c: number, d: number): number {
-  return b === a ? c : c + ((v - a) / (b - a)) * (d - c)
-}
-
 export function Hypnogram({
   epochs,
   height = DEFAULT_CHART_HEIGHT,
@@ -94,10 +90,9 @@ export function Hypnogram({
   const maskId = `hm-${uid}`
 
   const ref = useRef<HTMLDivElement>(null)
-  // Initialise to a sensible default so the chart paints something on
-  // first mount before ResizeObserver fires. The observer updates it
-  // to the real measured width within the next frame.
-  const [containerWidth, setContainerWidth] = useState(640)
+  // Start at 0 — render nothing until ResizeObserver measures the actual
+  // width. The 640px default caused a visible flash + reflow on mount.
+  const [containerWidth, setContainerWidth] = useState(0)
   const [cursor, setCursor] = useState<{
     x: number
     seg: Segment
@@ -107,11 +102,24 @@ export function Hypnogram({
     nowLabel: string
   } | null>(null)
   const segments = useMemo(() => buildSegments(epochs), [epochs])
-  const total = epochs.length
 
   const firstEpochMs = epochs[0] ? Date.parse(epochs[0].timestamp) : null
   const lastEpochMs = epochs[epochs.length - 1] ? Date.parse(epochs[epochs.length - 1].timestamp) : null
   const totalMs = firstEpochMs != null && lastEpochMs != null ? lastEpochMs - firstEpochMs : 0
+
+  // Map an epoch index to a pixel x — positions bars on the actual time axis
+  // (not the epoch-count axis), so the bars line up with the hour ticks even
+  // when epochs aren't uniformly spaced across the bedtime → wake window.
+  const idxToX = useCallback(
+    (idx: number): number => {
+      if (idx <= 0) return 0
+      if (idx >= epochs.length) return containerWidth
+      if (firstEpochMs == null || totalMs === 0) return 0
+      const t = Date.parse(epochs[idx].timestamp)
+      return ((t - firstEpochMs) / totalMs) * containerWidth
+    },
+    [epochs, firstEpochMs, totalMs, containerWidth],
+  )
 
   // External cursor (from cross-chart controller) → x position in this chart.
   const externalX =
@@ -133,16 +141,23 @@ export function Hypnogram({
   const onMouseMove = useCallback(
     (e: RME) => {
       if (!containerWidth || !segments.length) return
+      if (firstEpochMs == null || totalMs === 0) return
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
       const x = Math.max(0, Math.min(e.clientX - r.left, containerWidth))
-      const min = lerp(x, 0, containerWidth, 0, total)
+      const t = firstEpochMs + (x / containerWidth) * totalMs
+      // Find the epoch whose timestamp window contains t (linear scan from the end).
+      let idx = 0
+      for (let i = epochs.length - 1; i >= 0; i--) {
+        if (Date.parse(epochs[i].timestamp) <= t) {
+          idx = i
+          break
+        }
+      }
       const seg =
-        segments.find((s) => min >= s.fromMin && min < s.toMin) ??
-        (min <= segments[0].fromMin
-          ? segments[0]
-          : segments[segments.length - 1])
+        segments.find((s) => idx >= s.fromMin && idx < s.toMin) ??
+        segments[segments.length - 1]
       const durationMin = seg.toMin - seg.fromMin
-      const nowEpoch = epochs[Math.max(0, Math.min(Math.floor(min), epochs.length - 1))]
+      const nowEpoch = epochs[idx]
       const nowMs = nowEpoch ? Date.parse(nowEpoch.timestamp) : null
       setCursor({
         x,
@@ -156,7 +171,7 @@ export function Hypnogram({
       })
       if (nowMs != null) onCursorChange?.(nowMs)
     },
-    [containerWidth, segments, total, epochs, onCursorChange],
+    [containerWidth, segments, epochs, firstEpochMs, totalMs, onCursorChange],
   )
 
   const onMouseLeave = useCallback(() => {
@@ -184,8 +199,8 @@ export function Hypnogram({
         <mask id={maskId}>
           {segments.map((s) => {
             const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
-            const width = lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) + BAR_WIDTH
+            const left = idxToX(s.fromMin) - BAR_WIDTH
+            const width = idxToX(s.toMin) - idxToX(s.fromMin) + BAR_WIDTH
             return (
               <rect
                 key={`b${s.id}`}
@@ -203,7 +218,7 @@ export function Hypnogram({
             const prev = segments[i - 1]
             if (prev.type === s.type) return null
             const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
+            const left = idxToX(s.fromMin) - BAR_WIDTH
             const lineHeight =
               (ROW_HEIGHT - BAR_HEIGHT) *
               Math.abs(STAGES[s.type].pos - STAGES[prev.type].pos)
@@ -227,8 +242,8 @@ export function Hypnogram({
             const next = segments[i + 1]
             if (next.type === s.type) return null
             const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
-            const barWidth = lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) + BAR_WIDTH
+            const left = idxToX(s.fromMin) - BAR_WIDTH
+            const barWidth = idxToX(s.toMin) - idxToX(s.fromMin) + BAR_WIDTH
             const lineHeight =
               (ROW_HEIGHT - BAR_HEIGHT) *
               Math.abs(STAGES[s.type].pos - STAGES[next.type].pos)
@@ -250,8 +265,8 @@ export function Hypnogram({
           {segments.map((s, i) => {
             const parts: ReactNode[] = []
             const top = STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET
-            const left = lerp(s.fromMin, 0, total, 0, containerWidth) - BAR_WIDTH
-            const barWidth = lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) + BAR_WIDTH
+            const left = idxToX(s.fromMin) - BAR_WIDTH
+            const barWidth = idxToX(s.toMin) - idxToX(s.fromMin) + BAR_WIDTH
             if (i > 0 && segments[i - 1].type !== s.type && barWidth > 8) {
               const prevAbove = STAGES[segments[i - 1].type].pos > STAGES[s.type].pos
               parts.push(
@@ -285,7 +300,7 @@ export function Hypnogram({
         </mask>
       </defs>
     )
-  }, [segments, containerWidth, total, ROW_HEIGHT, BAR_HEIGHT, BAR_OFFSET])
+  }, [segments, containerWidth, idxToX, ROW_HEIGHT, BAR_HEIGHT, BAR_OFFSET])
 
   if (!segments.length)
     return (
@@ -387,10 +402,8 @@ export function Hypnogram({
             {segments.map((s) => {
               const top =
                 STAGES[s.type].pos * ROW_HEIGHT + BAR_OFFSET + BAR_WIDTH
-              const left = lerp(s.fromMin, 0, total, 0, containerWidth)
-              const width =
-                lerp(s.toMin - s.fromMin, 0, total, 0, containerWidth) -
-                BAR_WIDTH
+              const left = idxToX(s.fromMin)
+              const width = idxToX(s.toMin) - idxToX(s.fromMin) - BAR_WIDTH
               return (
                 <div
                   key={`bar${s.id}`}

@@ -72,7 +72,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
     try {
       await drainLoop(db, {
         post: (tableName, payloads) =>
-          apiPost("/pipeline/ingest-table", { tableName, rows: payloads }),
+          apiPost("/pipeline/ingest-table", { tableName, rows: payloads }, 60_000),
         batchSize: 200,
       })
       setLastDrainAt(Date.now())

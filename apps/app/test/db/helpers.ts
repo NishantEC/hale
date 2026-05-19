@@ -4,10 +4,10 @@ import * as schema from "../../app/services/db/schema"
 import fs from "fs"
 import path from "path"
 
-// Test-only DB factory. expo-sqlite requires native bindings that aren't
-// available in the Jest/Node test environment, so tests use better-sqlite3
-// (same SQL dialect) with drizzle's matching driver. Schema round-trips
-// because Drizzle emits portable SQLite DDL.
+// Test-only DB factory. op-sqlite (production) requires native bindings
+// that aren't available in the Jest/Node test environment, so tests use
+// better-sqlite3 (same SQL dialect) with drizzle's matching driver.
+// Schema round-trips because Drizzle emits portable SQLite DDL.
 
 export function makeTestDb() {
   const sqlite = new Database(":memory:")
@@ -15,12 +15,12 @@ export function makeTestDb() {
   sqlite.pragma("foreign_keys = ON")
   applyGeneratedSchema(sqlite)
   const db = drizzle(sqlite, { schema })
-  // better-sqlite3's `.transaction` is synchronous and rejects async
-  // callbacks; expo-sqlite (production) accepts them. Production code
-  // uses `await db.transaction(async (tx) => { ... })`. Shim the test
-  // driver to run the callback directly so that atomicity-aware
-  // production code is exercisable in unit tests. Atomicity itself
-  // isn't asserted at this layer — these tests aren't crash-path tests.
+  // better-sqlite3's `.transaction` is sync and rejects async callbacks;
+  // op-sqlite (production) returns Promises and awaits them. Production
+  // code uses `await db.transaction(async (tx) => { ... })`. Shim the
+  // test driver to run the callback directly so atomicity-aware code is
+  // exercisable in unit tests. Atomicity itself isn't asserted at this
+  // layer — these tests aren't crash-path tests.
   ;(db as any).transaction = async (callback: (tx: typeof db) => Promise<any>) =>
     callback(db)
   return db

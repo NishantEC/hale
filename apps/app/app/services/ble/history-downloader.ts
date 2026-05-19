@@ -2,6 +2,7 @@ import { PacketType, MetadataType, CommandNumber, WhoopPacket, HistoricalRecord,
 import { parseHistoricalPacketBatch } from './history-parser';
 import { bleManager } from './ble-manager';
 import { CommandService } from './command-service';
+import { recordPersistFailure } from '../sync/syncTelemetry';
 
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const IDLE_TIMEOUT_MS = 15000; // If no packets for 15s after receiving data, assume done
@@ -38,9 +39,16 @@ export class HistoryDownloader {
   private unsubscribeData: (() => void) | null = null;
   private timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   private idleHandle: ReturnType<typeof setTimeout> | null = null;
+  private cmdResponseFinishHandle: ReturnType<typeof setTimeout> | null = null;
   private progressCallback: ((p: DownloadProgress) => void) | null = null;
   private hasReceivedAnyData = false;
   private persistBatch: PersistBatch | null = null;
+  // Single chain that every HistoryEnd's persist+ACK threads through so
+  // batches commit in arrival order. Without this, two HistoryEnd events
+  // arriving close together race their persist callbacks — the strap can
+  // be ACK'd for trim N+1 while batch N is still uncommitted, defeating
+  // the durable-ACK guarantee that justifies the whole pattern.
+  private persistChain: Promise<void> = Promise.resolve();
 
   async startDownload(
     optionsOrCallback?: HistoryDownloadOptions | ((p: DownloadProgress) => void),
@@ -51,6 +59,7 @@ export class HistoryDownloader {
     this.chunksReceived = 0;
     this.totalBytes = 0;
     this.hasReceivedAnyData = false;
+    this.persistChain = Promise.resolve();
     // Backwards-compat: caller can pass just a progress callback (old shape)
     // OR an options object. Both supported so existing call sites don't break.
     if (typeof optionsOrCallback === 'function') {
@@ -114,14 +123,33 @@ export class HistoryDownloader {
   // allRecords but never reached persistBatch, leaking ~half the
   // per-sync records on the (very common) two-cycle sync pattern.
   private async persistAndFinish() {
+    // Wait for any in-flight HistoryEnd persist+ACKs to land first.
+    // If the chain already rejected, finishWithError was invoked by the
+    // failing batch — bail out instead of resolving with success.
+    try {
+      await this.persistChain;
+    } catch {
+      return;
+    }
+    // Re-check resolve in case cleanup() ran (e.g. cancel() racing the
+    // terminal path) — would otherwise double-process the final buffer.
+    if (!this.resolve) return;
+
     const finalBatch = this.parseBufferedData();
     if (finalBatch.length > 0 && this.persistBatch) {
       try {
         await this.persistBatch(finalBatch);
       } catch (err) {
-        // Already in a terminal flow; just log and move on.
         const msg = err instanceof Error ? err.message : String(err);
-        console.log('[HistoryDownloader] final persistBatch failed:', msg);
+        recordPersistFailure({
+          at: Date.now(),
+          source: 'persistAndFinish',
+          trimValue: 0,
+          batchSize: finalBatch.length,
+          message: msg,
+        });
+        this.finishWithError(new Error(`final persistBatch failed: ${msg}`));
+        return;
       }
     }
     this.emitProgress('complete');
@@ -200,10 +228,13 @@ export class HistoryDownloader {
     if (packet.type === PacketType.CommandResponse) {
       if (packet.command === CommandNumber.HistoricalDataResult || packet.command === CommandNumber.SendHistoricalData) {
         // After sending data, strap may respond indicating "done"
-        // If we already have chunks, give it a few seconds then wrap up
+        // If we already have chunks, give it a few seconds then wrap up.
+        // Track the handle so cleanup() can clear it — otherwise the
+        // closure keeps the downloader pinned for 3s past completion.
         if (this.chunksReceived > 0 && this.dataBuffer.length === 0) {
-          // Likely done — wait briefly then finish
-          setTimeout(() => {
+          if (this.cmdResponseFinishHandle) clearTimeout(this.cmdResponseFinishHandle);
+          this.cmdResponseFinishHandle = setTimeout(() => {
+            this.cmdResponseFinishHandle = null;
             if (this.resolve) {
               void this.persistAndFinish();
             }
@@ -246,39 +277,45 @@ export class HistoryDownloader {
    * the ACK is skipped and the sync is aborted with an error so the
    * strap keeps the batch for the next pull. If no persistBatch callback
    * was provided, falls back to legacy ACK-immediately behavior.
+   *
+   * Persists are serialized through `persistChain` so two HistoryEnd
+   * events arriving close together can never ACK out of order — batch N
+   * always commits before batch N+1 is even attempted.
    */
   private persistAndAck(batchRecords: HistoricalRecord[], trimValue: number) {
     const persist = this.persistBatch;
-    if (!persist) {
-      // Legacy path: no caller-supplied persistence, ACK immediately.
-      bleManager
-        .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
-        .catch(() => {});
-      return;
-    }
-    if (batchRecords.length === 0) {
-      // Empty batch — nothing to persist, ACK so strap moves on.
-      bleManager
-        .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
-        .catch(() => {});
-      return;
-    }
-    // Persistence is async; fire and chain. If it throws, abort the sync
-    // so we don't ACK and leave the strap thinking we have data we don't.
-    persist(batchRecords)
-      .then(() => {
+    if (!persist || batchRecords.length === 0) {
+      // No persistence required — still serialize the ACK through the
+      // chain so it can't fire ahead of a pending batch persist.
+      this.persistChain = this.persistChain.then(() => {
         bleManager
           .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
           .catch(() => {});
-      })
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.log(
-          '[HistoryDownloader] persistBatch failed, NOT acking. trim=', trimValue,
-          'err=', msg,
-        );
-        this.finishWithError(new Error(`persistBatch failed: ${msg}`));
       });
+      return;
+    }
+    this.persistChain = this.persistChain.then(async () => {
+      try {
+        await persist(batchRecords);
+        bleManager
+          .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
+          .catch(() => {});
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        recordPersistFailure({
+          at: Date.now(),
+          source: 'persistAndAck',
+          trimValue,
+          batchSize: batchRecords.length,
+          message: msg,
+        });
+        this.finishWithError(new Error(`persistBatch failed: ${msg}`));
+        // Re-throw so the chain rejects and any queued-up follow-on
+        // batches stop trying to persist + ACK after we've already
+        // aborted the download.
+        throw err;
+      }
+    });
   }
 
   private emitProgress(state: DownloadProgress['state']) {
@@ -330,6 +367,10 @@ export class HistoryDownloader {
     if (this.idleHandle) {
       clearTimeout(this.idleHandle);
       this.idleHandle = null;
+    }
+    if (this.cmdResponseFinishHandle) {
+      clearTimeout(this.cmdResponseFinishHandle);
+      this.cmdResponseFinishHandle = null;
     }
     this.resolve = null;
     this.reject = null;

@@ -5,7 +5,6 @@ import type {
   TrendsView,
 } from "../api"
 import { SectionHead } from "../components/primitives"
-import { AnimatedShinyText } from "../components/magicui/animated-shiny-text"
 import { Alert, AlertTitle, AlertDescription } from "../components/ui/alert"
 import { Card } from "../components/ui/card"
 import {
@@ -249,16 +248,14 @@ export function InsightsTab({
   const correlationHeadline = pickTopCorrelationSentence(journalCorrelations)
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-20">
       {correlationHeadline && (
         <Card accent="cyan">
           <p className="eyebrow text-[var(--accent-cyan)] mb-2">
             strongest journal correlation
           </p>
           <p className="text-base leading-snug text-foreground max-w-[640px]">
-            <AnimatedShinyText className="text-inherit leading-inherit max-w-none">
-              {correlationHeadline}
-            </AnimatedShinyText>
+            {correlationHeadline}
           </p>
         </Card>
       )}

@@ -30,18 +30,29 @@ import {
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts"
 import { CommandPalette, type Command } from "../shell/CommandPalette"
 import { HelpModal } from "../shell/HelpModal"
-import { Masthead, type Tab } from "../shell/Masthead"
+import { Masthead } from "../shell/Masthead"
+import { Sidebar, type SidebarTab } from "../shell/Sidebar"
 import { NetworkError, ServerError, isAuthError } from "../utils/errors"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Toaster } from "@/components/ui/sonner"
-import { AlertCircle } from "lucide-react"
+import {
+  AlertCircle,
+  Home as HomeIcon,
+  Moon,
+  Lightbulb,
+  TrendingUp,
+  Table as TableIcon,
+  Workflow,
+  Activity,
+} from "lucide-react"
 import { toast } from "sonner"
 
 function shiftDateIso(iso: string, deltaDays: number): string {
-  const d = new Date(`${iso}T00:00:00`)
-  d.setDate(d.getDate() + deltaDays)
-  return d.toISOString().slice(0, 10)
+  const [y, m, d] = iso.split("-").map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  date.setUTCDate(date.getUTCDate() + deltaDays)
+  return date.toISOString().slice(0, 10)
 }
 
 const HomeTab = lazy(() => import("../tabs/Home").then((m) => ({ default: m.HomeTab })))
@@ -65,14 +76,14 @@ const TAB_SKELETONS: Record<string, ReactNode> = {
   telemetry: <TelemetrySkeleton />,
 }
 
-const TAB_DEFS: { id: TabId; label: string; shortcut: string }[] = [
-  { id: "home", label: "Home", shortcut: "1" },
-  { id: "sleep", label: "Sleep", shortcut: "2" },
-  { id: "insights", label: "Insights", shortcut: "6" },
-  { id: "trends", label: "Trends", shortcut: "5" },
-  { id: "raw", label: "Raw", shortcut: "4" },
-  { id: "pipeline", label: "Pipeline", shortcut: "3" },
-  { id: "telemetry", label: "Telemetry", shortcut: "7" },
+const TAB_DEFS: { id: TabId; label: string; shortcut: string; icon: ReactNode }[] = [
+  { id: "home", label: "Home", shortcut: "1", icon: <HomeIcon className="size-4" /> },
+  { id: "sleep", label: "Sleep", shortcut: "2", icon: <Moon className="size-4" /> },
+  { id: "insights", label: "Insights", shortcut: "6", icon: <Lightbulb className="size-4" /> },
+  { id: "trends", label: "Trends", shortcut: "5", icon: <TrendingUp className="size-4" /> },
+  { id: "raw", label: "Raw", shortcut: "4", icon: <TableIcon className="size-4" /> },
+  { id: "pipeline", label: "Pipeline", shortcut: "3", icon: <Workflow className="size-4" /> },
+  { id: "telemetry", label: "Telemetry", shortcut: "7", icon: <Activity className="size-4" /> },
 ]
 
 export function Inspector({ token, onLogout }: { token: string; onLogout: () => void }) {
@@ -174,12 +185,13 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
 
   const busy = runMutation.isPending || seedMutation.isPending
 
-  const tabs = useMemo<Tab[]>(
+  const tabs = useMemo<SidebarTab[]>(
     () =>
       TAB_DEFS.map((t) => ({
         id: t.id,
         label: t.label,
         shortcut: t.shortcut,
+        icon: t.icon,
         badge:
           t.id === "telemetry" && telemetry.data
             ? telemetry.data.events.totalCount
@@ -336,34 +348,39 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
   useKeyboardShortcuts(shortcuts, !paletteOpen)
 
   return (
-    <div className="min-h-screen flex flex-col items-center">
-      <Masthead
-        apiHost={API_BASE_URL.replace(/^https?:\/\//, "").slice(0, 40)}
-        date={date}
-        onDateChange={setDate}
-        pipelineState={pipelineState.data}
-        lastRefreshedAt={lastRefreshedAt}
-        busy={busy}
-        onRefresh={onRefresh}
-        onRunPipeline={onRunPipeline}
-        live={live}
-        onToggleLive={() => setLive((v) => !v)}
+    <div className="min-h-screen flex">
+      <Sidebar
         tabs={tabs}
-        activeTab={tab}
-        onSelectTab={goTab}
+        active={tab}
+        onSelect={goTab}
+        apiHost={API_BASE_URL.replace(/^https?:\/\//, "").slice(0, 40)}
         onSeed={onSeed}
         onLogout={onLogout}
       />
 
-      <main className="flex-1">
-        {firstError && (
-          <div className="px-12 pt-6 max-w-[1200px] mx-auto w-full">
-            <ErrorBanner error={firstError} onRetry={onRefresh} apiHost={API_BASE_URL} />
-          </div>
-        )}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <Masthead
+          date={date}
+          onDateChange={setDate}
+          pipelineState={pipelineState.data}
+          lastRefreshedAt={lastRefreshedAt}
+          busy={busy}
+          onRefresh={onRefresh}
+          onRunPipeline={onRunPipeline}
+          live={live}
+          onToggleLive={() => setLive((v) => !v)}
+          onSelectTab={goTab}
+        />
 
-        <div className="px-12 py-8 max-w-[1200px] mx-auto w-full">
-          <Suspense fallback={TAB_SKELETONS[tab] ?? <div className="text-muted-foreground text-sm">Loading…</div>}>
+        <main className="flex-1">
+          {firstError && (
+            <div className="px-8 pt-6 max-w-[1600px] mx-auto w-full">
+              <ErrorBanner error={firstError} onRetry={onRefresh} apiHost={API_BASE_URL} />
+            </div>
+          )}
+
+          <div className="px-8 py-8 max-w-[1600px] mx-auto w-full">
+            <Suspense fallback={TAB_SKELETONS[tab] ?? <div className="text-muted-foreground text-sm">Loading…</div>}>
             {(tab === "home" || tab === "overview") && (
                 <HomeTab
                   overview={overview.data ?? null}
@@ -423,9 +440,10 @@ export function Inspector({ token, onLogout }: { token: string; onLogout: () => 
                   toggleLive={() => setLive((v) => !v)}
                 />
               )}
-          </Suspense>
-        </div>
-      </main>
+            </Suspense>
+          </div>
+        </main>
+      </div>
 
       <CommandPalette
         open={paletteOpen}

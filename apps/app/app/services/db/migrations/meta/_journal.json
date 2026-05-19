@@ -29,6 +29,13 @@
       "when": 1779820800000,
       "tag": "0003_drain_lock_and_backoff",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1779900000000,
+      "tag": "0004_cool_rick_jones",
+      "breakpoints": true
     }
   ]
 }

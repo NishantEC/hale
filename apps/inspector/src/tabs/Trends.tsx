@@ -1,12 +1,11 @@
 import { useMemo, useState } from "react"
 
 import type { PipelineRunOptions, TrendsView } from "../api"
-import { SectionHead, type AccentKey } from "../components/primitives"
+import { DeltaChip, SectionHead, type AccentKey } from "../components/primitives"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { TrendChart } from "../components/TrendChart"
 import { Card } from "../components/ui/card"
 import { Label } from "../components/ui/label"
-import { Sortable, SortableContent, SortableItem } from "../components/ui/sortable"
 import { Switch } from "../components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
 import { formatNumber } from "../format"
@@ -67,25 +66,6 @@ const CHART_DEFS: ChartDef[] = [
   { id: "training", title: "Training load", subtitle: "acute:chronic ratio — sweet spot 0.8–1.3", dataKey: "trainingLoadTrend", colorKey: "training", decimals: 2 },
 ]
 
-const ORDER_KEY = "noop.trendsChartOrder"
-
-function loadChartOrder(): ChartDef[] {
-  if (typeof window === "undefined") return CHART_DEFS
-  try {
-    const stored = localStorage.getItem(ORDER_KEY)
-    if (!stored) return CHART_DEFS
-    const ids = JSON.parse(stored) as string[]
-    if (!Array.isArray(ids)) return CHART_DEFS
-    const byId = new Map(CHART_DEFS.map((c) => [c.id, c]))
-    const ordered = ids.map((id) => byId.get(id)).filter((c): c is ChartDef => c != null)
-    // Append any newly-added charts not yet in the stored order
-    for (const c of CHART_DEFS) if (!ids.includes(c.id)) ordered.push(c)
-    return ordered.length === CHART_DEFS.length ? ordered : CHART_DEFS
-  } catch {
-    return CHART_DEFS
-  }
-}
-
 function trendBadge(trend: "improving" | "declining" | "stable" | null) {
   if (trend === "improving")
     return (
@@ -130,7 +110,7 @@ export function TrendsTab({
   const [compact, setCompact] = useState(false)
   const [sharedDomain, setSharedDomain] = useState<[number, number] | undefined>(undefined)
   const [cursorMs, setCursorMs] = useState<number | null>(null)
-  const [chartOrder, setChartOrder] = useState<ChartDef[]>(() => loadChartOrder())
+  const chartOrder = CHART_DEFS
 
   const chartHeight = compact ? 90 : 180
 
@@ -153,7 +133,7 @@ export function TrendsTab({
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-20">
       {/* Cover — masthead with range controls */}
       <SectionHead
         n="00"
@@ -256,39 +236,22 @@ export function TrendsTab({
       <section>
         <SectionHead
           n={2}
-          kicker="Drag any chart to reorder. The order is yours, persisted to localStorage."
         >
           Small multiples
         </SectionHead>
-        <div className="mt-6">
-          <Sortable
-            value={chartOrder}
-            onValueChange={(next) => {
-              const ids = next.map((c) => c.id)
-              setChartOrder(next)
-              localStorage.setItem(ORDER_KEY, JSON.stringify(ids))
-            }}
-            orientation="mixed"
-            getItemValue={(item) => item.id}
-          >
-            <SortableContent className="grid grid-cols-2 gap-x-8 gap-y-8">
-              {chartOrder.map((c) => (
-                <SortableItem key={c.id} value={c.id} asChild>
-                  <div className="cursor-grab active:cursor-grabbing">
-                    <TrendChart
-                      title={c.title}
-                      subtitle={c.subtitle}
-                      data={trends?.[c.dataKey] ?? []}
-                      color={CHART_COLORS[c.colorKey]}
-                      unit={c.unit}
-                      decimals={c.decimals}
-                      {...sharedProps}
-                    />
-                  </div>
-                </SortableItem>
-              ))}
-            </SortableContent>
-          </Sortable>
+        <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-8">
+          {chartOrder.map((c) => (
+            <TrendChart
+              key={c.id}
+              title={c.title}
+              subtitle={c.subtitle}
+              data={trends?.[c.dataKey] ?? []}
+              color={CHART_COLORS[c.colorKey]}
+              unit={c.unit}
+              decimals={c.decimals}
+              {...sharedProps}
+            />
+          ))}
         </div>
       </section>
     </div>
@@ -315,6 +278,15 @@ function SummaryStat({
     amber: "text-[var(--accent-amber)]",
   }
   const valueColor = accent ? accentText[accent] : "text-foreground"
+  // Prefer the sub text as a directional chip when it contains a clear sign.
+  const chipFromSub = (() => {
+    if (!sub) return null
+    if (sub.startsWith("+")) return { kind: "up" as const, text: sub }
+    if (sub.startsWith("-") || sub.startsWith("−")) return { kind: "down" as const, text: sub }
+    if (sub === "—") return null
+    return null
+  })()
+  const showTrendBadge = trend != null
   return (
     <Card accent={accent}>
       <p className="eyebrow">{label}</p>
@@ -323,10 +295,12 @@ function SummaryStat({
       >
         {value}
       </span>
-      {sub && (
+      {chipFromSub ? (
+        <DeltaChip kind={chipFromSub.kind}>{chipFromSub.text}</DeltaChip>
+      ) : sub ? (
         <p className="text-xs text-muted-foreground tabular-nums font-mono">{sub}</p>
-      )}
-      <div className="mt-1">{trendBadge(trend ?? null)}</div>
+      ) : null}
+      {showTrendBadge && <div className="mt-1">{trendBadge(trend ?? null)}</div>}
     </Card>
   )
 }

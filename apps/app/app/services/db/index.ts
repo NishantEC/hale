@@ -1,23 +1,29 @@
-import * as SQLite from "expo-sqlite"
-import { drizzle, ExpoSQLiteDatabase } from "drizzle-orm/expo-sqlite"
-import { migrate } from "drizzle-orm/expo-sqlite/migrator"
+import { open, type DB } from "@op-engineering/op-sqlite"
+import { drizzle, OPSQLiteDatabase } from "drizzle-orm/op-sqlite"
+import { migrate } from "drizzle-orm/op-sqlite/migrator"
 
 import * as schema from "./schema"
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const migrations = require("./migrations/migrations.js")
+// @ts-expect-error — migrations.js has no .d.ts and ships `export default { journal, migrations }`
+import migrations from "./migrations/migrations.js"
 
-export type NoopDatabase = ExpoSQLiteDatabase<typeof schema>
+export type NoopDatabase = OPSQLiteDatabase<typeof schema>
 
 let dbInstance: NoopDatabase | null = null
-let sqliteInstance: SQLite.SQLiteDatabase | null = null
+let sqliteInstance: DB | null = null
 
+// op-sqlite gives multi-connection per file and a properly async Drizzle
+// adapter that awaits transaction callbacks. That's what makes the old
+// `runExclusive` JS mutex + sync-only `withWrite` workaround unnecessary —
+// reader cursors no longer block writer commits, and async tx bodies are
+// finished before COMMIT runs.
 export function openDatabase(): NoopDatabase {
   if (dbInstance) return dbInstance
-  sqliteInstance = SQLite.openDatabaseSync("noop.db")
-  sqliteInstance.execSync("PRAGMA journal_mode = WAL;")
-  sqliteInstance.execSync("PRAGMA foreign_keys = ON;")
-  sqliteInstance.execSync("PRAGMA busy_timeout = 5000;")
+  sqliteInstance = open({ name: "noop.db" })
+  sqliteInstance.executeSync("PRAGMA journal_mode = WAL;")
+  sqliteInstance.executeSync("PRAGMA foreign_keys = ON;")
+  sqliteInstance.executeSync("PRAGMA busy_timeout = 5000;")
+  sqliteInstance.executeSync("PRAGMA synchronous = NORMAL;")
   dbInstance = drizzle(sqliteInstance, { schema })
   return dbInstance
 }
@@ -29,8 +35,8 @@ export async function runMigrations(): Promise<void> {
 
 export async function wipeDatabase(): Promise<void> {
   if (!sqliteInstance) return
-  sqliteInstance.closeSync()
-  await SQLite.deleteDatabaseAsync("noop.db")
+  sqliteInstance.close()
+  sqliteInstance.delete()
   dbInstance = null
   sqliteInstance = null
 }

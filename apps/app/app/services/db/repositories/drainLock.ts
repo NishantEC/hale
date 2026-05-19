@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm"
 import type { NoopDatabase } from "../index"
+import { withWrite } from "../transaction"
 import { drainLock } from "../schema"
 
 export const DRAIN_LOCK_NAME = "uplink"
@@ -22,7 +23,7 @@ export async function acquireDrainLock(
 ): Promise<DrainLockHandle | null> {
   const ttl = opts.ttlMs ?? DEFAULT_DRAIN_LOCK_TTL_MS
   const now = opts.now ?? Date.now
-  const result = await db.transaction(async (tx) => {
+  return withWrite(db, async (tx) => {
     const [current] = await tx
       .select()
       .from(drainLock)
@@ -51,7 +52,6 @@ export async function acquireDrainLock(
     }
     return { holder, expiresAt }
   })
-  return result
 }
 
 export async function releaseDrainLock(
@@ -60,10 +60,12 @@ export async function releaseDrainLock(
 ): Promise<void> {
   // Only release if we still hold it — guards against releasing a lock
   // we stole back after expiry.
-  await db
-    .update(drainLock)
-    .set({ expiresAt: 0 })
-    .where(sql`${drainLock.name} = ${DRAIN_LOCK_NAME} AND ${drainLock.holder} = ${holder}`)
+  await withWrite(db, async (tx) => {
+    await tx
+      .update(drainLock)
+      .set({ expiresAt: 0 })
+      .where(sql`${drainLock.name} = ${DRAIN_LOCK_NAME} AND ${drainLock.holder} = ${holder}`)
+  })
 }
 
 export async function peekDrainLock(

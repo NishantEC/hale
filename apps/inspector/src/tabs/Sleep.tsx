@@ -83,7 +83,7 @@ export function SleepTab({
   const empty = !sleep?.selectedDetection
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-20">
       <SectionHead
         n="00"
         meta={

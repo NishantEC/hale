@@ -11,8 +11,23 @@ import {
 } from "recharts"
 
 import type { TrendPoint } from "../api"
+import type { AccentKey } from "./primitives"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { cn } from "@/lib/utils"
+
+const ACCENT_HEX: Record<AccentKey, string> = {
+  cyan: "#00DCFF",
+  magenta: "#FF2D6E",
+  lime: "#BBFF38",
+  amber: "#FFA42B",
+}
+
+function colorToAccent(color: string): AccentKey | undefined {
+  for (const [key, hex] of Object.entries(ACCENT_HEX)) {
+    if (hex.toLowerCase() === color.toLowerCase()) return key as AccentKey
+  }
+  return undefined
+}
 
 export function TrendChart({
   title,
@@ -43,6 +58,7 @@ export function TrendChart({
   cursorMs?: number | null
   onCursorChange?: (ms: number | null) => void
 }) {
+  const accent = colorToAccent(color)
   const points = data.map((d) => ({
     t: new Date(d.timestamp).getTime(),
     v: d.value,
@@ -86,7 +102,7 @@ export function TrendChart({
       : undefined
 
   return (
-    <Card className={cn("gap-3", compact ? "py-3" : "py-5")}>
+    <Card accent={accent} className={cn("gap-3", compact ? "py-3" : "py-5")}>
       <CardHeader className={cn("px-5 pb-0 pt-0", compact ? "gap-1" : "gap-2")}>
         <div className="flex items-baseline justify-between">
           <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">

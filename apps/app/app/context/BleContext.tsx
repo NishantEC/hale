@@ -1596,6 +1596,17 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   useEffect(() => {
     bleManager.autoConnect().catch(() => undefined)
 
+    // If BLE is already in "ready" when this effect (re)mounts — e.g., the
+    // effect rebuilt because a callback dep changed — onConnectionStateChange
+    // won't fire (no transition), so the daemon would stay dead. Kickstart it.
+    if (bleManager.connectionState === "ready") {
+      startContinuousSyncDaemon({
+        syncNow: () => syncNowRef.current(),
+        isSyncingRef,
+        isConnected: () => bleManager.connectionState === "ready",
+      })
+    }
+
     const unsubscribeState = bleManager.onConnectionStateChange((connectionState) => {
       setDeviceState((current) => {
         if (connectionState === "disconnected") {

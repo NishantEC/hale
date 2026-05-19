@@ -16,7 +16,6 @@ import { MetricChip } from "../components/MetricChip"
 import { Num, Pill, Row, SectionHead } from "../components/primitives"
 import { StatusBadge, type StatusTone } from "../components/StatusBadge"
 import { SyncTrail, type TrailNode } from "../components/SyncTrail"
-import { AnimatedShinyText } from "@/components/magicui/animated-shiny-text"
 import { Card } from "@/components/ui/card"
 import {
   HoverCard,
@@ -211,7 +210,7 @@ export function HomeTab(props: HomeProps) {
   const topCorrelation = pickTopCorrelationSentence(journalCorrelations)
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-20">
       {/* Hero status row — three Field Manual status notes side by side */}
       <section className="grid grid-cols-3 gap-8">
         <StatusBadge tone={pipeline.tone} label={pipeline.label} detail={pipeline.detail} action={pipeline.action} size="lg" />
@@ -255,9 +254,7 @@ export function HomeTab(props: HomeProps) {
         <Card accent="cyan">
           <p className="eyebrow text-[var(--accent-cyan)] mb-2">a note from the data</p>
           <p className="text-base leading-snug text-foreground max-w-[640px]">
-            <AnimatedShinyText className="text-inherit leading-inherit max-w-none">
-              {topCorrelation}
-            </AnimatedShinyText>
+            {topCorrelation}
           </p>
         </Card>
       )}

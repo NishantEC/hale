@@ -1,4 +1,5 @@
 import type { NoopDatabase } from "../db"
+import { withWrite } from "../db/transaction"
 import {
   insertRawSensorRecord,
   insertRawSensorRecordTx,
@@ -85,7 +86,7 @@ export async function ingestBleRecords(
   if (!userId) return { ok: 0, failed: 0 }
   if (records.length === 0) return { ok: 0, failed: 0 }
   try {
-    await db.transaction(async (tx) => {
+    await withWrite(db, async (tx) => {
       for (const r of records) {
         await insertRawSensorRecordTx(tx, r, userId)
       }

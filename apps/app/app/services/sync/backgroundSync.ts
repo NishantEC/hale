@@ -18,7 +18,7 @@ export async function runBackgroundDrain(maxMs = 25_000): Promise<{
   const { apiPost } = await import("../api/noopClient")
   const { drained } = await drainLoop(db, {
     post: (tableName, payloads) =>
-      apiPost("/pipeline/ingest-table", { tableName, rows: payloads }),
+      apiPost("/pipeline/ingest-table", { tableName, rows: payloads }, 60_000),
     batchSize: 200,
     maxMs,
     holder: "background",

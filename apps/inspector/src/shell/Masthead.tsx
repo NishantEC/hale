@@ -2,11 +2,9 @@ import {
   CalendarIcon,
   ChevronLeft,
   ChevronRight,
-  Database,
-  LogOut,
   RefreshCw,
 } from "lucide-react"
-import { Fragment, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -14,7 +12,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils"
 
 import type { PipelineRunOptions, PipelineState } from "../api"
-import { Logo } from "../components/Logo"
 import { RunPipelineMenu } from "../components/RunPipelineMenu"
 import { relativeTime } from "../format"
 
@@ -27,26 +24,22 @@ const DOT: Record<Tone, string> = {
   neutral: "bg-foreground/30",
 }
 
-export type Tab = {
-  id: string
-  label: string
-  shortcut: string
-  badge?: number
-  dot?: "ok" | "warn" | "error"
-}
-
 function shiftDate(iso: string, deltaDays: number): string {
-  const d = new Date(`${iso}T00:00:00`)
-  d.setDate(d.getDate() + deltaDays)
-  return d.toISOString().slice(0, 10)
+  const [y, m, d] = iso.split("-").map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  date.setUTCDate(date.getUTCDate() + deltaDays)
+  return date.toISOString().slice(0, 10)
 }
 
 function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, "0")
+  const d = String(now.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
 }
 
 export function Masthead({
-  apiHost,
   date,
   onDateChange,
   pipelineState,
@@ -56,13 +49,8 @@ export function Masthead({
   onRunPipeline,
   live,
   onToggleLive,
-  tabs,
-  activeTab,
   onSelectTab,
-  onSeed,
-  onLogout,
 }: {
-  apiHost: string
   date: string
   onDateChange: (next: string) => void
   pipelineState: PipelineState | null | undefined
@@ -72,11 +60,7 @@ export function Masthead({
   onRunPipeline: (opts: PipelineRunOptions) => void
   live: boolean
   onToggleLive: () => void
-  tabs: Tab[]
-  activeTab: string
   onSelectTab: (id: string) => void
-  onSeed: () => void
-  onLogout: () => void
 }) {
   const pipelineTone: Tone = useMemo(() => {
     if (!pipelineState) return "neutral"
@@ -105,22 +89,9 @@ export function Masthead({
   )
 
   return (
-    <header className="bg-background/80 backdrop-blur-lg sticky top-0 z-30 shrink-0 rule-hair-b max-w-[1200px] mx-auto w-full">
-      {/* Row 1 — identity / date / actions */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-6 px-12 h-14">
-        {/* Left — identity */}
-        <div className="flex items-center gap-2.5 min-w-0">
-          <Logo
-            variant="glyph"
-            className="size-4 text-foreground shrink-0"
-          />
-          <h1 className="text-sm font-semibold tracking-tight">Inspector</h1>
-          <span className="font-mono text-[11px] text-muted-foreground truncate tabular-nums hidden md:inline">
-            {apiHost}
-          </span>
-        </div>
-
-        {/* Center — date scrubber */}
+    <header className="bg-background/80 backdrop-blur-lg sticky top-0 z-30 shrink-0 border-b border-white/[0.06]">
+      <div className="flex items-center justify-between gap-6 px-6 h-14">
+        {/* Left — date scrubber */}
         <div className="flex items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -146,7 +117,7 @@ export function Masthead({
                 <span className="tabular-nums">{formattedDate}</span>
               </button>
             </PopoverTrigger>
-            <PopoverContent align="center" className="w-auto p-0">
+            <PopoverContent align="start" className="w-auto p-0">
               <Calendar
                 mode="single"
                 selected={dateAsDate}
@@ -187,7 +158,7 @@ export function Masthead({
         </div>
 
         {/* Right — actions */}
-        <div className="flex items-center justify-end gap-2 text-[12px] min-w-0">
+        <div className="flex items-center gap-2 text-[12px]">
           <button
             type="button"
             onClick={() => onSelectTab("pipeline")}
@@ -260,41 +231,8 @@ export function Masthead({
               { kind: "full", label: "Run full (45d)" },
             ]}
           />
-
-          <Separator />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={onSeed}
-                aria-label="Seed demo data"
-                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-md"
-              >
-                <Database className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Seed demo data</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={onLogout}
-                aria-label="Sign out"
-                className="h-7 w-7 inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/[0.04] rounded-md"
-              >
-                <LogOut className="size-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Sign out</TooltipContent>
-          </Tooltip>
         </div>
       </div>
-
-      {/* Row 2 — Tab strip */}
-      <TabStrip tabs={tabs} active={activeTab} onSelect={onSelectTab} />
     </header>
   )
 }
@@ -305,72 +243,5 @@ function Separator({ className }: { className?: string }) {
       aria-hidden
       className={cn("inline-block w-px h-3 bg-white/10", className)}
     />
-  )
-}
-
-function TabStrip({
-  tabs,
-  active,
-  onSelect,
-}: {
-  tabs: Tab[]
-  active: string
-  onSelect: (id: string) => void
-}) {
-  return (
-    <nav
-      aria-label="Inspector sections"
-      className="rule-hair flex items-center justify-center h-10 px-12 gap-0"
-    >
-      {tabs.map((t, i) => {
-        const isActive = active === t.id
-        return (
-          <Fragment key={t.id}>
-            {i > 0 && (
-              <span
-                aria-hidden
-                className="px-3 text-foreground/30 text-[10px] select-none"
-              >
-                ·
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={() => onSelect(t.id)}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "relative eyebrow inline-flex items-center gap-1.5 py-1 transition-colors cursor-pointer",
-                isActive
-                  ? "text-[var(--accent-cyan)]"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t.dot && (
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    t.dot === "warn" && "bg-[var(--accent-amber)]",
-                    t.dot === "ok" && "bg-[var(--accent-lime)]",
-                    t.dot === "error" && "bg-[var(--accent-magenta)]",
-                  )}
-                />
-              )}
-              <span>{t.label}</span>
-              {t.badge != null && t.badge > 0 && (
-                <span className="font-mono text-[10px] tabular-nums text-foreground/50 normal-case tracking-normal">
-                  ({t.badge > 999 ? "999+" : t.badge})
-                </span>
-              )}
-              {isActive && (
-                <span
-                  aria-hidden
-                  className="absolute left-0 right-0 -bottom-px h-[1.5px] bg-[var(--accent-cyan)]"
-                />
-              )}
-            </button>
-          </Fragment>
-        )
-      })}
-    </nav>
   )
 }

@@ -1,4 +1,3 @@
-import { NumberTicker } from "@/components/magicui/number-ticker"
 import { Card } from "@/components/ui/card"
 import type { AccentKey, Delta } from "@/components/primitives"
 import { DeltaChip } from "@/components/primitives"
@@ -54,11 +53,11 @@ export function MetricChip({
           <>
             <p
               className={cn(
-                "text-[1.625rem] leading-none font-bold tabular-nums tracking-tight",
+                "text-[1.875rem] leading-none font-bold tabular-nums tracking-tight",
                 color,
               )}
             >
-              <NumberTicker value={value} decimalPlaces={decimalPlaces} />
+              {decimalPlaces > 0 ? value.toFixed(decimalPlaces) : Math.round(value)}
             </p>
             {unit && (
               <span className="font-mono text-xs text-muted-foreground">{unit}</span>

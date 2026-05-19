@@ -20,8 +20,8 @@ import {
 } from "../components/ui/accordion"
 import { Badge } from "../components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card"
+import { Input } from "../components/ui/input"
 import { ScrollArea } from "../components/ui/scroll-area"
-import * as TagsInput from "@diceui/tags-input"
 import {
   Table,
   TableBody,
@@ -31,9 +31,6 @@ import {
   TableRow,
 } from "../components/ui/table"
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group"
-import { BlurFade } from "../components/magicui/blur-fade"
-import { Marquee } from "../components/magicui/marquee"
-import { NumberTicker } from "../components/magicui/number-ticker"
 import { formatTime } from "../format"
 import { cn } from "@/lib/utils"
 
@@ -127,13 +124,8 @@ export function TelemetryTab({
     })
   }, [telemetry?.consoleLogs?.recent, logTerms, enabledLevels])
 
-  const liveMarqueeLogs = useMemo(() => {
-    if (!live || logTerms.length > 0) return []
-    return (telemetry?.consoleLogs?.recent ?? []).slice(-10)
-  }, [live, logTerms, telemetry?.consoleLogs?.recent])
-
   return (
-    <div className="space-y-10">
+    <div className="space-y-20">
       <SectionHead
         n="00"
         kicker="Live device events, BLE samples, console logs, and battery, sampled from the strap."
@@ -168,22 +160,20 @@ export function TelemetryTab({
       )}
 
       {!tabHidden && pausedMs !== null && (
-        <BlurFade key={pausedMs} duration={0.3}>
-          <Alert>
-            <span className="w-2 h-2 rounded-full bg-[var(--accent-lime)] shrink-0 inline-block mt-1" />
-            <AlertTitle>Resumed</AlertTitle>
-            <AlertDescription>
-              Refreshing after {Math.round(pausedMs / 1000)}s pause.
-            </AlertDescription>
-          </Alert>
-        </BlurFade>
+        <Alert>
+          <span className="w-2 h-2 rounded-full bg-[var(--accent-lime)] shrink-0 inline-block mt-1" />
+          <AlertTitle>Resumed</AlertTitle>
+          <AlertDescription>
+            Refreshing after {Math.round(pausedMs / 1000)}s pause.
+          </AlertDescription>
+        </Alert>
       )}
 
       <section className="grid grid-cols-2 gap-4">
         <Card accent="cyan">
           <p className="eyebrow">Device events</p>
           <p className="text-[2.25rem] leading-none tabular-nums tracking-tight font-bold text-[var(--accent-cyan)]">
-            <NumberTicker value={telemetry?.events.totalCount ?? 0} />
+            {telemetry?.events.totalCount ?? 0}
           </p>
           <p className="text-xs text-muted-foreground">
             {Object.keys(telemetry?.events.summary ?? {}).length} distinct event types received from strap
@@ -192,7 +182,7 @@ export function TelemetryTab({
         <Card accent="magenta">
           <p className="eyebrow">BLE realtime samples</p>
           <p className="text-[2.25rem] leading-none tabular-nums tracking-tight font-bold text-[var(--accent-magenta)]">
-            <NumberTicker value={telemetry?.realtime.totalCount ?? 0} />
+            {telemetry?.realtime.totalCount ?? 0}
           </p>
           <p className="text-xs text-muted-foreground">
             {Object.keys(telemetry?.realtime.sessions ?? {}).length} streaming sessions — heart rate, accel, etc.
@@ -271,7 +261,7 @@ export function TelemetryTab({
             <Card className="p-4 gap-1">
               <p className="text-muted-foreground text-sm">Console log lines</p>
               <p className="text-3xl font-semibold tracking-tight tabular-nums">
-                <NumberTicker value={telemetry.consoleLogs.totalCount} />
+                {telemetry.consoleLogs.totalCount}
               </p>
               <p className="text-muted-foreground text-sm">
                 Firmware stdout captured over BLE — includes boot messages, sensor init, errors
@@ -308,29 +298,44 @@ export function TelemetryTab({
                 </Badge>
               </div>
               <div className="flex flex-wrap items-center gap-2 mt-3">
-                <TagsInput.Root
-                  value={logTerms}
-                  onValueChange={setLogTerms}
-                  addOnPaste
-                  className="flex-1 min-w-[240px] min-h-8 flex flex-wrap items-center gap-1 px-2 py-1 rounded-md bg-background border border-input focus-within:ring-2 focus-within:ring-ring/40 focus-within:border-ring"
-                >
+                <div className="flex-1 min-w-[240px] flex flex-wrap items-center gap-1.5">
                   {logTerms.map((term) => (
-                    <TagsInput.Item
+                    <span
                       key={term}
-                      value={term}
-                      className="inline-flex items-center gap-1 h-6 px-2 rounded bg-muted text-foreground text-xs font-mono data-[highlighted]:bg-primary data-[highlighted]:text-primary-foreground"
+                      className="inline-flex items-center gap-1.5 h-6 px-2 rounded-full bg-white/[0.06] text-foreground text-xs font-mono"
                     >
-                      <TagsInput.ItemText>{term}</TagsInput.ItemText>
-                      <TagsInput.ItemDelete className="opacity-60 hover:opacity-100">
+                      <span>{term}</span>
+                      <button
+                        type="button"
+                        onClick={() => setLogTerms(logTerms.filter((t) => t !== term))}
+                        aria-label={`Remove ${term}`}
+                        className="opacity-60 hover:opacity-100"
+                      >
                         ×
-                      </TagsInput.ItemDelete>
-                    </TagsInput.Item>
+                      </button>
+                    </span>
                   ))}
-                  <TagsInput.Input
-                    placeholder={logTerms.length === 0 ? "Filter messages — Enter to add a term" : ""}
-                    className="flex-1 min-w-[120px] bg-transparent outline-none text-sm placeholder:text-muted-foreground h-6"
+                  <Input
+                    placeholder={logTerms.length === 0 ? "Filter messages — Enter to add a term" : "Add term…"}
+                    className="flex-1 min-w-[120px] h-8 font-mono text-sm"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        const input = e.currentTarget
+                        const v = input.value.trim()
+                        if (v && !logTerms.includes(v)) {
+                          setLogTerms([...logTerms, v])
+                          input.value = ""
+                        }
+                      } else if (e.key === "Backspace") {
+                        const input = e.currentTarget
+                        if (input.value === "" && logTerms.length > 0) {
+                          setLogTerms(logTerms.slice(0, -1))
+                        }
+                      }
+                    }}
                   />
-                </TagsInput.Root>
+                </div>
                 <ToggleGroup
                   type="multiple"
                   variant="outline"
@@ -351,23 +356,6 @@ export function TelemetryTab({
               </div>
             </CardHeader>
             <CardContent className="p-0">
-              {liveMarqueeLogs.length > 0 && (
-                <div className="border-b border-border bg-muted/30 py-1.5 overflow-hidden">
-                  <Marquee pauseOnHover repeat={2} className="[--duration:30s] py-0">
-                    {liveMarqueeLogs.map((l, i) => (
-                      <span
-                        key={i}
-                        className="mx-6 flex items-center gap-2 text-xs text-muted-foreground font-mono"
-                      >
-                        <span className="text-muted-foreground/60 shrink-0">
-                          {formatTime(l.capturedAt)}
-                        </span>
-                        <span className="truncate max-w-[300px]">{l.message}</span>
-                      </span>
-                    ))}
-                  </Marquee>
-                </div>
-              )}
               <ScrollArea className="h-[400px]">
                 <Table>
                   <TableHeader>
@@ -755,11 +743,7 @@ function BatteryStat({
       <p className="text-muted-foreground text-xs uppercase tracking-wider">{label}</p>
       <div className="flex items-baseline gap-2 mt-1">
         <p className="text-2xl font-semibold tracking-tight">
-          {value != null && Number.isFinite(value) ? (
-            <NumberTicker value={value} decimalPlaces={1} />
-          ) : (
-            display
-          )}
+          {value != null && Number.isFinite(value) ? value.toFixed(1) : display}
         </p>
         {tone !== "neutral" ? (
           <Pill tone={tone}>{tone === "green" ? "ok" : tone === "yellow" ? "warn" : "low"}</Pill>

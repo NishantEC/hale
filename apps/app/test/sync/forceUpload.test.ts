@@ -40,7 +40,12 @@ describe("runForceUpload", () => {
       onProgress: (next) => progress.push(`${next.uploaded}/${next.total}`),
     })
 
-    expect(deps.claimOutboundBatch).toHaveBeenCalledWith(db, FORCE_UPLOAD_BATCH_SIZE)
+    expect(deps.claimOutboundBatch).toHaveBeenCalledWith(
+      db,
+      FORCE_UPLOAD_BATCH_SIZE,
+      expect.any(Number),
+      "force-upload",
+    )
     expect(post).toHaveBeenCalledWith(
       "raw_sensor_records",
       batch.map((row: any) => row.payload),

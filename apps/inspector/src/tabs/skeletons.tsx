@@ -191,7 +191,7 @@ export function RawSkeleton() {
 
 export function TrendsSkeleton() {
   return (
-    <div className="space-y-10">
+    <div className="space-y-20">
       <div className="flex items-center justify-between">
         <Skeleton className="h-4 w-48" />
         <div className="flex items-center gap-3">
