@@ -5,10 +5,17 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct SignalSampleV1 {
     pub timestamp: DateTime<Utc>,
-    pub source: String,
     pub heart_rate: f64,
     pub ibi_ms: Option<f64>,
+    // The Rust compute path doesn't read source/motion_score/quality_score,
+    // so they're #[serde(default)] to let the wire payload omit them and
+    // shrink the per-request body. Kept on the struct so legacy callers
+    // that DO send them still parse.
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
     pub motion_score: Option<f64>,
+    #[serde(default)]
     pub quality_score: f64,
 }
 
@@ -76,6 +83,26 @@ pub struct BaselineProfileV1 {
     pub nights_used: f64,
     pub is_warmed_up: bool,
     pub max_heart_rate: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityBoutV1 {
+    pub start_time: DateTime<Utc>,
+    pub end_time: DateTime<Utc>,
+    pub duration_minutes: f64,
+    pub activity_type: String,
+    pub intensity: String,
+    pub confidence: f64,
+    pub heart_rate_avg: f64,
+    pub heart_rate_max: f64,
+    pub strain_score: f64,
+    pub source: String,
+    pub cadence_hz: Option<f64>,
+    pub flights_count: Option<i32>,
+    pub elevation_gain_meters: Option<f64>,
+    pub distance_meters: Option<f64>,
+    pub external_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
