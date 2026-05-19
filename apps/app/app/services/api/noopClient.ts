@@ -156,6 +156,15 @@ export interface HomeViewModel {
       strain: string;
       intensity: string;
       time: string;
+      // New fields propagated from the compute-engine ActivityBoutV1. Optional
+      // on the wire so older API responses still parse; the new UI guards
+      // each usage with a fallback.
+      id?: string;
+      startTime?: string;
+      endTime?: string;
+      durationMinutes?: number;
+      heartRateAvg?: number;
+      source?: "detected" | "candidate" | "healthkit" | "manual";
     }>;
     totalActiveMinutes: string;
     activityCount: number;
@@ -192,6 +201,11 @@ export interface PendingActivityCard {
   heartRateAvg: number;
   strainScore: number;
   confidence: number;
+  // New: max HR observed during the candidate window. Optional on the wire
+  // so older API responses still parse. Falls back to heartRateAvg in UI.
+  heartRateMax?: number;
+  // New: normalised HR sparkline samples (0..1) for the candidate card.
+  hrSparkline?: number[];
 }
 
 export interface SleepViewModel {

@@ -13,6 +13,15 @@ export type TapeEvent = {
   type: TapeEventType
   payload?: {
     journalEntryId?: string
+    /** Workout-only — propagated from HomeViewModel.activities.activityFeed. */
+    boutId?: string
+    activityType?: string
+    intensity?: "light" | "moderate" | "hard"
+    durationMinutes?: number
+    heartRateAvg?: number
+    strain?: number
+    startIso?: string
+    endIso?: string
   }
 }
 
@@ -80,14 +89,28 @@ export function buildTodayTape(input: {
       if (!Number.isFinite(h) || !Number.isFinite(m)) continue
       const ts = synthesizeTimeOnDate(input.selectedDate, h, m)
       if (!Number.isFinite(ts) || ts > now) continue
+      const intensity =
+        a.intensity === "moderate" || a.intensity === "hard" || a.intensity === "light"
+          ? (a.intensity as "light" | "moderate" | "hard")
+          : "light"
       events.push({
-        id: `workout-${i}`,
+        id: a.id ?? `workout-${i}`,
         time: a.time,
         ts,
         title: a.type,
         desc: `${a.duration} · Strain ${a.strain}`,
         dotColor: colors.ringStrain,
         type: "workout",
+        payload: {
+          boutId: a.id,
+          activityType: a.type,
+          intensity,
+          durationMinutes: a.durationMinutes,
+          heartRateAvg: a.heartRateAvg,
+          strain: parseFloat(a.strain) || 0,
+          startIso: a.startTime,
+          endIso: a.endTime,
+        },
       })
     }
   }
