@@ -1,5 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use noop_compute_engine::{derived_metrics::compute_derived_metrics, types::ComputeDerivedMetricsDayRequestV1};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use noop_compute_engine::{
+    derived_metrics::compute_derived_metrics, types::ComputeDerivedMetricsDayRequestV1,
+};
 
 fn bench_compute_day(c: &mut Criterion) {
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

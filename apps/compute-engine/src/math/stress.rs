@@ -49,10 +49,7 @@ fn baevsky_stress_score(rr_ms: &[f64]) -> Option<f64> {
     if rr_ms.len() < 120 {
         return None;
     }
-    let clamped: Vec<f64> = rr_ms
-        .iter()
-        .map(|v| v.max(250.0).min(2000.0))
-        .collect();
+    let clamped: Vec<f64> = rr_ms.iter().map(|v| v.max(250.0).min(2000.0)).collect();
     let min_rr = clamped.iter().copied().fold(f64::INFINITY, f64::min);
     let max_rr = clamped.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let vr = (max_rr - min_rr) / 1000.0;
@@ -120,8 +117,7 @@ mod tests {
 
     #[test]
     fn under_window_returns_empty() {
-        let samples: Vec<SignalSampleV1> =
-            (0..50).map(|i| sample(i, 60.0, Some(1000.0))).collect();
+        let samples: Vec<SignalSampleV1> = (0..50).map(|i| sample(i, 60.0, Some(1000.0))).collect();
         assert!(stress_points(&samples).is_empty());
     }
 

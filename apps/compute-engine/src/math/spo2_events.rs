@@ -78,9 +78,9 @@ pub fn detect_desaturation_events(points: &[TimestampedValue]) -> Option<Desatur
             }
         } else if in_dip {
             if let Some(start) = dip_start {
-                let duration_seconds =
-                    (current.timestamp.timestamp_millis() - start.timestamp_millis()) as f64
-                        / 1000.0;
+                let duration_seconds = (current.timestamp.timestamp_millis()
+                    - start.timestamp_millis()) as f64
+                    / 1000.0;
                 if duration_seconds >= MIN_DIP_SECONDS {
                     events.push(DesaturationEvent {
                         start,

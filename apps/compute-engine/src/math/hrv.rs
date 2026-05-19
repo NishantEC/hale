@@ -153,8 +153,7 @@ mod tests {
 
     #[test]
     fn unsorted_input_sorted_before_windowing() {
-        let mut samples: Vec<SignalSampleV1> =
-            (0..350).map(|i| sample(i, Some(1000.0))).collect();
+        let mut samples: Vec<SignalSampleV1> = (0..350).map(|i| sample(i, Some(1000.0))).collect();
         samples.reverse();
         let out = rolling_rmssd(&samples);
         assert_eq!(out.len(), 2);

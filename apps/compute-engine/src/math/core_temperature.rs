@@ -15,7 +15,9 @@ fn resolve_tz(tz_input: &str) -> Tz {
     if tz_input.is_empty() {
         return "UTC".parse().expect("UTC");
     }
-    tz_input.parse::<Tz>().unwrap_or_else(|_| "UTC".parse().expect("UTC"))
+    tz_input
+        .parse::<Tz>()
+        .unwrap_or_else(|_| "UTC".parse().expect("UTC"))
 }
 
 pub fn estimate_core_temperature(
@@ -97,16 +99,23 @@ mod tests {
         // Nadir is the timestamp of the minimum skin temp
         assert_eq!(r.nadir, ts(3600 + 10 * 1800));
         // core_estimate ~= skin + 4 + small offset, value around 37.x
-        assert!(r.core_estimate > 36.0 && r.core_estimate < 38.5, "got {}", r.core_estimate);
+        assert!(
+            r.core_estimate > 36.0 && r.core_estimate < 38.5,
+            "got {}",
+            r.core_estimate
+        );
     }
 
     #[test]
     fn core_estimate_rounded_to_one_decimal() {
-        let points: Vec<TimestampedValue> = (0..20)
-            .map(|i| point(3600 + i * 1800, 33.456))
-            .collect();
+        let points: Vec<TimestampedValue> =
+            (0..20).map(|i| point(3600 + i * 1800, 33.456)).collect();
         let r = estimate_core_temperature(&points, 33.0, "UTC").expect("expected Some");
         let scaled = r.core_estimate * 10.0;
-        assert!((scaled - scaled.round()).abs() < 1e-9, "got {}", r.core_estimate);
+        assert!(
+            (scaled - scaled.round()).abs() < 1e-9,
+            "got {}",
+            r.core_estimate
+        );
     }
 }

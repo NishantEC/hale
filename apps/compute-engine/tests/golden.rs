@@ -57,20 +57,40 @@ fn compare(a: &PersistedDailyMetricV1, b: &PersistedDailyMetricV1) -> Result<(),
         }
     }
     close("strain_score", a.strain_score, b.strain_score)?;
-    close("sleep_consistency_score", a.sleep_consistency_score, b.sleep_consistency_score)?;
+    close(
+        "sleep_consistency_score",
+        a.sleep_consistency_score,
+        b.sleep_consistency_score,
+    )?;
     if (a.detected_sleep_nights - b.detected_sleep_nights).abs() > 1e-9 {
         return Err(format!(
             "detected_sleep_nights: {} vs {}",
             a.detected_sleep_nights, b.detected_sleep_nights
         ));
     }
-    close("skin_temp_avg_celsius", a.skin_temp_avg_celsius, b.skin_temp_avg_celsius)?;
-    close("skin_temp_delta_celsius", a.skin_temp_delta_celsius, b.skin_temp_delta_celsius)?;
+    close(
+        "skin_temp_avg_celsius",
+        a.skin_temp_avg_celsius,
+        b.skin_temp_avg_celsius,
+    )?;
+    close(
+        "skin_temp_delta_celsius",
+        a.skin_temp_delta_celsius,
+        b.skin_temp_delta_celsius,
+    )?;
     close("stress_average", a.stress_average, b.stress_average)?;
     close("spo2_average", a.spo2_average, b.spo2_average)?;
-    close("lf_hf_ratio_average", a.lf_hf_ratio_average, b.lf_hf_ratio_average)?;
+    close(
+        "lf_hf_ratio_average",
+        a.lf_hf_ratio_average,
+        b.lf_hf_ratio_average,
+    )?;
     close("recovery_index", a.recovery_index, b.recovery_index)?;
-    close("training_load_ratio", a.training_load_ratio, b.training_load_ratio)?;
+    close(
+        "training_load_ratio",
+        a.training_load_ratio,
+        b.training_load_ratio,
+    )?;
     if a.training_load_risk_zone != b.training_load_risk_zone {
         return Err(format!(
             "training_load_risk_zone: {:?} vs {:?}",
@@ -80,13 +100,21 @@ fn compare(a: &PersistedDailyMetricV1, b: &PersistedDailyMetricV1) -> Result<(),
     close("spo2_dip_count", a.spo2_dip_count, b.spo2_dip_count)?;
     close("odi_per_hour", a.odi_per_hour, b.odi_per_hour)?;
     close("lowest_spo2", a.lowest_spo2, b.lowest_spo2)?;
-    close("core_temperature_estimate", a.core_temperature_estimate, b.core_temperature_estimate)?;
+    close(
+        "core_temperature_estimate",
+        a.core_temperature_estimate,
+        b.core_temperature_estimate,
+    )?;
     if a.circadian_nadir != b.circadian_nadir {
         return Err(format!(
             "circadian_nadir: {:?} vs {:?}",
             a.circadian_nadir, b.circadian_nadir
         ));
     }
-    close("sleep_architecture_score", a.sleep_architecture_score, b.sleep_architecture_score)?;
+    close(
+        "sleep_architecture_score",
+        a.sleep_architecture_score,
+        b.sleep_architecture_score,
+    )?;
     Ok(())
 }

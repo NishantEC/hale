@@ -15,7 +15,10 @@ fn resolve_tz(input: &str) -> Tz {
 fn parse_date_key(key: &str) -> (i32, u32, u32) {
     let parts: Vec<&str> = key.split('-').collect();
     if parts.len() != 3 {
-        panic!("Invalid calendar date key: \"{}\" (expected YYYY-MM-DD)", key);
+        panic!(
+            "Invalid calendar date key: \"{}\" (expected YYYY-MM-DD)",
+            key
+        );
     }
     let year: i32 = parts[0].parse().expect("year");
     let month: u32 = parts[1].parse().expect("month");
@@ -74,7 +77,10 @@ fn zoned_midnight_to_utc(year: i32, month: u32, day: u32, tz: &Tz) -> DateTime<U
                 }
                 h += 1;
                 if h >= 24 {
-                    panic!("could not resolve zoned midnight for {}-{}-{}", year, month, day);
+                    panic!(
+                        "could not resolve zoned midnight for {}-{}-{}",
+                        year, month, day
+                    );
                 }
             }
         }

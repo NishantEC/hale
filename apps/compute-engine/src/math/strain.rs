@@ -20,9 +20,7 @@ pub fn strain_score(samples: &[SignalSampleV1], baseline: &BaselineProfileV1) ->
 
     let intervals: Vec<f64> = samples
         .windows(2)
-        .map(|w| {
-            ((w[1].timestamp - w[0].timestamp).num_milliseconds() as f64 / 1000.0).max(1.0)
-        })
+        .map(|w| ((w[1].timestamp - w[0].timestamp).num_milliseconds() as f64 / 1000.0).max(1.0))
         .collect();
     let median_interval_seconds = if intervals.is_empty() {
         60.0

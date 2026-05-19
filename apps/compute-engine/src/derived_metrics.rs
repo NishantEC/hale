@@ -2,11 +2,13 @@ use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use thiserror::Error;
 
 use crate::calendar::{add_days_to_date_key, calendar_day_bounds, calendar_day_key};
+use crate::math::recovery_index::{RecoveryIndexInput, compute_recovery_index};
 use crate::math::sensor_sample::SensorSample;
+use crate::math::timestamp_slice::{HasTimestamp, HasValue};
 use crate::math::timestamp_slice::{average_by_timestamp, slice_by_timestamp};
-use crate::math::training_load::{compute_training_load_ratio, StrainPoint};
-use crate::math::recovery_index::{compute_recovery_index, RecoveryIndexInput};
+use crate::math::training_load::{StrainPoint, compute_training_load_ratio};
 use crate::math::{
+    TimestampedValue,
     core_temperature::estimate_core_temperature,
     hrv::rolling_rmssd,
     skin_temp::skin_temperature_points,
@@ -15,9 +17,7 @@ use crate::math::{
     spo2_events::detect_desaturation_events,
     strain::strain_score,
     stress::stress_points,
-    TimestampedValue,
 };
-use crate::math::timestamp_slice::{HasTimestamp, HasValue};
 use crate::types::{ComputeDerivedMetricsDayRequestV1, PersistedDailyMetricV1};
 
 #[derive(Debug, Error)]
@@ -130,8 +130,10 @@ pub fn compute_derived_metrics(
             .count() as u64
     };
 
-    let sleep_consistency = sleep_consistency_score(&req.sleep_detections, reference_date)
-        .or_else(|| sleep_consistency_score_from_night_features(&req.night_features, reference_date));
+    let sleep_consistency =
+        sleep_consistency_score(&req.sleep_detections, reference_date).or_else(|| {
+            sleep_consistency_score_from_night_features(&req.night_features, reference_date)
+        });
 
     // Advanced metrics
     let desat = if spo2_series.len() >= 30 {

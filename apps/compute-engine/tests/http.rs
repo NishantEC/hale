@@ -13,7 +13,9 @@ async fn round_trip_normal_ist() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
     let app = build_app();
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
 
     let client = reqwest::Client::new();
     let res = client
@@ -26,7 +28,8 @@ async fn round_trip_normal_ist() {
     let body: serde_json::Value = res.json().await.unwrap();
 
     fn num(v: &serde_json::Value) -> Option<f64> {
-        v.as_f64().or_else(|| if v.is_null() { None } else { Some(0.0) })
+        v.as_f64()
+            .or_else(|| if v.is_null() { None } else { Some(0.0) })
     }
     let close = |name: &str, a: &serde_json::Value, b: &serde_json::Value| {
         let (na, nb) = (num(a), num(b));
@@ -56,7 +59,9 @@ async fn bad_schema_version_returns_400() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
     let app = build_app();
-    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
 
     let client = reqwest::Client::new();
     let body = serde_json::json!({

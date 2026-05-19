@@ -1,6 +1,6 @@
+use crate::math::TimestampedValue;
 use crate::math::sensor_sample::SensorSample;
 use crate::math::util::{average, clamp, std_dev};
-use crate::math::TimestampedValue;
 
 const WINDOW_SIZE: usize = 30;
 const STEP: usize = 15;
@@ -82,9 +82,7 @@ mod tests {
     #[test]
     fn low_mean_skipped() {
         // mean_red < 1 → skip
-        let samples: Vec<SensorSample> = (0..60)
-            .map(|i| sensor(i, 0.5, 1000.0))
-            .collect();
+        let samples: Vec<SensorSample> = (0..60).map(|i| sensor(i, 0.5, 1000.0)).collect();
         let out = spo2_points(&samples);
         assert!(out.is_empty());
     }
@@ -103,7 +101,10 @@ mod tests {
         let out = spo2_points(&samples);
         assert!(!out.is_empty());
         for p in &out {
-            assert!(p.value >= 70.0 && p.value <= 100.0, "spo2 must be clamped to [70,100]");
+            assert!(
+                p.value >= 70.0 && p.value <= 100.0,
+                "spo2 must be clamped to [70,100]"
+            );
         }
     }
 

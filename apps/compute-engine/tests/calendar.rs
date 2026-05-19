@@ -1,7 +1,5 @@
 use chrono::{DateTime, SecondsFormat, Utc};
-use noop_compute_engine::calendar::{
-    add_days_to_date_key, calendar_day_bounds, calendar_day_key,
-};
+use noop_compute_engine::calendar::{add_days_to_date_key, calendar_day_bounds, calendar_day_key};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -27,8 +25,7 @@ fn normalize_iso(s: &str) -> String {
 
 #[test]
 fn calendar_fixture_cases() {
-    let fixture =
-        std::fs::read_to_string("tests/fixtures/calendar.json").expect("read fixture");
+    let fixture = std::fs::read_to_string("tests/fixtures/calendar.json").expect("read fixture");
     let cases: Vec<Case> = serde_json::from_str(&fixture).expect("parse fixture");
     assert!(!cases.is_empty(), "fixture must contain cases");
 
@@ -41,7 +38,12 @@ fn calendar_fixture_cases() {
         assert_eq!(key, c.key, "key mismatch for {:?}", c);
 
         let (start, end) = calendar_day_bounds(&c.key, &c.tz);
-        assert_eq!(fmt(start), normalize_iso(&c.start), "start mismatch for {:?}", c);
+        assert_eq!(
+            fmt(start),
+            normalize_iso(&c.start),
+            "start mismatch for {:?}",
+            c
+        );
         assert_eq!(fmt(end), normalize_iso(&c.end), "end mismatch for {:?}", c);
     }
 }

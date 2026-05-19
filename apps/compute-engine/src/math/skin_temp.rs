@@ -1,5 +1,5 @@
-use crate::math::sensor_sample::SensorSample;
 use crate::math::TimestampedValue;
+use crate::math::sensor_sample::SensorSample;
 
 pub fn skin_temperature_points(samples: &[SensorSample]) -> Vec<TimestampedValue> {
     let mut out: Vec<TimestampedValue> = samples

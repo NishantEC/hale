@@ -3,7 +3,9 @@ use std::io::{self, Read, Write};
 use noop_compute_engine::types::ComputeDerivedMetricsDayRequestV1;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let arg = std::env::args().nth(1).ok_or("missing path argument (use - for stdin)")?;
+    let arg = std::env::args()
+        .nth(1)
+        .ok_or("missing path argument (use - for stdin)")?;
     let input = if arg == "-" {
         let mut buf = String::new();
         io::stdin().read_to_string(&mut buf)?;

@@ -78,11 +78,7 @@ pub fn sleep_consistency_score(
     ];
     let timing_score = average(&timing_components);
 
-    Some(clamp(
-        average(&[duration_score, timing_score]),
-        0.0,
-        100.0,
-    ))
+    Some(clamp(average(&[duration_score, timing_score]), 0.0, 100.0))
 }
 
 pub fn sleep_consistency_score_from_night_features(
@@ -214,7 +210,12 @@ mod tests {
         for i in 0..7 {
             // first 7 have varying duration and bedtimes
             let n = day * (i + 1) as i64;
-            records.push(detection(n, n - 7200 * (i as i64 + 1), n + 4 * 3600, 3.0 + i as f64));
+            records.push(detection(
+                n,
+                n - 7200 * (i as i64 + 1),
+                n + 4 * 3600,
+                3.0 + i as f64,
+            ));
         }
         for i in 7..10 {
             let n = day * (i + 1) as i64;
@@ -240,7 +241,11 @@ mod tests {
 
     #[test]
     fn fallback_returns_none_when_mean_zero() {
-        let nights = vec![night(86_400, 0.0), night(86_400 * 2, 0.0), night(86_400 * 3, 0.0)];
+        let nights = vec![
+            night(86_400, 0.0),
+            night(86_400 * 2, 0.0),
+            night(86_400 * 3, 0.0),
+        ];
         let r = sleep_consistency_score_from_night_features(&nights, ts(86_400 * 5));
         assert!(r.is_none());
     }

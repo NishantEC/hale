@@ -1,4 +1,4 @@
-use axum::{http::StatusCode, response::IntoResponse, Json};
+use axum::{Json, http::StatusCode, response::IntoResponse};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -6,9 +6,7 @@ use crate::{derived_metrics::compute_derived_metrics, types::ComputeDerivedMetri
 
 const SERVER_DEADLINE: Duration = Duration::from_secs(25);
 
-pub async fn compute_day(
-    Json(req): Json<ComputeDerivedMetricsDayRequestV1>,
-) -> impl IntoResponse {
+pub async fn compute_day(Json(req): Json<ComputeDerivedMetricsDayRequestV1>) -> impl IntoResponse {
     if req.schema_version != 1 {
         return (
             StatusCode::BAD_REQUEST,
