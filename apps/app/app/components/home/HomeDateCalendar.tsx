@@ -1,6 +1,7 @@
 import { FC, useMemo } from "react"
 import { TouchableOpacity, View, ViewStyle } from "react-native"
 import { Calendar, DateData } from "react-native-calendars"
+import { X } from "phosphor-react-native"
 
 import { Text } from "@/components/Text"
 import { LOCAL_THEME } from "@/utils/localTheme"
@@ -21,6 +22,7 @@ export const HomeDateCalendar: FC<Props> = ({
   coverageByDate,
   onSelectDate,
   onMonthCursorChange,
+  onClose,
 }) => {
   const { colors } = LOCAL_THEME
 
@@ -35,6 +37,14 @@ export const HomeDateCalendar: FC<Props> = ({
 
   return (
     <View style={$wrap(colors)}>
+      <TouchableOpacity
+        onPress={onClose}
+        accessibilityLabel="Close calendar"
+        hitSlop={10}
+        style={$closeButton(colors)}
+      >
+        <X size={16} weight="bold" color={colors.text} />
+      </TouchableOpacity>
       <Calendar
         // react-native-calendars treats `current` as initial-only — changes
         // after mount don't navigate the grid. Forcing a remount via key on
@@ -116,11 +126,23 @@ export const HomeDateCalendar: FC<Props> = ({
 
 const $wrap = (colors: typeof LOCAL_THEME.colors): ViewStyle => ({
   backgroundColor: colors.surfaceSubtle,
-  // Edge-to-edge band — internal padding lives inside the Calendar's own
-  // theme styling, not on the wrapper.
   paddingHorizontal: 0,
-  paddingTop: 4,
-  paddingBottom: 10,
+  paddingTop: 0,
+  paddingBottom: 4,
+  position: "relative",
+})
+
+const $closeButton = (colors: typeof LOCAL_THEME.colors): ViewStyle => ({
+  position: "absolute",
+  top: 6,
+  right: 12,
+  zIndex: 5,
+  width: 28,
+  height: 28,
+  borderRadius: 14,
+  backgroundColor: colors.surfaceCard,
+  alignItems: "center",
+  justifyContent: "center",
 })
 
 const $day = (bg: string): ViewStyle => ({

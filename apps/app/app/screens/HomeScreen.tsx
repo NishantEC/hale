@@ -625,12 +625,14 @@ const $container: ThemedStyle<ViewStyle> = ({ spacing }) => ({
   paddingTop: 18,
 })
 
-// Breaks out of the container's horizontal padding + nudges against the
-// surrounding gap so the calendar band reads as edge-to-edge with only a
-// tight rhythm gap below the date strip.
+// Breaks out of the container's horizontal padding + absorbs the
+// surrounding flex gap so the calendar band sits flush against the
+// strip with no breathing room. marginTop -32 cancels the parent's
+// gap entirely so the calendar visually touches the strip's bottom
+// edge; marginBottom -20 lets the rings flow tight underneath.
 const $calendarBleed: ViewStyle = {
   marginHorizontal: -20,
-  marginTop: -24,
+  marginTop: -32,
   marginBottom: -20,
 }
 
