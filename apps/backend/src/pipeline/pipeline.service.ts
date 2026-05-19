@@ -62,6 +62,7 @@ import type {
 import { ComputeEngineClient } from './compute-engine-client.js';
 import {
   buildDayRequest,
+  liftActivityBouts,
   liftPersistedToBundle,
 } from './compute-engine-bridge.js';
 
@@ -595,6 +596,8 @@ export class PipelineService {
     const runId = randomUUID();
     let stickyFallback = false;
     const derivedMetricsByDay: { dayDate: Date; metrics: DerivedMetricsBundle }[] = [];
+    const rustActivityBouts: ActivityBout[] = [];
+    let rustOwnsActivities = false;
     for (const dayDate of referenceDays) {
       if (usingRust && !stickyFallback) {
         const dayKey = this.startOfDay(dayDate, timeZone)
@@ -619,9 +622,15 @@ export class PipelineService {
             dayDate,
             metrics: liftPersistedToBundle(r.result),
           });
+          rustOwnsActivities = true;
+          rustActivityBouts.push(...liftActivityBouts(r.result));
           continue;
         }
         stickyFallback = true;
+        // Drop any Rust-collected bouts and revert to TS detector output
+        // so we don't ship half-and-half results.
+        rustActivityBouts.length = 0;
+        rustOwnsActivities = false;
       }
       derivedMetricsByDay.push({
         dayDate,
@@ -636,6 +645,24 @@ export class PipelineService {
           metricsPrecomputed,
         ),
       });
+    }
+
+    // When the Rust path owned every day's compute, prefer its bouts over
+    // the TS detector output computed earlier in this run. Otherwise the
+    // TS bouts stay (already in `activityBouts`).
+    if (rustOwnsActivities) {
+      activityBouts = rustActivityBouts.sort(
+        (a, b) => a.startTime.getTime() - b.startTime.getTime(),
+      );
+      if (activityBouts.length > 0) {
+        activityBouts = await this.applyHealthkitReclassifiers(
+          userId,
+          activityBouts,
+          sensorRecords,
+          baseline,
+          timeZone,
+        );
+      }
     }
 
     const typicalRanges = computeTypicalRanges(sleepDetections, sleepStages, now);
@@ -671,7 +698,9 @@ export class PipelineService {
           .createQueryBuilder()
           .delete()
           .where('"userId" = :userId', { userId })
-          .andWhere('"source" = :source', { source: 'detected' })
+          .andWhere('"source" IN (:...sources)', {
+            sources: ['detected', 'candidate'],
+          })
           .andWhere('"startTime" >= :start', { start: boutStart })
           .andWhere('"startTime" <= :end', { end: boutEnd })
           .execute();
@@ -693,7 +722,7 @@ export class PipelineService {
           entity.elevationGainMeters = (bout.elevationGainMeters ?? null) as any;
           entity.distanceMeters = (bout.distanceMeters ?? null) as any;
           entity.externalSource = (bout.externalSource ?? null) as any;
-          entity.source = 'detected';
+          entity.source = bout.source ?? 'detected';
           return entity;
         });
         await activityRepo.save(entities, { chunk: 200 });

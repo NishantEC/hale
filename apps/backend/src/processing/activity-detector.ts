@@ -21,6 +21,9 @@ export type ActivityType =
   | 'Strength'
   | 'HIIT'
   | 'General Exercise'
+  | 'Cardio'
+  | 'Mixed'
+  | 'Candidate'
   | 'Light Activity'
   | 'Rest'
   | 'Sedentary'
@@ -42,6 +45,9 @@ export interface ActivityBout {
   elevationGainMeters?: number | null;
   distanceMeters?: number | null;
   externalSource?: string | null;
+  /** 'detected' = high-confidence named bout from the Rust pipeline.
+   *  'candidate' = passed motion gate but failed HR-promotion; user-confirmable. */
+  source?: 'detected' | 'candidate';
 }
 
 // ── Constants ────────────────────────────────────────────

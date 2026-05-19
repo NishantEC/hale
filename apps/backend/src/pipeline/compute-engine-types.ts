@@ -87,6 +87,25 @@ export type ComputeDerivedMetricsDayRequestV1 = z.infer<
   typeof ComputeDerivedMetricsDayRequestV1
 >;
 
+export const ActivityBoutV1 = z.object({
+  startTime: Iso,
+  endTime: Iso,
+  durationMinutes: z.number(),
+  activityType: z.string(),
+  intensity: z.string(),
+  confidence: z.number(),
+  heartRateAvg: z.number(),
+  heartRateMax: z.number(),
+  strainScore: z.number(),
+  source: z.string(),
+  cadenceHz: z.number().nullable(),
+  flightsCount: z.number().nullable(),
+  elevationGainMeters: z.number().nullable(),
+  distanceMeters: z.number().nullable(),
+  externalSource: z.string().nullable(),
+});
+export type ActivityBoutV1 = z.infer<typeof ActivityBoutV1>;
+
 export const PersistedDailyMetricV1 = z.object({
   schemaVersion: z.literal(1),
   strainScore: z.number().nullable(),
@@ -106,5 +125,6 @@ export const PersistedDailyMetricV1 = z.object({
   coreTemperatureEstimate: z.number().nullable(),
   circadianNadir: Iso.nullable(),
   sleepArchitectureScore: z.number().nullable(),
+  activityBouts: z.array(ActivityBoutV1).default([]),
 });
 export type PersistedDailyMetricV1 = z.infer<typeof PersistedDailyMetricV1>;

@@ -7,6 +7,10 @@ import type {
   DerivedMetricsBundle,
 } from '../processing/interfaces.js';
 import type {
+  ActivityBout,
+  ActivityType,
+} from '../processing/activity-detector.js';
+import type {
   ComputeDerivedMetricsDayRequestV1,
   PersistedDailyMetricV1,
 } from './compute-engine-types.js';
@@ -49,6 +53,12 @@ export function buildDayRequest(
       spo2Red: r.spo2Red,
       spo2IR: r.spo2IR,
       skinTempRaw: r.skinTempRaw,
+      // Gravity needed for activity-bout segmentation on the Rust side.
+      // Null when the strap was off-wrist; the Rust detector treats nulls
+      // as motion (faithful to the openwhoop reference).
+      gravityX: r.gravityX,
+      gravityY: r.gravityY,
+      gravityZ: r.gravityZ,
     }));
   return {
     schemaVersion: 1,
@@ -96,4 +106,34 @@ export function liftPersistedToBundle(
     circadianNadir: p.circadianNadir ? new Date(p.circadianNadir) : null,
     sleepArchitectureScore: p.sleepArchitectureScore,
   };
+}
+
+/**
+ * Convert Rust-shaped ActivityBoutV1 entries into the TS ActivityBout shape
+ * used by the rest of the pipeline (persistence, HealthKit reclassifiers).
+ * The two shapes are aligned by field name; this mostly handles the
+ * Date↔string conversion and the optional fields.
+ */
+export function liftActivityBouts(
+  p: PersistedDailyMetricV1,
+): (ActivityBout & { source: 'detected' | 'candidate' })[] {
+  return p.activityBouts.map((b) => ({
+    startTime: new Date(b.startTime),
+    endTime: new Date(b.endTime),
+    durationMinutes: b.durationMinutes,
+    activityType: b.activityType as ActivityType,
+    intensity: b.intensity as 'light' | 'moderate' | 'hard',
+    confidence: b.confidence,
+    heartRateAvg: b.heartRateAvg,
+    heartRateMax: b.heartRateMax,
+    strainScore: b.strainScore,
+    cadenceHz: b.cadenceHz,
+    flightsCount: b.flightsCount,
+    elevationGainMeters: b.elevationGainMeters,
+    distanceMeters: b.distanceMeters,
+    externalSource: b.externalSource,
+    source: (b.source === 'candidate' ? 'candidate' : 'detected') as
+      | 'detected'
+      | 'candidate',
+  }));
 }
