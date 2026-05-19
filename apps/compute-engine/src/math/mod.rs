@@ -3,6 +3,7 @@ pub mod sensor_sample;
 pub mod skin_temp;
 pub mod sleep_consistency;
 pub mod spo2;
+pub mod spo2_events;
 pub mod strain;
 pub mod stress;
 pub mod timestamp_slice;
