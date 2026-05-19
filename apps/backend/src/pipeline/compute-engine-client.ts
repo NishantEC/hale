@@ -52,37 +52,50 @@ export class ComputeEngineClient {
       return { ok: false, reason: 'feature_flag_off', durationMs: 0 };
     }
     try {
+      // gaxios (used by google-auth-library's client.request) silently strips
+      // Content-Encoding: gzip and decompresses on the client side, which
+      // means Cloud Run sees the full ~100 MiB raw body and 413s. Get the ID
+      // token from the auth library, then use native fetch which preserves
+      // headers and content bytes verbatim.
       const client = await this.auth.getIdTokenClient(this.url);
+      const idToken = await client.idTokenProvider.fetchIdToken(this.url);
       const body = gzipSync(Buffer.from(JSON.stringify(req)));
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), this.timeoutMs);
-      let res: any;
+      let httpStatus: number;
+      let rawBody: unknown;
       try {
-        res = await client.request({
-          url: `${this.url}/v1/compute/derived-metrics-day`,
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'content-encoding': 'gzip',
-            'accept-encoding': 'gzip',
-            'x-run-id': ctx.runId,
+        const res = await fetch(
+          `${this.url}/v1/compute/derived-metrics-day`,
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'content-encoding': 'gzip',
+              'accept-encoding': 'gzip',
+              'x-run-id': ctx.runId,
+              authorization: `Bearer ${idToken}`,
+            },
+            body,
+            signal: ac.signal,
           },
-          data: body,
-          validateStatus: () => true,
-          signal: ac.signal as any,
-          responseType: 'json',
-        });
+        );
+        httpStatus = res.status;
+        rawBody =
+          res.headers.get('content-type')?.includes('application/json')
+            ? await res.json().catch(() => undefined)
+            : await res.text().catch(() => undefined);
       } finally {
         clearTimeout(timer);
       }
-      const status = res.status as number;
+      const status = httpStatus;
       if (status >= 500) return this.fallback('server_error', start, ctx, status);
       if (status === 401 || status === 403)
         return this.fallback('auth_error', start, ctx, status);
       if (status === 400) return this.fallback('bad_request', start, ctx, status);
       if (status === 404) return this.fallback('not_found', start, ctx, status);
       if (status >= 400) return this.fallback('client_error', start, ctx, status);
-      const parsed = PersistedDailyMetricV1.safeParse(res.data);
+      const parsed = PersistedDailyMetricV1.safeParse(rawBody);
       if (!parsed.success) {
         this.logger.warn({
           event: 'compute-engine-parse-failure',

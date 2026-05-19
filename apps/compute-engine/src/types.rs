@@ -139,4 +139,10 @@ pub struct PersistedDailyMetricV1 {
     pub core_temperature_estimate: Option<f64>,
     pub circadian_nadir: Option<DateTime<Utc>>,
     pub sleep_architecture_score: Option<f64>,
+    /// Activity bouts detected for this day. Empty when no sensor records
+    /// admit. `#[serde(default)]` so older golden fixtures without the
+    /// field still parse and existing consumers that ignore the field are
+    /// unaffected.
+    #[serde(default)]
+    pub activity_bouts: Vec<ActivityBoutV1>,
 }

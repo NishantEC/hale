@@ -27,16 +27,33 @@ const toIso = (d: Date | string) =>
 export function buildDayRequest(
   args: BuildArgs,
 ): ComputeDerivedMetricsDayRequestV1 {
+  // Project to ONLY the fields the Rust compute path actually reads. Dropping
+  // the unused fields (gravity*, ppg*, ledDrive*, ambientLight, signalQuality,
+  // respRateRaw, motionScore, qualityScore, source) cuts raw payload from
+  // ~103 MiB to ~17 MiB on the heaviest user — well under Cloud Run's 32 MiB
+  // ingress limit even before gzip. Pre-filtering sensorRecords to rows with
+  // all three sensor fields non-null mirrors precomputeMetricSeries.
+  const samples = args.samples.map((s) => ({
+    timestamp: toIso(s.timestamp),
+    heartRate: s.heartRate,
+    ibiMs: s.ibiMs,
+  }));
+  const sensorRecords = args.sensorRecords
+    .filter(
+      (r) =>
+        r.spo2Red != null && r.spo2IR != null && r.skinTempRaw != null,
+    )
+    .map((r) => ({
+      timestamp: toIso(r.timestamp),
+      heartRate: r.heartRate,
+      spo2Red: r.spo2Red,
+      spo2IR: r.spo2IR,
+      skinTempRaw: r.skinTempRaw,
+    }));
   return {
     schemaVersion: 1,
-    samples: args.samples.map((s) => ({
-      ...s,
-      timestamp: toIso(s.timestamp),
-    })) as any,
-    sensorRecords: args.sensorRecords.map((s) => ({
-      ...s,
-      timestamp: toIso(s.timestamp),
-    })) as any,
+    samples: samples as any,
+    sensorRecords: sensorRecords as any,
     nightFeatures: args.effectiveFeatures.map((f) => ({
       ...f,
       nightDate: toIso(f.nightDate),
