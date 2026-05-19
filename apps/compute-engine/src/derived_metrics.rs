@@ -2,6 +2,7 @@ use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use thiserror::Error;
 
 use crate::calendar::{add_days_to_date_key, calendar_day_bounds, calendar_day_key};
+use crate::math::activity::detect_activity_bouts;
 use crate::math::recovery_index::{RecoveryIndexInput, compute_recovery_index};
 use crate::math::sensor_sample::SensorSample;
 use crate::math::timestamp_slice::{HasTimestamp, HasValue};
@@ -196,6 +197,18 @@ pub fn compute_derived_metrics(
         None
     };
 
+    // Slice sensor records to the day window before activity detection. The
+    // detector assumes contiguous-ish records, and we don't want to attribute
+    // motion from yesterday to today's bouts.
+    let day_records: Vec<_> = req
+        .sensor_records
+        .iter()
+        .filter(|r| r.timestamp >= day_start && r.timestamp < day_end)
+        .cloned()
+        .collect();
+    let activity_bouts =
+        detect_activity_bouts(&day_records, &req.sleep_detections, &req.baseline);
+
     Ok(PersistedDailyMetricV1 {
         schema_version: 1,
         strain_score: strain,
@@ -217,5 +230,6 @@ pub fn compute_derived_metrics(
         core_temperature_estimate: core_result.as_ref().map(|c| c.core_estimate),
         circadian_nadir: core_result.as_ref().map(|c| c.nadir),
         sleep_architecture_score: None,
+        activity_bouts,
     })
 }
