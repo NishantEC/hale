@@ -73,6 +73,13 @@ class WhoopBleManager {
       if (this._connectionState === 'disconnected' && !this.manualDisconnect) {
         this.autoConnect().catch(() => undefined);
       }
+    } else if (!wasBackground && this.isBackground && Platform.OS === 'ios') {
+      // Backgrounding on iOS: a scheduled-but-not-yet-fired reconnect
+      // timer would freeze across the suspend and fire at an arbitrary
+      // moment after foreground (skewed by suspend duration). Cancel it
+      // — foreground resume will re-issue a fresh autoConnect via the
+      // first branch.
+      this.clearReconnectTimeout();
     }
   }
 
@@ -250,6 +257,20 @@ class WhoopBleManager {
         ? await this.manager.devices([deviceId]).then((devices) => devices[0] ?? this.manager.connectToDevice(deviceId, { timeout: 8000 }))
         : await this.manager.connectToDevice(deviceId, { timeout: 8000 });
       this.device = connected;
+      // Register the disconnect handler IMMEDIATELY — before discovery,
+      // before notifications. If the strap drops between connectToDevice
+      // resolving and discovery completing (microseconds, but real on
+      // flaky links), we'd otherwise miss the disconnect event entirely
+      // and leave UI showing "connecting/discovering" forever. The
+      // handler is idempotent: cleanup() + setState('disconnected') can
+      // run alongside the catch below without issue.
+      connected.onDisconnected(() => {
+        this.cleanup();
+        this.setState('disconnected');
+        if (!this.manualDisconnect) {
+          this.scheduleReconnect().catch(() => undefined);
+        }
+      });
       await AsyncStorage.setItem(PREFERRED_DEVICE_KEY, deviceId);
 
       this.setState('discovering');
@@ -262,15 +283,6 @@ class WhoopBleManager {
       this.setState('disconnected');
       throw error;
     }
-
-    // Monitor disconnection
-    this.device?.onDisconnected(() => {
-      this.cleanup();
-      this.setState('disconnected');
-      if (!this.manualDisconnect) {
-        this.scheduleReconnect().catch(() => undefined);
-      }
-    });
   }
 
   async autoConnect(): Promise<boolean> {
@@ -376,26 +388,39 @@ class WhoopBleManager {
 
   // --- Commands ---
 
+  // Serializes all BLE writes through a single FIFO. Without this,
+  // every caller (battery poll, mode toggles, sync downloader,
+  // HistoricalDataAcks, probe/recovery flows) raced to push bytes onto
+  // the cmd characteristic. Audit R2 hypothesizes those collisions
+  // confused the strap into advancing its cursor past data we never
+  // persisted. One outstanding write at a time — done.
+  private writeQueue: Promise<void> = Promise.resolve();
+
   async writeCommand(base64Frame: string): Promise<void> {
     if (!this.device) throw new Error('Not connected');
-    // Decode the base64 to hex so we can see exactly what bytes hit the
-    // wire. Useful for confirming Maverick framing / CRC bytes match
-    // what whoopsi / the official APK send. Comment out the log if
-    // chatty.
-    try {
-      const bytes = base64ToUint8Array(base64Frame);
-      const hex = Array.from(bytes)
-        .map((b) => b.toString(16).padStart(2, '0'))
-        .join(' ');
-      console.log(`[bleManager.writeCommand] ${bytes.length}B: ${hex}`);
-    } catch {
-      // ignore decode failures
-    }
-    await this.device.writeCharacteristicWithResponseForService(
-      WHOOP_SERVICE_UUID,
-      CMD_TO_STRAP_UUID,
-      base64Frame,
-    );
+    const next = this.writeQueue.then(async () => {
+      // Re-check `device` inside the queued task: a disconnect could
+      // have nulled it while this write was waiting in line.
+      if (!this.device) throw new Error('Not connected');
+      try {
+        const bytes = base64ToUint8Array(base64Frame);
+        const hex = Array.from(bytes)
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join(' ');
+        console.log(`[bleManager.writeCommand] ${bytes.length}B: ${hex}`);
+      } catch {
+        // ignore decode failures
+      }
+      await this.device.writeCharacteristicWithResponseForService(
+        WHOOP_SERVICE_UUID,
+        CMD_TO_STRAP_UUID,
+        base64Frame,
+      );
+    });
+    // Keep the chain alive even if this write rejected — a single
+    // failure shouldn't deadlock every subsequent caller.
+    this.writeQueue = next.catch(() => {});
+    return next;
   }
 
   // --- Listeners ---
