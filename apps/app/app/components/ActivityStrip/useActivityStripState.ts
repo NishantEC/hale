@@ -40,7 +40,6 @@ const PRESS_ROUTES: Partial<Record<AccessoryState, string>> = {
   stale_sync: "/(tabs)/inspector",
   ble_connecting: "/device-settings",
   ble_syncing: "/(tabs)/inspector",
-  pipeline_running: "/(tabs)/inspector",
   upload_draining: "/(tabs)/inspector",
   offline_with_backlog: "/(tabs)/inspector",
   battery_low: "/device-settings",

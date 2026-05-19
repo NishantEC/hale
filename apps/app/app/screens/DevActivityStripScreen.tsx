@@ -35,7 +35,6 @@ const ALL_STATES: AccessoryState[] = [
   "low_power_paused",
   "ble_connecting",
   "ble_syncing",
-  "pipeline_running",
   "upload_draining",
   "synced_confirm",
   "offline_with_backlog",
@@ -107,8 +106,6 @@ function mockSnapshot(state: AccessoryState): AccessorySnapshot {
         syncIteration: 3,
         syncIterationCap: 5,
       }
-    case "pipeline_running":
-      return { ...base, pipelineState: "running" }
     case "upload_draining":
       return { ...base, queueIsSyncing: true, pendingCount: 247 }
     case "synced_confirm":

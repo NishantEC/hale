@@ -10,7 +10,6 @@ export type AccessoryState =
   | "low_power_paused"
   | "ble_connecting"
   | "ble_syncing"
-  | "pipeline_running"
   | "upload_draining"
   | "synced_confirm"
   | "offline_with_backlog"
@@ -68,7 +67,6 @@ export const ACCESSORY_METADATA: Record<Exclude<AccessoryState, "idle">, Metadat
   low_power_paused:       { priority: 65,  icon: "bolt.slash",                              tone: "gray",   minHoldMs: 800,  persistent: true  },
   ble_connecting:         { priority: 60,  icon: "wave.3.left",                             tone: "blue",   minHoldMs: 2000, persistent: false },
   ble_syncing:            { priority: 55,  icon: "arrow.triangle.2.circlepath",             tone: "blue",   minHoldMs: 1500, persistent: false },
-  pipeline_running:       { priority: 50,  icon: "chart.line.uptrend.xyaxis",               tone: "blue",   minHoldMs: 1500, persistent: false },
   upload_draining:        { priority: 45,  icon: "arrow.up.circle",                         tone: "teal",   minHoldMs: 1000, persistent: false },
   synced_confirm:         { priority: 40,  icon: "checkmark.circle.fill",                   tone: "green",  minHoldMs: 8000, persistent: false },
   offline_with_backlog:   { priority: 35,  icon: "wifi.slash",                              tone: "gray",   minHoldMs: 2000, persistent: true  },
@@ -101,7 +99,6 @@ const PREDICATES: Array<{ state: Exclude<AccessoryState, "idle">; test: (s: Acce
     s.connectionState === "connecting" ||
     s.connectionState === "discovering" },
   { state: "ble_syncing",           test: (s) => s.connectionState === "ready" && s.bleIsSyncing },
-  { state: "pipeline_running",      test: (s) => s.pipelineState === "running" },
   { state: "upload_draining",       test: (s) => s.queueIsSyncing && s.pendingCount > 0 },
   { state: "offline_with_backlog",  test: (s) => !s.isOnline && s.pendingCount > 0 },
   { state: "battery_low",           test: (s) => s.batteryLevel != null && s.batteryLevel < 20 && !s.isCharging },
@@ -152,7 +149,6 @@ export function copyFor(state: AccessoryState, snapshot: AccessorySnapshot): str
       if (iter != null && cap != null && cap > 1) return `Syncing · ${iter} of ${cap}`
       return stage ? `Syncing · ${stage}` : "Syncing…"
     }
-    case "pipeline_running":      return "Crunching scores…"
     case "upload_draining":       return `Uploading ${snapshot.pendingCount} record${snapshot.pendingCount === 1 ? "" : "s"}`
     case "synced_confirm": {
       const s = snapshot.syncSummary

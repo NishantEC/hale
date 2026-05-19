@@ -138,12 +138,6 @@ describe("deriveCandidate", () => {
     ).toBe<AccessoryState>("idle")
   })
 
-  it("pipeline_running", () => {
-    expect(deriveCandidate(snap({ pipelineState: "running" }))).toBe<AccessoryState>(
-      "pipeline_running",
-    )
-  })
-
   it("upload_draining requires queue syncing AND pending > 0", () => {
     expect(
       deriveCandidate(snap({ queueIsSyncing: true, pendingCount: 1 })),
@@ -194,7 +188,6 @@ describe("deriveCandidate", () => {
       "low_power_paused",
       "ble_connecting",
       "ble_syncing",
-      "pipeline_running",
       "upload_draining",
       "synced_confirm",
       "offline_with_backlog",
