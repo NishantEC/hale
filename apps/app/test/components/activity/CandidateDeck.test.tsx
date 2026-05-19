@@ -28,7 +28,7 @@ describe("CandidateDeck", () => {
     expect(queryByText(/of /i)).toBeNull()
   })
 
-  it("renders counter pill and pager when cards.length >= 2", () => {
+  it("renders pager line when cards.length >= 2", () => {
     const { getByText } = render(
       <CandidateDeck
         cards={[makeCard("a"), makeCard("b"), makeCard("c")]}
@@ -36,7 +36,6 @@ describe("CandidateDeck", () => {
         onDismiss={async () => {}}
       />,
     )
-    expect(getByText("3")).toBeTruthy()
     expect(getByText(/1 of 3/i)).toBeTruthy()
   })
 

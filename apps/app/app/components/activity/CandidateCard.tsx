@@ -45,9 +45,20 @@ function sparkPath(samples: number[], width = 280, height = 44): string {
     .join(" ")
 }
 
+/**
+ * Map legacy backend class names that have been dropped from the Rich-10
+ * taxonomy to their nearest current equivalent. The backend may still emit
+ * "General Exercise" for older candidates; we present them as "Mixed" so
+ * the UI stays consistent with the new visual system.
+ */
+function normalizeClass(t: string): string {
+  if (t === "General Exercise") return "Mixed"
+  return t
+}
+
 export const CandidateCard: FC<Props> = ({ card, onConfirm, onDismiss }) => {
   const colors = LOCAL_THEME.colors
-  const [chosenType, setChosenType] = useState(card.suggestedType)
+  const [chosenType, setChosenType] = useState(normalizeClass(card.suggestedType))
   const [sheetOpen, setSheetOpen] = useState(false)
   const [busy, setBusy] = useState(false)
 
