@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef } from "react"
+import { useEffect, useMemo, useReducer, useRef, useState } from "react"
 import { Linking } from "react-native"
 import { router } from "expo-router"
 import * as Battery from "expo-battery"
@@ -14,8 +14,9 @@ import {
   AccessorySnapshot,
   AccessoryState,
   AccessoryTone,
+  DISMISSABLE_STATES,
   copyFor,
-  deriveCandidate,
+  deriveCandidates,
 } from "./states"
 import { accessoryReducer, initialReducerState } from "./reducer"
 
@@ -28,6 +29,7 @@ export type ActivityStripView = {
   tone: AccessoryTone
   announcement: string
   onPress: (() => void) | null
+  onDismiss: (() => void) | null
 }
 
 const PRESS_ROUTES: Partial<Record<AccessoryState, string>> = {
@@ -102,14 +104,13 @@ export function useActivityStripState(): ActivityStripView {
   const sync = useSyncContext()
   const [reducerState, dispatch] = useReducer(accessoryReducer, initialReducerState)
 
-  const lpmRef = useRef(false)
-  const updateRef = useRef(false)
+  // useState (not useRef) so signal changes drive re-renders.
+  const [isLowPowerMode, setIsLowPowerMode] = useState(false)
+  const [isAppUpdateAvailable, setIsAppUpdateAvailable] = useState(false)
   useEffect(() => {
-    Battery.isLowPowerModeEnabledAsync().then((v) => {
-      lpmRef.current = v
-    })
+    Battery.isLowPowerModeEnabledAsync().then(setIsLowPowerMode)
     const sub = Battery.addLowPowerModeListener(({ lowPowerMode }) => {
-      lpmRef.current = lowPowerMode
+      setIsLowPowerMode(lowPowerMode)
     })
     return () => sub.remove()
   }, [])
@@ -117,7 +118,7 @@ export function useActivityStripState(): ActivityStripView {
     let cancelled = false
     Updates.checkForUpdateAsync()
       .then((u) => {
-        if (!cancelled) updateRef.current = u.isAvailable
+        if (!cancelled) setIsAppUpdateAvailable(u.isAvailable)
       })
       .catch(() => {})
     return () => {
@@ -126,7 +127,7 @@ export function useActivityStripState(): ActivityStripView {
   }, [])
 
   const snapshot = useMemo(
-    () => buildSnapshot(ble, sync, lpmRef.current, updateRef.current, Date.now()),
+    () => buildSnapshot(ble, sync, isLowPowerMode, isAppUpdateAvailable, Date.now()),
     [
       ble.error,
       ble.connectionState,
@@ -147,10 +148,19 @@ export function useActivityStripState(): ActivityStripView {
       sync.isOnline,
       sync.pendingCount,
       sync.isSyncing,
+      isLowPowerMode,
+      isAppUpdateAvailable,
     ],
   )
 
-  const candidate = deriveCandidate(snapshot)
+  // dismissedRef holds the state the user explicitly closed. Cleared when its
+  // predicate stops firing — so a *new* instance of the same problem will show.
+  const dismissedRef = useRef<AccessoryState | null>(null)
+  const firingStates = useMemo(() => deriveCandidates(snapshot), [snapshot])
+  if (dismissedRef.current && !firingStates.includes(dismissedRef.current)) {
+    dismissedRef.current = null
+  }
+  const candidate = firingStates.find((s) => s !== dismissedRef.current) ?? "idle"
 
   const candidateRef = useRef(candidate)
   useEffect(() => {
@@ -216,5 +226,14 @@ export function useActivityStripState(): ActivityStripView {
     }
   }, [state, ble, sync])
 
-  return { state, copy, icon, tone, announcement: copy, onPress }
+  const onDismiss = useMemo<(() => void) | null>(() => {
+    if (!DISMISSABLE_STATES.has(state)) return null
+    return () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {})
+      dismissedRef.current = state
+      dispatch({ type: "CANDIDATE", candidate: "idle", now: Date.now() })
+    }
+  }, [state])
+
+  return { state, copy, icon, tone, announcement: copy, onPress, onDismiss }
 }

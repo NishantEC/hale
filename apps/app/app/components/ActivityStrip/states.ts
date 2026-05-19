@@ -119,6 +119,21 @@ export function deriveCandidate(snapshot: AccessorySnapshot): AccessoryState {
   return "idle"
 }
 
+export function deriveCandidates(snapshot: AccessorySnapshot): AccessoryState[] {
+  return PREDICATES.filter((p) => p.test(snapshot)).map((p) => p.state)
+}
+
+export const DISMISSABLE_STATES: ReadonlySet<AccessoryState> = new Set<AccessoryState>([
+  "sync_error",
+  "ble_error",
+  "disconnected_was_worn",
+  "stale_sync",
+  "low_power_paused",
+  "offline_with_backlog",
+  "battery_low",
+  "alarm_armed_soon",
+])
+
 export function copyFor(state: AccessoryState, snapshot: AccessorySnapshot): string {
   switch (state) {
     case "alarm_firing":          return "Alarm — Tap to dismiss"

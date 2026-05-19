@@ -8,6 +8,7 @@ import {
   AccessorySnapshot,
   AccessoryState,
   AccessoryTone,
+  DISMISSABLE_STATES,
   copyFor,
 } from "@/components/ActivityStrip"
 import { LOCAL_THEME } from "@/utils/localTheme"
@@ -150,6 +151,9 @@ export default function DevActivityStripScreen() {
               <Text numberOfLines={1} style={[styles.pillText, { color }]}>
                 {copy}
               </Text>
+              {DISMISSABLE_STATES.has(selected) && (
+                <SymbolView name="xmark" size={12} tintColor={color} resizeMode="scaleAspectFit" />
+              )}
             </>
           ) : (
             <Text style={styles.idleText}>(hidden — accessory collapsed)</Text>

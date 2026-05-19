@@ -23,7 +23,7 @@ const SPIN_STATES: ReadonlySet<AccessoryState> = new Set<AccessoryState>([
 ])
 
 export const ActivityStrip = memo(function ActivityStrip({ view }: { view: ActivityStripView }) {
-  const { state, copy, icon, tone, onPress, announcement } = view
+  const { state, copy, icon, tone, onPress, onDismiss, announcement } = view
   const placement = NativeTabs.BottomAccessory.usePlacement()
   const fade = useRef(new Animated.Value(0)).current
   const spin = useRef(new Animated.Value(0)).current
@@ -66,6 +66,8 @@ export const ActivityStrip = memo(function ActivityStrip({ view }: { view: Activ
   const isInline = placement === "inline"
   const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] })
 
+  const showDismiss = !isInline && onDismiss != null
+
   return (
     <Animated.View style={[styles.wrap, isInline && styles.wrapInline, { opacity: fade }]}>
       <Pressable
@@ -89,12 +91,29 @@ export const ActivityStrip = memo(function ActivityStrip({ view }: { view: Activ
           </Text>
         )}
       </Pressable>
+      {showDismiss && (
+        <Pressable
+          onPress={onDismiss ?? undefined}
+          accessibilityLabel="Dismiss"
+          accessibilityRole="button"
+          hitSlop={8}
+          style={({ pressed }) => [styles.dismiss, pressed && styles.dismissPressed]}
+        >
+          <SymbolView name="xmark" size={12} tintColor={color} resizeMode="scaleAspectFit" />
+        </Pressable>
+      )}
     </Animated.View>
   )
 })
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
+  wrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
   wrapInline: { paddingHorizontal: 0 },
   pill: {
     flexDirection: "row",
@@ -102,8 +121,15 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingVertical: 6,
     paddingHorizontal: 12,
+    flexShrink: 1,
   },
   pillInline: { paddingHorizontal: 4 },
   pillPressed: { opacity: 0.6 },
   text: { fontSize: 14, fontWeight: "600", flexShrink: 1 },
+  dismiss: {
+    padding: 8,
+    marginLeft: 4,
+    opacity: 0.55,
+  },
+  dismissPressed: { opacity: 0.9 },
 })
