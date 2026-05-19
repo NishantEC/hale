@@ -61,18 +61,27 @@ fn baevsky_stress_score(rr_ms: &[f64]) -> Option<f64> {
     }
 
     let bin_width = 50.0f64;
+    // Preserve insertion order to match JS `Map` iteration semantics — when
+    // two bins tie on count, JS picks the bin that was inserted first. Using a
+    // HashMap here yields non-deterministic mode selection across runs.
+    let mut order: Vec<i64> = Vec::new();
     let mut bins: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
     for value in &clamped {
         let bin = (value / bin_width).floor() as i64;
-        *bins.entry(bin).or_insert(0) += 1;
+        let entry = bins.entry(bin).or_insert(0);
+        if *entry == 0 {
+            order.push(bin);
+        }
+        *entry += 1;
     }
 
     let mut mode_bin: i64 = 0;
     let mut mode_count: usize = 0;
-    for (bin, count) in &bins {
-        if *count > mode_count {
+    for bin in &order {
+        let count = bins[bin];
+        if count > mode_count {
             mode_bin = *bin;
-            mode_count = *count;
+            mode_count = count;
         }
     }
 

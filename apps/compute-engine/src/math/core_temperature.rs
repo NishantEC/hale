@@ -1,5 +1,6 @@
 use crate::math::TimestampedValue;
 use chrono::{DateTime, Timelike, Utc};
+use chrono_tz::Tz;
 use std::f64::consts::PI;
 
 const SKIN_TO_CORE_OFFSET: f64 = 4.0;
@@ -10,21 +11,30 @@ pub struct CoreTempResult {
     pub nadir: DateTime<Utc>,
 }
 
+fn resolve_tz(tz_input: &str) -> Tz {
+    if tz_input.is_empty() {
+        return "UTC".parse().expect("UTC");
+    }
+    tz_input.parse::<Tz>().unwrap_or_else(|_| "UTC".parse().expect("UTC"))
+}
+
 pub fn estimate_core_temperature(
     skin_temp_points: &[TimestampedValue],
     night_median_skin_temp: f64,
+    tz_input: &str,
 ) -> Option<CoreTempResult> {
     if skin_temp_points.len() < 10 || night_median_skin_temp <= 0.0 {
         return None;
     }
 
+    let tz = resolve_tz(tz_input);
     let mut min_temp = f64::INFINITY;
     let mut nadir_ts: Option<DateTime<Utc>> = None;
     let mut core_sum = 0.0_f64;
 
     for p in skin_temp_points.iter() {
-        let naive = p.timestamp.naive_utc();
-        let hour = naive.hour() as f64 + (naive.minute() as f64) / 60.0;
+        let local = p.timestamp.with_timezone(&tz);
+        let hour = local.hour() as f64 + (local.minute() as f64) / 60.0;
         let circadian_offset = -0.5 * ((2.0 * PI * (hour - 4.5)) / 24.0).cos();
         let core_estimate = p.value + SKIN_TO_CORE_OFFSET + circadian_offset;
         core_sum += core_estimate;
@@ -62,14 +72,14 @@ mod tests {
     #[test]
     fn returns_none_when_too_few_points() {
         let points: Vec<TimestampedValue> = (0..5).map(|i| point(i * 60, 33.0)).collect();
-        assert!(estimate_core_temperature(&points, 33.0).is_none());
+        assert!(estimate_core_temperature(&points, 33.0, "UTC").is_none());
     }
 
     #[test]
     fn returns_none_when_median_zero_or_negative() {
         let points: Vec<TimestampedValue> = (0..20).map(|i| point(i * 60, 33.0)).collect();
-        assert!(estimate_core_temperature(&points, 0.0).is_none());
-        assert!(estimate_core_temperature(&points, -1.0).is_none());
+        assert!(estimate_core_temperature(&points, 0.0, "UTC").is_none());
+        assert!(estimate_core_temperature(&points, -1.0, "UTC").is_none());
     }
 
     #[test]
@@ -83,7 +93,7 @@ mod tests {
                 point(3600 + i * 1800, v)
             })
             .collect();
-        let r = estimate_core_temperature(&points, 33.0).expect("expected Some");
+        let r = estimate_core_temperature(&points, 33.0, "UTC").expect("expected Some");
         // Nadir is the timestamp of the minimum skin temp
         assert_eq!(r.nadir, ts(3600 + 10 * 1800));
         // core_estimate ~= skin + 4 + small offset, value around 37.x
@@ -95,7 +105,7 @@ mod tests {
         let points: Vec<TimestampedValue> = (0..20)
             .map(|i| point(3600 + i * 1800, 33.456))
             .collect();
-        let r = estimate_core_temperature(&points, 33.0).expect("expected Some");
+        let r = estimate_core_temperature(&points, 33.0, "UTC").expect("expected Some");
         let scaled = r.core_estimate * 10.0;
         assert!((scaled - scaled.round()).abs() < 1e-9, "got {}", r.core_estimate);
     }
