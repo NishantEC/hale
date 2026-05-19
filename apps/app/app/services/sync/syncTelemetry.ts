@@ -4,6 +4,7 @@
 // runtime health panel — durable history goes to console_logs / Sentry.
 
 import { reportError } from "../observability/sentry"
+import { appendLog } from "../observability/persistentLog"
 
 export type DrainOutcomeRecord = {
   at: number
@@ -117,6 +118,12 @@ export function recordPersistFailure(rec: PersistFailureRecord): void {
     "batch=", rec.batchSize,
     "msg=", rec.message,
   )
+  appendLog("error", "persist", "persistBatch failed", {
+    source: rec.source,
+    trimValue: rec.trimValue,
+    batchSize: rec.batchSize,
+    message: rec.message,
+  })
   const now = Date.now()
   if (now - lastPersistFailureReportAt >= PERSIST_FAILURE_REPORT_INTERVAL_MS) {
     lastPersistFailureReportAt = now
@@ -139,6 +146,11 @@ export function recordApiFailure(rec: ApiFailureRecord): void {
     rec.status != null ? `status=${rec.status}` : "",
     "msg=", rec.message,
   )
+  appendLog("error", "api", `${rec.method} ${rec.path}`, {
+    kind: rec.kind,
+    status: rec.status ?? null,
+    message: rec.message,
+  })
   const now = Date.now()
   if (now - lastApiFailureReportAt >= API_FAILURE_REPORT_INTERVAL_MS) {
     lastApiFailureReportAt = now
@@ -154,6 +166,14 @@ export function recordApiFailure(rec: ApiFailureRecord): void {
 
 export function recordSyncSession(rec: SyncSession): void {
   syncSessions = [rec, ...syncSessions].slice(0, MAX_SYNC_SESSIONS)
+  appendLog(rec.error ? "error" : "info", "sync", `session ${rec.stopReason}`, {
+    durationMs: rec.durationMs,
+    iterations: rec.iterations,
+    recordsPulled: rec.recordsPulled,
+    oldestBatchMs: rec.oldestBatchMs,
+    newestBatchMs: rec.newestBatchMs,
+    error: rec.error,
+  })
   emit()
 }
 
@@ -172,6 +192,11 @@ export function recordDetectedGap(rec: DetectedGap): void {
     new Date(rec.toMs).toISOString(),
     `(${rec.durationMinutes.toFixed(1)}m)`,
   )
+  appendLog("warn", "sync", "gap detected", {
+    fromMs: rec.fromMs,
+    toMs: rec.toMs,
+    durationMinutes: rec.durationMinutes,
+  })
   emit()
 }
 

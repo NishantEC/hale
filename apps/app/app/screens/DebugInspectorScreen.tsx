@@ -1,9 +1,12 @@
 import { FC, useCallback, useEffect, useState } from "react"
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native"
+import { ActivityIndicator, Alert, RefreshControl, View, ViewStyle } from "react-native"
+import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import { ActionsCard } from "@/components/Inspector/ActionsCard"
+import { SyncProgressCard } from "@/components/Inspector/SyncProgressCard"
 import { DiagnosticsCard } from "@/components/Inspector/DiagnosticsCard"
+import { LogsCard } from "@/components/Inspector/LogsCard"
 import { LiveMonitorCard } from "@/components/Inspector/LiveMonitorCard"
 import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
@@ -26,7 +29,8 @@ import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 export const DebugInspectorScreen: FC = () => {
   const { colors } = LOCAL_THEME
   const { selectedDate, refreshDashboard } = useDashboard()
-  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange, rewindAndResync, probeRewindProbe, probeRewindVerbose, forceTrimRewindAndSync, whoopsiInitThenForceTrim } = useBle()
+  const ble = useBle()
+  const { syncNow, rebootStrap, powerCycleStrap, probeDataRange, rewindAndResync, probeRewindProbe, probeRewindVerbose, forceTrimRewindAndSync, whoopsiInitThenForceTrim } = ble
 
   // Earliest timestamp confirmed in the GetDataRange response (offset 35
   // of the 69-byte payload): 2026-05-05 23:25:47 UTC. The strap reports
@@ -123,7 +127,7 @@ export const DebugInspectorScreen: FC = () => {
       const db = openDatabase()
       const result = await runForceUpload(db, {
         post: (tableName, payloads) =>
-          apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }),
+          apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }, 60_000),
         onProgress: (progress) => {
           setBanner(
             `Uploading ${progress.tableName} batch (${progress.batchSize})… ${progress.uploaded} / ${progress.total}`,
@@ -345,6 +349,38 @@ export const DebugInspectorScreen: FC = () => {
     }
   }, [probeDataRange])
 
+  const handleRecoverBacklog = useCallback(() => {
+    Alert.alert(
+      "Recover backlog? (experimental)",
+      "Runs the full WHOOPSI init sequence (HELLO_EXT Maverick + battery probes + GET_DATA_RANGE) then FORCE_TRIM(0,0) Maverick. Per the open hypothesis from the #89 RE notes, the strap may gate FORCE_TRIM behind a Maverick identity handshake we usually skip — this is the path we never fully tested. If it works the cursor rewinds and a full resync runs; skip-enqueue dedups already-synced rows so only the gaps fill. If it doesn't, the result alert will say 'no movement' and nothing is touched.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Try Recovery",
+          style: "destructive",
+          onPress: async () => {
+            setError(null)
+            setBanner("WHOOPSI init → FORCE_TRIM(0,0) → probe → resync (if rewound)…")
+            try {
+              const result = await whoopsiInitThenForceTrim()
+              const verdict = result.rewound
+                ? "Rewound ✓ — sync started"
+                : "No movement — WHOOPSI-gated FORCE_TRIM didn't move the cursor either"
+              Alert.alert(
+                "Recover Backlog (WHOOPSI init)",
+                `GET_HELLO_EXT:\n${result.helloExtResponse}\n\nBefore:\n${result.before}\n\nFORCE_TRIM response:\n${result.trimResponse}\n\nAfter:\n${result.after}\n\n${verdict}`,
+              )
+              setBanner(verdict)
+              await refreshInspector()
+            } catch (e: any) {
+              setError(`Recover failed: ${e?.message ?? "unknown error"}`)
+            }
+          },
+        },
+      ],
+    )
+  }, [whoopsiInitThenForceTrim, refreshInspector])
+
   const handlePowerCycleStrap = useCallback(() => {
     Alert.alert(
       "Power-cycle strap?",
@@ -367,9 +403,27 @@ export const DebugInspectorScreen: FC = () => {
     )
   }, [powerCycleStrap])
 
+  const scrollY = useSharedValue(0)
+  const onScroll = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y
+    },
+  })
+
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.screenBackground }} edges={["top", "bottom"]}>
-      <ScrollView contentContainerStyle={{ padding: 14 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.screenBackground }} edges={["top"]}>
+      <Animated.ScrollView
+        contentContainerStyle={$container}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={() => void refreshInspector()}
+            tintColor={colors.tint}
+          />
+        }
+      >
         <Text text="Inspector" size="lg" weight="semiBold" style={{ marginBottom: 14, color: colors.text }} />
 
         {error ? (
@@ -384,8 +438,11 @@ export const DebugInspectorScreen: FC = () => {
         ) : null}
 
         <LiveMonitorCard overview={overview} />
+        <SyncProgressCard />
         <DiagnosticsCard overview={overview} lastPipelineRun={lastPipelineRun} />
+        <LogsCard />
         <ActionsCard
+          isSyncing={ble.isSyncing}
           onSync={handleSync}
           onForceUpload={handleForceUpload}
           onRunPipeline={handleRunPipeline}
@@ -404,6 +461,7 @@ export const DebugInspectorScreen: FC = () => {
           onForceTrimRewind={handleForceTrimRewind}
           onForceTrimRewindMaverick={handleForceTrimRewindMaverick}
           onWhoopsiInitThenForceTrim={handleWhoopsiInitThenForceTrim}
+          onRecoverBacklog={handleRecoverBacklog}
         />
 
         {isLoading && !overview ? (
@@ -411,7 +469,18 @@ export const DebugInspectorScreen: FC = () => {
             <ActivityIndicator color={colors.tint} />
           </View>
         ) : null}
-      </ScrollView>
+      </Animated.ScrollView>
     </SafeAreaView>
   )
+}
+
+// Tab-respecting layout: top edge is SafeArea, bottom is left to the
+// native tab bar (so content scrolls past it under the translucent
+// blur). paddingBottom is the runway so the last action button isn't
+// glued to the tab strip.
+const $container: ViewStyle = {
+  paddingHorizontal: 14,
+  paddingTop: 24,
+  paddingBottom: 100,
+  gap: 12,
 }

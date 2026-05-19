@@ -2,6 +2,8 @@
 // of our persistence. Polls the strap every `DEFAULT_INTERVAL_MS` to drain
 // whatever has been written since the last tick. Uses the existing
 // syncNow() so durable-ACK + skip-enqueue dedup still apply.
+
+import { appendLog } from "../observability/persistentLog"
 //
 // Singleton: only one timer alive in the JS VM at any time. start() is
 // idempotent — calling it again with a running daemon is a no-op.
@@ -88,6 +90,7 @@ export function startContinuousSyncDaemon(opts: ContinuousSyncOptions): void {
     interval,
     "ms",
   )
+  appendLog("info", "daemon", "started", { intervalMs: interval })
 }
 
 export function stopContinuousSyncDaemon(): void {
@@ -103,6 +106,11 @@ export function stopContinuousSyncDaemon(): void {
     state.skippedDisconnected,
     ")",
   )
+  appendLog("info", "daemon", "stopped", {
+    ticks: state.ticks,
+    skippedBusy: state.skippedBusy,
+    skippedDisconnected: state.skippedDisconnected,
+  })
 }
 
 export function getContinuousSyncStats() {
