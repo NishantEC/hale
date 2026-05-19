@@ -1,4 +1,6 @@
 target/
 tests/
-benches/
+# benches/ stays in the build context — Cargo manifest references benches/derived_metrics.rs
+# via [[bench]] and will fail to parse if the file is missing, even though
+# `cargo build --bin noop-compute-engine` doesn't compile bench code.
 *.md
