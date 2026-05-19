@@ -1,6 +1,7 @@
 pub mod hrv;
 pub mod sensor_sample;
 pub mod skin_temp;
+pub mod sleep_consistency;
 pub mod spo2;
 pub mod strain;
 pub mod stress;
