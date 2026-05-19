@@ -1,6 +1,7 @@
 import { FC } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 
+import { BoutCard, GapRule } from "@/components/activity"
 import { Text } from "@/components/Text"
 import type { TapeEvent } from "@/utils/buildTodayTape"
 import { LOCAL_THEME } from "@/utils/localTheme"
@@ -62,6 +63,33 @@ export const TodayCard: FC<Props> = ({ events, onEventPress }) => {
 
 const Row: FC<{ event: TapeEvent; onPress?: () => void }> = ({ event, onPress }) => {
   const { colors } = LOCAL_THEME
+
+  // Workouts and gaps get the new activity-component shapes when the payload
+  // metadata is present. Sleep / recovery / journal / vital events keep the
+  // existing dot-and-text row.
+  if (event.type === "workout" && event.payload?.activityType) {
+    const p = event.payload
+    const activityType = p.activityType!
+    if ((activityType === "Off-Wrist" || activityType === "No Data") && p.startIso) {
+      const start = new Date(p.startIso)
+      const end = p.endIso ? new Date(p.endIso) : new Date(start.getTime() + (p.durationMinutes ?? 0) * 60_000)
+      return <GapRule kind={activityType} startTime={start} endTime={end} />
+    }
+    return (
+      <View style={{ marginHorizontal: -12 }}>
+        <BoutCard
+          activityType={activityType}
+          startTime={p.startIso ? new Date(p.startIso) : new Date(event.ts)}
+          durationMinutes={p.durationMinutes ?? 0}
+          heartRateAvg={p.heartRateAvg ?? 0}
+          intensity={p.intensity ?? "light"}
+          strainScore={p.strain ?? 0}
+          onPress={onPress}
+        />
+      </View>
+    )
+  }
+
   const inner = (
     <View style={styles.row}>
       <Text
