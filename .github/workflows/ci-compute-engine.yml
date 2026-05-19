@@ -5,12 +5,15 @@ on:
       - 'apps/compute-engine/**'
       - 'apps/backend/.fixtures/compute-engine-golden/**'
       - '.github/workflows/ci-compute-engine.yml'
+      - 'pnpm-lock.yaml'
   push:
     branches: [main]
     paths:
       - 'apps/compute-engine/**'
       - 'apps/backend/.fixtures/compute-engine-golden/**'
       - '.github/workflows/ci-compute-engine.yml'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
 
 jobs:
   rust:
