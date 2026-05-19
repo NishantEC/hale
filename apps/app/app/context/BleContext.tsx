@@ -42,6 +42,9 @@ import {
   startContinuousSyncDaemon,
   stopContinuousSyncDaemon,
 } from "@/services/sync/continuousSyncDaemon"
+import { recordDetectedGap, recordSyncSession, type SyncSession } from "@/services/sync/syncTelemetry"
+import { detectGaps } from "@/services/sync/gapDetector"
+import { listRawSensorRecordsByDateRange } from "@/services/db/repositories/rawSensorRecord"
 import {
   startAndroidForegroundService,
   stopAndroidForegroundService,
@@ -508,6 +511,15 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     setSyncIteration(0)
     setSyncLastStopReason(null)
     setError(null)
+    // Captured for syncTelemetry.recordSyncSession in the finally block —
+    // covers the throw path too so a crashed sync still leaves a record.
+    const sessionStartedAt = Date.now()
+    let sessionRecordsPulled = 0
+    let sessionIterations = 0
+    let sessionOldestBatchMs: number | null = null
+    let sessionNewestBatchMs: number | null = null
+    let sessionStopReason: SyncSession["stopReason"] = "error"
+    let sessionError: string | null = null
 
     try {
       const commandService = new (
@@ -587,10 +599,20 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
               if (iterationNewestMs == null || newest > iterationNewestMs) {
                 iterationNewestMs = newest
               }
+              // Track session-level window across all batches (not just the
+              // current iteration's) for the recorded SyncSession.
+              if (sessionOldestBatchMs == null || oldest < sessionOldestBatchMs) {
+                sessionOldestBatchMs = oldest
+              }
+              if (sessionNewestBatchMs == null || newest > sessionNewestBatchMs) {
+                sessionNewestBatchMs = newest
+              }
             }
           },
         })
         totalRecords += records.length
+        sessionRecordsPulled += records.length
+        sessionIterations = iterations
         console.log(
           `[syncNow] pass ${iterations}: ${records.length} records, persisted ${persistedCount} cumulative`,
         )
@@ -630,10 +652,29 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
 
       setSyncLastStopReason(lastStopReason)
+      sessionStopReason = lastStopReason as SyncSession["stopReason"]
       // Loop reached a terminal signal (caught_up / no_records /
       // stuck_cursor / iter_cap) without throwing — strap session is
       // wound down cleanly. Next tap can skip the preflight.
       lastSyncCleanRef.current = true
+
+      // Scan the last 6h of local records for time-jumps ≥ 5 min. Each
+      // detected gap goes into the telemetry ring so the Inspector
+      // surfaces "you lost 14 min between A and B" without requiring a
+      // backend round-trip. Soft-fail — a DB hiccup here shouldn't
+      // poison the rest of the post-sync flow.
+      try {
+        const now = Date.now()
+        const since = now - 6 * 60 * 60 * 1000
+        const recent = await listRawSensorRecordsByDateRange(db, since, now)
+        const tsList = recent.map((r) => Number(r.timestamp))
+        const detectedAt = Date.now()
+        for (const gap of detectGaps(tsList)) {
+          recordDetectedGap({ ...gap, detectedAt })
+        }
+      } catch (err) {
+        console.warn("[syncNow] gap detector failed", err)
+      }
       setSyncProgress((current) => ({
         state: "complete",
         chunksReceived: current?.chunksReceived ?? 0,
@@ -655,10 +696,24 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     } catch (nextError: any) {
       console.error("[syncNow] failed", nextError)
       setError(nextError?.message ?? "Sync failed")
+      sessionStopReason = "error"
+      sessionError = nextError?.message ?? String(nextError)
     } finally {
       isSyncingRef.current = false
       setIsSyncing(false)
       setSyncStage("")
+      // Record the session regardless of success / failure path. Lets the
+      // Inspector show why a sync ended without scraping the JS console.
+      recordSyncSession({
+        startedAt: sessionStartedAt,
+        durationMs: Date.now() - sessionStartedAt,
+        iterations: sessionIterations,
+        stopReason: sessionStopReason,
+        oldestBatchMs: sessionOldestBatchMs,
+        newestBatchMs: sessionNewestBatchMs,
+        recordsPulled: sessionRecordsPulled,
+        error: sessionError,
+      })
     }
   }, [refreshDashboard, runPipelineInBackground])
 
