@@ -455,6 +455,24 @@ None. All design choices decided in conversation or via Codex feedback.
 
 ---
 
+## Phase 1 measurement (2026-05-19)
+
+Microbenchmark gate (Task 22 of `2026-05-19-rust-compute-engine-phase-1.md`).
+Same input (`normal-ist.json` golden fixture, 2000 samples + 2000 sensor records).
+Median over 100 iterations each. Apple Silicon (arm64 / M-series).
+
+| Implementation | Median per iteration |
+|---|---|
+| Rust (release, criterion) | 0.235 ms |
+| JS (Node 22, tsx) | 1.36 ms |
+| **Speedup** | **5.79x** |
+
+Gate: ≥5× ⇒ PASS
+
+Rust beats JS by ~5.8×, clearing the promotion gate. Caveat: Rust is measured under criterion with full release optimisations and warm-up; JS is measured single-threaded under `tsx` (no AOT compile, V8 JIT-warmed via the 10-iteration warm-up loop). The realistic Cloud Run comparison will differ — but for the local Phase 1 gate the signal is unambiguous.
+
+---
+
 ## What I need to build it
 
 User has confirmed:
