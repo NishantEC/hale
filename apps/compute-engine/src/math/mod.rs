@@ -1,3 +1,4 @@
+pub mod core_temperature;
 pub mod hrv;
 pub mod sensor_sample;
 pub mod skin_temp;
