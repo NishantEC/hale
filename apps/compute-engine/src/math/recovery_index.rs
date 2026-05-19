@@ -106,7 +106,7 @@ mod tests {
         // spo2: 100 - 0 = 100
         // temp: 100
         // index = 0.4*60 + 0.25*94 + 0.15*61.9 + 0.1*100 + 0.1*100 ≈ 24+23.5+9.285+10+10 = 76.785 → 77
-        assert!(r >= 70.0 && r <= 85.0, "got {}", r);
+        assert!((70.0..=85.0).contains(&r), "got {}", r);
     }
 
     #[test]
@@ -131,7 +131,7 @@ mod tests {
         i.hrv_rmssd = 500.0;
         i.baseline_rmssd = 50.0;
         let r = compute_recovery_index(&i).expect("expected Some");
-        assert!(r >= 0.0 && r <= 100.0);
+        assert!((0.0..=100.0).contains(&r));
     }
 
     #[test]
@@ -152,7 +152,7 @@ mod tests {
         // sleep: 70 + default 15 = 85
         // strain default 70, spo2 default 80, temp default 80
         // 0.4*50 + 0.25*85 + 0.15*70 + 0.1*80 + 0.1*80 = 20+21.25+10.5+8+8 = 67.75 → 68
-        assert!(r >= 65.0 && r <= 72.0, "got {}", r);
+        assert!((65.0..=72.0).contains(&r), "got {}", r);
     }
 
     #[test]
@@ -163,6 +163,6 @@ mod tests {
         let r = compute_recovery_index(&i).expect("expected Some");
         // hrv score = 50 (default), no lf/hf bonus
         // Score still in mid range
-        assert!(r >= 50.0 && r <= 90.0, "got {}", r);
+        assert!((50.0..=90.0).contains(&r), "got {}", r);
     }
 }

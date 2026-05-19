@@ -198,7 +198,7 @@ mod tests {
             detection(day * 3, day * 3 - 3600, day * 3 + 5 * 3600, 6.0),
         ];
         let r = sleep_consistency_score(&records, ts(day * 5)).expect("expected Some");
-        assert!(r >= 0.0 && r <= 100.0);
+        assert!((0.0..=100.0).contains(&r));
         assert!(r < 99.0, "expected lower-than-perfect score, got {}", r);
     }
 
@@ -278,7 +278,7 @@ mod tests {
         ];
         let r = sleep_consistency_score_from_night_features(&nights, ts(86_400 * 5))
             .expect("expected Some");
-        assert!(r >= 0.0 && r <= 100.0);
+        assert!((0.0..=100.0).contains(&r));
         assert!(r < 90.0);
     }
 }

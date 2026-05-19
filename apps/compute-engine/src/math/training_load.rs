@@ -27,9 +27,9 @@ pub fn compute_training_load_ratio(history: &[StrainPoint]) -> Option<TrainingLo
     let mut acute_ewma = sorted[0].strain;
     let mut chronic_ewma = sorted[0].strain;
 
-    for i in 1..sorted.len() {
-        acute_ewma = acute_alpha * sorted[i].strain + (1.0 - acute_alpha) * acute_ewma;
-        chronic_ewma = chronic_alpha * sorted[i].strain + (1.0 - chronic_alpha) * chronic_ewma;
+    for item in sorted.iter().skip(1) {
+        acute_ewma = acute_alpha * item.strain + (1.0 - acute_alpha) * acute_ewma;
+        chronic_ewma = chronic_alpha * item.strain + (1.0 - chronic_alpha) * chronic_ewma;
     }
 
     let ratio = if chronic_ewma > 0.1 {

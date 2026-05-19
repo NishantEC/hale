@@ -37,11 +37,11 @@ fn lower_bound<T: HasTimestamp>(arr: &[T], target: DateTime<Utc>) -> usize {
 }
 
 /// Half-open `[start, end)`. Mirrors the JS implementation's binary-search slice.
-pub fn slice_by_timestamp<'a, T: HasTimestamp>(
-    arr: &'a [T],
+pub fn slice_by_timestamp<T: HasTimestamp>(
+    arr: &[T],
     start: DateTime<Utc>,
     end: DateTime<Utc>,
-) -> &'a [T] {
+) -> &[T] {
     if arr.is_empty() {
         return &[];
     }
