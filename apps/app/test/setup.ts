@@ -25,6 +25,34 @@ jest.doMock("react-native", () => {
   )
 })
 
+// react-native-reanimated + react-native-worklets fail to initialize under
+// jest ("Native part of Worklets doesn't seem to be initialized"). The
+// shipped reanimated/mock pulls worklets in transitively so it's not enough
+// — we replace both modules with inert stubs sufficient for component tests
+// that just need useSharedValue / useAnimatedStyle / withTiming / runOnJS
+// not to throw.
+jest.mock("react-native-worklets", () => ({}))
+jest.mock("react-native-reanimated", () => {
+  const View = require("react-native").View
+  return {
+    __esModule: true,
+    default: { View, ScrollView: View, createAnimatedComponent: (c: unknown) => c },
+    View,
+    ScrollView: View,
+    useSharedValue: (v: unknown) => ({ value: v }),
+    useAnimatedStyle: () => ({}),
+    useAnimatedScrollHandler: () => () => {},
+    withTiming: (v: unknown, _opts?: unknown, cb?: (finished: boolean) => void) => {
+      if (cb) cb(true)
+      return v
+    },
+    withSpring: (v: unknown) => v,
+    runOnJS: (fn: (...args: unknown[]) => unknown) => fn,
+    runOnUI: (fn: (...args: unknown[]) => unknown) => fn,
+    Easing: { inOut: () => () => 0, out: () => () => 0, ease: () => 0, linear: () => 0 },
+  }
+})
+
 jest.mock("i18next", () => ({
   currentLocale: "en",
   t: (key: string, params: Record<string, string>) => {
