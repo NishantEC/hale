@@ -1,3 +1,4 @@
+pub mod stress;
 pub mod timestamp_slice;
 pub mod util;
 
