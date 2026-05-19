@@ -65,10 +65,11 @@ import type {
 } from '../processing/interfaces.js';
 import { ComputeEngineClient } from './compute-engine-client.js';
 import {
-  buildDayRequest,
+  buildBatchRequest,
   liftActivityBouts,
   liftPersistedToBundle,
 } from './compute-engine-bridge.js';
+import type { PersistedDailyMetricV1 } from './compute-engine-types.js';
 
 @Injectable()
 export class PipelineService {
@@ -598,57 +599,88 @@ export class PipelineService {
     );
     const usingRust = this.computeEngineClient.isEnabled();
     const runId = randomUUID();
-    let stickyFallback = false;
     const derivedMetricsByDay: { dayDate: Date; metrics: DerivedMetricsBundle }[] = [];
     const rustActivityBouts: ActivityBout[] = [];
     let rustOwnsActivities = false;
-    for (const dayDate of referenceDays) {
-      if (usingRust && !stickyFallback) {
-        const dayKey = this.startOfDay(dayDate, timeZone)
-          .toISOString()
-          .slice(0, 10);
-        const req = buildDayRequest({
-          samples: sanitized,
-          sensorRecords,
-          effectiveFeatures,
-          sleepDetections,
-          baseline: recomputedBaseline,
-          dayDate,
-          timeZone,
-        });
-        const r = await this.computeEngineClient.computeDay(req, {
-          userId,
-          runId,
-          day: dayKey,
-        });
-        if (r.ok) {
+
+    // Phase 2 batch: one HTTP call covers every reference day. Rust loops
+    // days internally — Node only allocates the request payload once,
+    // avoiding the per-day 65 MiB allocation churn that pushed memory past
+    // 4 GiB in Phase 1 per-day. On any failure (network/timeout/parse/etc.)
+    // we fall back to the in-process JS loop for ALL days, which keeps the
+    // shadow-mode result invariants simple.
+    let batchSucceeded = false;
+    if (usingRust && referenceDays.length > 0) {
+      const batchReq = buildBatchRequest({
+        samples: sanitized,
+        sensorRecords,
+        effectiveFeatures,
+        sleepDetections,
+        baseline: recomputedBaseline,
+        dayDates: referenceDays,
+        timeZone,
+      });
+      const r = await this.computeEngineClient.computeBatch(batchReq, {
+        userId,
+        runId,
+        days: referenceDays.length,
+      });
+      if (r.ok) {
+        const byDay = new Map<string, PersistedDailyMetricV1>();
+        for (const entry of r.result.derivedMetricsByDay) {
+          byDay.set(entry.dayDate, entry.metrics);
+        }
+        for (const dayDate of referenceDays) {
+          const key = this.startOfDay(dayDate, timeZone)
+            .toISOString()
+            .slice(0, 10);
+          const persisted = byDay.get(key);
+          if (!persisted) {
+            // Rust returned a different set of day keys than we sent.
+            // Treat as malformed and fall back to JS.
+            this.logger.warn(
+              `compute-engine batch missing day ${key}; falling back to JS`,
+            );
+            derivedMetricsByDay.length = 0;
+            rustActivityBouts.length = 0;
+            rustOwnsActivities = false;
+            break;
+          }
           derivedMetricsByDay.push({
             dayDate,
-            metrics: liftPersistedToBundle(r.result),
+            metrics: liftPersistedToBundle(persisted),
           });
-          rustOwnsActivities = true;
-          rustActivityBouts.push(...liftActivityBouts(r.result));
-          continue;
+          rustActivityBouts.push(...liftActivityBouts(persisted));
         }
-        stickyFallback = true;
-        // Drop any Rust-collected bouts and revert to TS detector output
-        // so we don't ship half-and-half results.
-        rustActivityBouts.length = 0;
-        rustOwnsActivities = false;
+        if (derivedMetricsByDay.length === referenceDays.length) {
+          rustOwnsActivities = true;
+          batchSucceeded = true;
+        }
       }
-      derivedMetricsByDay.push({
-        dayDate,
-        metrics: computeDerivedMetrics(
-          sanitized,
-          sensorRecords,
-          effectiveFeatures,
-          sleepDetections,
-          recomputedBaseline,
+    }
+
+    if (!batchSucceeded) {
+      // JS in-process loop. Either Rust was disabled, the batch call failed,
+      // or the response was missing day keys. Bridge code is bypassed and
+      // memory pressure stays at baseline.
+      derivedMetricsByDay.length = 0;
+      rustActivityBouts.length = 0;
+      rustOwnsActivities = false;
+      for (const dayDate of referenceDays) {
+        derivedMetricsByDay.push({
           dayDate,
-          timeZone,
-          metricsPrecomputed,
-        ),
-      });
+          metrics: computeDerivedMetrics(
+            sanitized,
+            sensorRecords,
+            effectiveFeatures,
+            sleepDetections,
+            recomputedBaseline,
+            dayDate,
+            timeZone,
+            metricsPrecomputed,
+          ),
+        });
+      }
     }
 
     // When the Rust path owned every day's compute, prefer its bouts over

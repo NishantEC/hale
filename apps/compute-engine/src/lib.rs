@@ -20,7 +20,8 @@ pub fn build_app() -> Router {
             "/v1/compute/derived-metrics-day",
             post(handlers::compute_day),
         )
-        .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
+        .route("/v1/compute/batch", post(handlers::compute_batch))
+        .layer(DefaultBodyLimit::max(64 * 1024 * 1024))
         .layer(TraceLayer::new_for_http())
         .layer(CompressionLayer::new().gzip(true))
         .layer(RequestDecompressionLayer::new().gzip(true))

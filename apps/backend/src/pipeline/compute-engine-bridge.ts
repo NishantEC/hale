@@ -11,6 +11,7 @@ import type {
   ActivityType,
 } from '../processing/activity-detector.js';
 import type {
+  ComputeBatchRequestV1,
   ComputeDerivedMetricsDayRequestV1,
   PersistedDailyMetricV1,
 } from './compute-engine-types.js';
@@ -76,6 +77,65 @@ export function buildDayRequest(
     })) as any,
     baseline: args.baseline,
     referenceDate: args.dayDate.toISOString().slice(0, 10),
+    timeZone: args.timeZone,
+  };
+}
+
+interface BuildBatchArgs {
+  samples: SignalSample[];
+  sensorRecords: HistoricalSensorRecord[];
+  effectiveFeatures: NightFeatureSet[];
+  sleepDetections: SleepDetectionSummary[];
+  baseline: BaselineProfile;
+  dayDates: Date[];
+  timeZone: string;
+}
+
+/**
+ * Build ONE request body covering every reference day in the pipeline run.
+ * Rust loops days internally, so the heavy JSON.stringify + Buffer.from +
+ * gzipSync allocation happens once per pipeline run instead of once per day.
+ * That's the change that pulls peak Node heap from ~3 GiB (per-day Phase 1)
+ * back to under 1 GiB on the heaviest user.
+ */
+export function buildBatchRequest(
+  args: BuildBatchArgs,
+): ComputeBatchRequestV1 {
+  const samples = args.samples.map((s) => ({
+    timestamp: toIso(s.timestamp),
+    heartRate: s.heartRate,
+    ibiMs: s.ibiMs,
+  }));
+  const sensorRecords = args.sensorRecords
+    .filter(
+      (r) => r.spo2Red != null && r.spo2IR != null && r.skinTempRaw != null,
+    )
+    .map((r) => ({
+      timestamp: toIso(r.timestamp),
+      heartRate: r.heartRate,
+      spo2Red: r.spo2Red,
+      spo2IR: r.spo2IR,
+      skinTempRaw: r.skinTempRaw,
+      gravityX: r.gravityX,
+      gravityY: r.gravityY,
+      gravityZ: r.gravityZ,
+    }));
+  return {
+    schemaVersion: 1,
+    samples: samples as any,
+    sensorRecords: sensorRecords as any,
+    nightFeatures: args.effectiveFeatures.map((f) => ({
+      ...f,
+      nightDate: toIso(f.nightDate),
+    })) as any,
+    sleepDetections: args.sleepDetections.map((d) => ({
+      ...d,
+      nightDate: toIso(d.nightDate),
+      bedtime: toIso(d.bedtime),
+      wakeTime: toIso(d.wakeTime),
+    })) as any,
+    baseline: args.baseline,
+    dayDates: args.dayDates.map((d) => d.toISOString().slice(0, 10)),
     timeZone: args.timeZone,
   };
 }

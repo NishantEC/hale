@@ -106,6 +106,18 @@ export const ActivityBoutV1 = z.object({
 });
 export type ActivityBoutV1 = z.infer<typeof ActivityBoutV1>;
 
+export const ComputeBatchRequestV1 = z.object({
+  schemaVersion: z.literal(1),
+  samples: z.array(SignalSampleV1),
+  sensorRecords: z.array(HistoricalSensorRecordV1),
+  nightFeatures: z.array(NightFeatureSetV1),
+  sleepDetections: z.array(SleepDetectionSummaryV1),
+  baseline: BaselineProfileV1,
+  dayDates: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)),
+  timeZone: z.string(),
+});
+export type ComputeBatchRequestV1 = z.infer<typeof ComputeBatchRequestV1>;
+
 export const PersistedDailyMetricV1 = z.object({
   schemaVersion: z.literal(1),
   strainScore: z.number().nullable(),
@@ -128,3 +140,15 @@ export const PersistedDailyMetricV1 = z.object({
   activityBouts: z.array(ActivityBoutV1).default([]),
 });
 export type PersistedDailyMetricV1 = z.infer<typeof PersistedDailyMetricV1>;
+
+export const ComputeBatchResultEntry = z.object({
+  dayDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  metrics: PersistedDailyMetricV1,
+});
+export type ComputeBatchResultEntry = z.infer<typeof ComputeBatchResultEntry>;
+
+export const ComputeBatchResultV1 = z.object({
+  schemaVersion: z.literal(1),
+  derivedMetricsByDay: z.array(ComputeBatchResultEntry),
+});
+export type ComputeBatchResultV1 = z.infer<typeof ComputeBatchResultV1>;

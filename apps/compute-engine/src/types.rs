@@ -120,6 +120,37 @@ pub struct ComputeDerivedMetricsDayRequestV1 {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct ComputeBatchRequestV1 {
+    pub schema_version: u32,
+    pub samples: Vec<SignalSampleV1>,
+    pub sensor_records: Vec<HistoricalSensorRecordV1>,
+    pub night_features: Vec<NightFeatureSetV1>,
+    pub sleep_detections: Vec<SleepDetectionSummaryV1>,
+    pub baseline: BaselineProfileV1,
+    /// One YYYY-MM-DD per output day. Rust loops over these and runs
+    /// `compute_derived_metrics` per day, reusing the shared input arrays.
+    /// This avoids the 45x client-side allocation that Phase 1 per-day
+    /// HTTP suffered.
+    pub day_dates: Vec<String>,
+    pub time_zone: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputeBatchResultEntry {
+    pub day_date: String,
+    pub metrics: PersistedDailyMetricV1,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputeBatchResultV1 {
+    pub schema_version: u32,
+    pub derived_metrics_by_day: Vec<ComputeBatchResultEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PersistedDailyMetricV1 {
     pub schema_version: u32,
     pub strain_score: Option<f64>,
