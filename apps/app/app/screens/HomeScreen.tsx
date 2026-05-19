@@ -592,31 +592,32 @@ function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
 }
 
 function HomeDaySkeleton() {
+  // Mirrors the real HomeScreen content order/dimensions so the fade in/out
+  // doesn't shift layout: three small rings in a row (matches the new
+  // 96px MetricRingsRow `default` size) → row of two MonitorCards →
+  // TODAY label → tape rows.
   return (
     <View style={themed($homeDaySkeleton)}>
-      <View style={{ alignItems: "center", marginTop: 16, marginBottom: 24 }}>
-        <SkeletonBlock style={{ width: 160, height: 160, borderRadius: 80 }} />
-        <SkeletonBlock style={{ width: 120, height: 14, borderRadius: 4, marginTop: 12 }} />
+      <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 8, marginBottom: 28 }}>
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={{ alignItems: "center", flex: 1 }}>
+            <SkeletonBlock style={{ width: 96, height: 96, borderRadius: 48 }} />
+            <SkeletonBlock style={{ width: 56, height: 10, borderRadius: 4, marginTop: 10 }} />
+          </View>
+        ))}
       </View>
-      <SkeletonBlock style={{ width: 50, height: 10, borderRadius: 4, marginBottom: 8 }} />
-      <View style={{ gap: 8 }}>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
-          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
-        </View>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
-          <SkeletonBlock style={{ flex: 1, height: 76, borderRadius: 12 }} />
-        </View>
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+        <SkeletonBlock style={{ flex: 1, height: 102, borderRadius: 12 }} />
+        <SkeletonBlock style={{ flex: 1, height: 102, borderRadius: 12 }} />
       </View>
       <SkeletonBlock
-        style={{ width: 80, height: 10, borderRadius: 4, marginTop: 28, marginBottom: 8 }}
+        style={{ width: 56, height: 11, borderRadius: 4, marginTop: 18, marginBottom: 10 }}
       />
-      <View style={{ gap: 6 }}>
-        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
-        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
-        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
-        <SkeletonBlock style={{ height: 44, borderRadius: 4 }} />
+      <View style={{ gap: 8 }}>
+        <SkeletonBlock style={{ height: 56, borderRadius: 12 }} />
+        <SkeletonBlock style={{ height: 56, borderRadius: 12 }} />
+        <SkeletonBlock style={{ height: 56, borderRadius: 12 }} />
+        <SkeletonBlock style={{ height: 56, borderRadius: 12 }} />
       </View>
     </View>
   )
