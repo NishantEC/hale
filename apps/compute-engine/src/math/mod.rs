@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod core_temperature;
 pub mod hrv;
 pub mod recovery_index;
