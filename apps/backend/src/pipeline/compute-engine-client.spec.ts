@@ -5,7 +5,13 @@ jest.mock('google-auth-library', () => {
   return {
     ...actual,
     GoogleAuth: jest.fn().mockImplementation(() => ({
+      // Production code reads `client.idTokenProvider.fetchIdToken(url)` and
+      // then issues its own fetch — the mock only needs to hand back a token.
+      // We also expose `request()` for legacy callers that may still use it.
       getIdTokenClient: async () => ({
+        idTokenProvider: {
+          fetchIdToken: async () => 'test-id-token',
+        },
         request: async (opts: any) => {
           const res = await fetch(opts.url, {
             method: opts.method,

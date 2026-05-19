@@ -113,9 +113,17 @@ describe('DebugService.getOverview enrichments', () => {
     const sleepDetectionRepo = repo({
       findOne: jest.fn().mockImplementation((args: any) => {
         const where = Array.isArray(args?.where) ? args.where[0] : args?.where;
-        const equal = where?.nightDate;
-        const key = equal?._value ?? equal?.value;
-        if (typeof key === 'string' && detectionByKey[key]) {
+        const op = where?.nightDate;
+        // Production uses Between(start, end); FindOperator._value is the
+        // pair [startDate, endDate]. Extract the start and format the day key.
+        const raw = op?._value ?? op?.value;
+        let key: string | undefined;
+        if (Array.isArray(raw) && raw[0] instanceof Date) {
+          key = raw[0].toISOString().slice(0, 10);
+        } else if (typeof raw === 'string') {
+          key = raw;
+        }
+        if (key && detectionByKey[key]) {
           return Promise.resolve({ id: `det-${key}` });
         }
         return Promise.resolve(null);
