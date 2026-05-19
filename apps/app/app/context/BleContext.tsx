@@ -1790,10 +1790,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }, 1500)
     })
 
-    const syncTimer = setInterval(() => {
-      maybeAutoSync().catch(() => undefined)
-    }, 2 * 60 * 1000)
-
     // SOC changes slowly on a multi-day-life device. 30s polling was
     // pure BLE traffic for no benefit. 5 min is plenty for the UI.
     const batteryPollTimer = setInterval(() => {
@@ -1811,7 +1807,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       unsubscribePacketsForDrain()
       unsubscribeMemfault()
       appStateSub.remove()
-      clearInterval(syncTimer)
       clearInterval(batteryPollTimer)
       eventForwarder.stop()
       commandResponseForwarder.stop()
