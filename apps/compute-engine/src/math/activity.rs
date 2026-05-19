@@ -55,8 +55,12 @@ fn gravity_deltas(records: &[HistoricalSensorRecordV1]) -> Vec<f64> {
     for w in records.windows(2) {
         let (a, b) = (&w[0], &w[1]);
         let delta = match (
-            a.gravity_x, a.gravity_y, a.gravity_z,
-            b.gravity_x, b.gravity_y, b.gravity_z,
+            a.gravity_x,
+            a.gravity_y,
+            a.gravity_z,
+            b.gravity_x,
+            b.gravity_y,
+            b.gravity_z,
         ) {
             (Some(ax), Some(ay), Some(az), Some(bx), Some(by), Some(bz)) => {
                 let dx = ax - bx;
@@ -127,7 +131,8 @@ pub fn detect_raw_segments(records: &[HistoricalSensorRecordV1]) -> Vec<RawSegme
     for i in 1..=n {
         let end_of_data = i == n;
         let class_change = !end_of_data && is_still[i] != is_still[run_start];
-        let gap_break = !end_of_data && (records[i].timestamp - records[i - 1].timestamp) > gap_threshold;
+        let gap_break =
+            !end_of_data && (records[i].timestamp - records[i - 1].timestamp) > gap_threshold;
 
         if end_of_data || class_change || gap_break {
             let motion = if is_still[run_start] {
@@ -309,11 +314,13 @@ fn compute_bout_features(
             hrr_samples.push(pct_hrr(r.heart_rate, resting, max));
         }
     }
-    let hr_avg = if hr_count > 0 { hr_sum / hr_count as f64 } else { 0.0 };
+    let hr_avg = if hr_count > 0 {
+        hr_sum / hr_count as f64
+    } else {
+        0.0
+    };
 
-    let deltas = gravity_deltas(
-        &in_window.iter().map(|r| (*r).clone()).collect::<Vec<_>>(),
-    );
+    let deltas = gravity_deltas(&in_window.iter().map(|r| (*r).clone()).collect::<Vec<_>>());
     let valid_deltas: Vec<f64> = deltas
         .into_iter()
         .filter(|d| d.is_finite() && *d < 1e30)
@@ -327,10 +334,7 @@ fn compute_bout_features(
         0.0
     } else {
         let mean = motion_intensity;
-        let var = valid_deltas
-            .iter()
-            .map(|d| (d - mean).powi(2))
-            .sum::<f64>()
+        let var = valid_deltas.iter().map(|d| (d - mean).powi(2)).sum::<f64>()
             / valid_deltas.len() as f64;
         var.sqrt()
     };
@@ -423,15 +427,14 @@ fn classify_bout(f: &BoutFeatures) -> (&'static str, f64) {
             return ("Strength", 0.6);
         }
     }
-    if f.fraction_hrr_above_25 >= 0.5
-        && f.fraction_hrr_above_50 < 0.5
-        && f.duration_minutes >= 45.0
+    if f.fraction_hrr_above_25 >= 0.5 && f.fraction_hrr_above_50 < 0.5 && f.duration_minutes >= 45.0
     {
         // Walking-shape HR + long duration = Hiking. Barometer integration
         // would tighten this; we don't have it.
         return ("Hiking", 0.6);
     }
-    if f.fraction_hrr_above_25 >= 0.5 && f.fraction_hrr_above_50 < 0.5 && f.duration_minutes >= 5.0 {
+    if f.fraction_hrr_above_25 >= 0.5 && f.fraction_hrr_above_50 < 0.5 && f.duration_minutes >= 5.0
+    {
         return ("Walking", 0.6);
     }
     if f.fraction_hrr_above_50 >= 0.5 {
@@ -498,15 +501,17 @@ pub fn detect_activity_bouts(
         };
         let required_run_samples =
             ((CANDIDATE_SUSTAINED_MIN * 60.0) / sample_interval_secs as f64).ceil() as usize;
-        let sustained = longest_sustained_run(&hrr, |p| p >= CANDIDATE_HRR_THRESHOLD)
-            >= required_run_samples;
+        let sustained =
+            longest_sustained_run(&hrr, |p| p >= CANDIDATE_HRR_THRESHOLD) >= required_run_samples;
         if !sustained {
             continue;
         }
 
         // Per-bout strain via the shared TRIMP helper.
-        let samples: Vec<SignalSampleV1> =
-            in_window.iter().map(|r| record_to_signal_sample(r)).collect();
+        let samples: Vec<SignalSampleV1> = in_window
+            .iter()
+            .map(|r| record_to_signal_sample(r))
+            .collect();
         let strain = strain_score(&samples, baseline).unwrap_or(0.0);
 
         // Classify + decide promotion.
@@ -609,7 +614,11 @@ mod tests {
 
     /// Generate `n_minutes` of records at 1-second granularity (60 records/min)
     /// with the given HR and a per-step alternating gravity (always Active).
-    fn active_records_seconds(start_min: i64, n_minutes: i64, hr: f64) -> Vec<HistoricalSensorRecordV1> {
+    fn active_records_seconds(
+        start_min: i64,
+        n_minutes: i64,
+        hr: f64,
+    ) -> Vec<HistoricalSensorRecordV1> {
         let mut out = Vec::new();
         for m in 0..n_minutes {
             for s in 0..60 {
@@ -697,7 +706,11 @@ mod tests {
         let mut r: Vec<_> = (0..60).map(|m| record(m, Some([0.0, 0.0, 1.0]))).collect();
         r.extend((120..180).map(|m| record(m, Some([0.0, 0.0, 1.0]))));
         let segs = detect_raw_segments(&r);
-        assert!(segs.len() >= 2, "expected gap to split; got {} segments", segs.len());
+        assert!(
+            segs.len() >= 2,
+            "expected gap to split; got {} segments",
+            segs.len()
+        );
     }
 
     // --- window-fraction stillness ------------------------------------------
@@ -754,8 +767,15 @@ mod tests {
 
         let segs = detect_raw_segments(&r);
         // After filter_merge bridging, the active blip is absorbed.
-        let active_count = segs.iter().filter(|s| s.motion == MotionState::Active).count();
-        assert_eq!(active_count, 0, "expected blip to be absorbed; got {:?}", segs);
+        let active_count = segs
+            .iter()
+            .filter(|s| s.motion == MotionState::Active)
+            .count();
+        assert_eq!(
+            active_count, 0,
+            "expected blip to be absorbed; got {:?}",
+            segs
+        );
     }
 
     // --- 262-min regression -------------------------------------------------
@@ -780,7 +800,11 @@ mod tests {
         // pass Candidate admission.
         let recs = active_records_seconds(0, 20, 60.0);
         let bouts = detect_activity_bouts(&recs, &[], &baseline());
-        assert!(bouts.is_empty(), "got bouts despite no HR elevation: {:?}", bouts);
+        assert!(
+            bouts.is_empty(),
+            "got bouts despite no HR elevation: {:?}",
+            bouts
+        );
     }
 
     #[test]

@@ -206,8 +206,7 @@ pub fn compute_derived_metrics(
         .filter(|r| r.timestamp >= day_start && r.timestamp < day_end)
         .cloned()
         .collect();
-    let activity_bouts =
-        detect_activity_bouts(&day_records, &req.sleep_detections, &req.baseline);
+    let activity_bouts = detect_activity_bouts(&day_records, &req.sleep_detections, &req.baseline);
 
     Ok(PersistedDailyMetricV1 {
         schema_version: 1,
