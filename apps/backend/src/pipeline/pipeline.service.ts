@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository, MoreThanOrEqual } from 'typeorm';
+import { randomUUID } from 'crypto';
 
 import { SleepDetection } from '../sleep/entities/sleep-detection.entity.js';
 import { SleepStage } from '../sleep/entities/sleep-stage.entity.js';
@@ -56,7 +57,13 @@ import type {
   HistoricalSensorRecord,
   BaselineProfile as BaselineProfileInterface,
   JournalFactorEntry,
+  DerivedMetricsBundle,
 } from '../processing/interfaces.js';
+import { ComputeEngineClient } from './compute-engine-client.js';
+import {
+  buildDayRequest,
+  liftPersistedToBundle,
+} from './compute-engine-bridge.js';
 
 @Injectable()
 export class PipelineService {
@@ -96,6 +103,7 @@ export class PipelineService {
     @InjectRepository(DeviceEvent)
     private deviceEventRepo: Repository<DeviceEvent>,
     private dataSource: DataSource,
+    private readonly computeEngineClient: ComputeEngineClient,
   ) {}
 
   // Per-user TZ fallback. `user.timeZone` is populated by SessionGuard whenever
@@ -577,24 +585,58 @@ export class PipelineService {
     // on the full input set, not on referenceDate — recomputing per
     // day made compute spend ~165s for a 45-day window.
     const metricsPrecomputed = precomputeMetricSeries(sanitized, sensorRecords);
-    const derivedMetricsByDay = this.collectReferenceDays(
+    const referenceDays = this.collectReferenceDays(
       sensorRecords,
       sleepDetections,
       effectiveFeatures,
       timeZone,
-    ).map((dayDate) => ({
-      dayDate,
-      metrics: computeDerivedMetrics(
-        sanitized,
-        sensorRecords,
-        effectiveFeatures,
-        sleepDetections,
-        recomputedBaseline,
+    );
+    const usingRust = this.computeEngineClient.isEnabled();
+    const runId = randomUUID();
+    let stickyFallback = false;
+    const derivedMetricsByDay: { dayDate: Date; metrics: DerivedMetricsBundle }[] = [];
+    for (const dayDate of referenceDays) {
+      if (usingRust && !stickyFallback) {
+        const dayKey = this.startOfDay(dayDate, timeZone)
+          .toISOString()
+          .slice(0, 10);
+        const req = buildDayRequest({
+          samples: sanitized,
+          sensorRecords,
+          effectiveFeatures,
+          sleepDetections,
+          baseline: recomputedBaseline,
+          dayDate,
+          timeZone,
+        });
+        const r = await this.computeEngineClient.computeDay(req, {
+          userId,
+          runId,
+          day: dayKey,
+        });
+        if (r.ok) {
+          derivedMetricsByDay.push({
+            dayDate,
+            metrics: liftPersistedToBundle(r.result),
+          });
+          continue;
+        }
+        stickyFallback = true;
+      }
+      derivedMetricsByDay.push({
         dayDate,
-        timeZone,
-        metricsPrecomputed,
-      ),
-    }));
+        metrics: computeDerivedMetrics(
+          sanitized,
+          sensorRecords,
+          effectiveFeatures,
+          sleepDetections,
+          recomputedBaseline,
+          dayDate,
+          timeZone,
+          metricsPrecomputed,
+        ),
+      });
+    }
 
     const typicalRanges = computeTypicalRanges(sleepDetections, sleepStages, now);
     const correlations = journalSleepCorrelations(
