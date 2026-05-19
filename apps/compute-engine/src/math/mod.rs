@@ -1,5 +1,6 @@
 pub mod core_temperature;
 pub mod hrv;
+pub mod recovery_index;
 pub mod sensor_sample;
 pub mod skin_temp;
 pub mod sleep_consistency;
