@@ -28,7 +28,11 @@ import {
 } from '../processing/wellness-scoring.js';
 import { SleepEventEngine, buildOffWristIntervals } from '../processing/sleep-event-engine.js';
 import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
-import { detectActivities, type ActivityBout } from '../processing/activity-detector.js';
+import {
+  detectActivities,
+  detectActivityGaps,
+  type ActivityBout,
+} from '../processing/activity-detector.js';
 import { reclassifyHiking } from '../processing/hiking-detector.js';
 import { reclassifyStairs } from '../processing/stair-detector.js';
 import { applyHealthkitWorkoutMatches } from '../processing/healthkit-workout-matcher.js';
@@ -648,10 +652,17 @@ export class PipelineService {
     }
 
     // When the Rust path owned every day's compute, prefer its bouts over
-    // the TS detector output computed earlier in this run. Otherwise the
-    // TS bouts stay (already in `activityBouts`).
+    // the TS detector output. The Rust path doesn't emit Off-Wrist /
+    // No-Data sentinels yet, so run the standalone gap detector and merge
+    // them in so the activity feed still surfaces coverage holes.
+    // Otherwise the TS bouts stay (already in `activityBouts`).
     if (rustOwnsActivities) {
-      activityBouts = rustActivityBouts.sort(
+      const gaps = detectActivityGaps(
+        sensorRecords,
+        sleepDetections,
+        sourceLabeledIntervals,
+      );
+      activityBouts = [...rustActivityBouts, ...gaps].sort(
         (a, b) => a.startTime.getTime() - b.startTime.getTime(),
       );
       if (activityBouts.length > 0) {

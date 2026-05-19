@@ -122,6 +122,25 @@ export function detectActivities(
   );
 }
 
+/**
+ * Standalone gap-entry detector. Filters out sleep windows internally and
+ * emits Off-Wrist / No-Data bouts for any awake-time data gap >= 15 min OR
+ * any explicit off-wrist interval that isn't already covered. Used by the
+ * pipeline when activity bout detection happens elsewhere (e.g. the Rust
+ * compute-engine path) but we still need the feed entries.
+ */
+export function detectActivityGaps(
+  records: HistoricalSensorRecord[],
+  sleepDetections: SleepDetectionSummary[],
+  offWristIntervals: OffWristIntervalLite[] = [],
+): ActivityBout[] {
+  const sorted = [...records].sort(
+    (a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+  );
+  const awakeRecords = filterAwakeRecords(sorted, sleepDetections);
+  return detectGapEntries(awakeRecords, sleepDetections, offWristIntervals);
+}
+
 function detectGapEntries(
   awakeRecords: HistoricalSensorRecord[],
   sleepDetections: SleepDetectionSummary[],
