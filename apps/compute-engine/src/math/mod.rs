@@ -1,4 +1,5 @@
 pub mod sensor_sample;
+pub mod skin_temp;
 pub mod spo2;
 pub mod stress;
 pub mod timestamp_slice;
