@@ -585,12 +585,11 @@ export class PipelineService {
       );
     }
 
-    // Hoist the expensive series computations (stressPoints,
-    // spo2Points, skinTemperaturePoints, rollingRmssd, plus the
-    // sensorSamples filter) out of the per-day loop. They depend only
-    // on the full input set, not on referenceDate — recomputing per
-    // day made compute spend ~165s for a 45-day window.
-    const metricsPrecomputed = precomputeMetricSeries(sanitized, sensorRecords);
+    // precomputeMetricSeries does the expensive shared series work for
+    // the JS fallback path (stressPoints, spo2Points, skinTemperaturePoints,
+    // rollingRmssd). It's ~25 minutes on a 45-day window, so it's deferred
+    // until we actually need it — when Rust batch succeeds, Rust does its
+    // own per-day precompute server-side and we never hit this code.
     const referenceDays = this.collectReferenceDays(
       sensorRecords,
       sleepDetections,
@@ -661,11 +660,13 @@ export class PipelineService {
 
     if (!batchSucceeded) {
       // JS in-process loop. Either Rust was disabled, the batch call failed,
-      // or the response was missing day keys. Bridge code is bypassed and
-      // memory pressure stays at baseline.
+      // or the response was missing day keys. Bridge code is bypassed.
+      // precomputeMetricSeries is run lazily here so we only pay its ~25-min
+      // cost when JS actually has to do the work.
       derivedMetricsByDay.length = 0;
       rustActivityBouts.length = 0;
       rustOwnsActivities = false;
+      const metricsPrecomputed = precomputeMetricSeries(sanitized, sensorRecords);
       for (const dayDate of referenceDays) {
         derivedMetricsByDay.push({
           dayDate,
