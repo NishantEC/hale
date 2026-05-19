@@ -2,10 +2,12 @@ import { useEffect, useMemo, useReducer, useRef } from "react"
 import { Linking } from "react-native"
 import { router } from "expo-router"
 import * as Battery from "expo-battery"
+import * as Haptics from "expo-haptics"
 import * as Updates from "expo-updates"
 
 import { useBle } from "@/context/BleContext"
 import { useSyncContext } from "@/context/SyncContext"
+import { runPipeline } from "@/services/api/noopClient"
 
 import {
   ACCESSORY_METADATA,
@@ -30,7 +32,7 @@ export type ActivityStripView = {
 
 const PRESS_ROUTES: Partial<Record<AccessoryState, string>> = {
   ble_error: "/(tabs)/inspector",
-  sync_error: "/(tabs)/inspector",
+  sync_error: "__RETRY_SYNC__",
   dead_letters: "/(tabs)/inspector",
   disconnected_was_worn: "/device-settings",
   stale_sync: "/(tabs)/inspector",
@@ -187,11 +189,13 @@ export function useActivityStripState(): ActivityStripView {
     if (!target) return null
     if (target === "__APP_UPDATE__") {
       return () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
         Updates.reloadAsync().catch(() => {})
       }
     }
     if (target === "__DISMISS_ALARM__") {
       return () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
         ble.disarmAlarm?.().catch(() => {})
       }
     }
@@ -200,10 +204,17 @@ export function useActivityStripState(): ActivityStripView {
         Linking.openURL("app-settings:").catch(() => {})
       }
     }
+    if (target === "__RETRY_SYNC__") {
+      return () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
+        sync.refresh().catch(() => {})
+        runPipeline().catch(() => {})
+      }
+    }
     return () => {
       router.push(target as never)
     }
-  }, [state, ble])
+  }, [state, ble, sync])
 
   return { state, copy, icon, tone, announcement: copy, onPress }
 }
