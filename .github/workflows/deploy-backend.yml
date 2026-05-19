@@ -112,8 +112,9 @@ jobs:
             --service-account=noop-cloud-run@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
             --min-instances=0
             --max-instances=5
-            --memory=1Gi
+            --memory=2Gi
             --cpu=1
+            --timeout=1800
             --allow-unauthenticated
 
       - name: Show deployed URL
