@@ -1,4 +1,3 @@
-import KVStore from "expo-sqlite/kv-store"
 import {
   createContext,
   FC,
@@ -12,7 +11,11 @@ import {
 } from "react"
 import { AppState } from "react-native"
 
+import { storage } from "@/utils/storage"
+
 import {
+  awaitCommandResponse,
+  AwaitableResponse,
   bleManager,
   CMD_FROM_STRAP_UUID,
   DATA_FROM_STRAP_UUID,
@@ -36,10 +39,20 @@ import {
 } from "@/services/ble"
 import { runBackgroundDrain } from "@/services/sync/backgroundSync"
 import {
+  startContinuousSyncDaemon,
+  stopContinuousSyncDaemon,
+} from "@/services/sync/continuousSyncDaemon"
+import {
   startAndroidForegroundService,
   stopAndroidForegroundService,
 } from "@/services/sync/androidForegroundService"
 import { historicalRecordToRawRow, ingestBleRecords } from "@/services/sync/bleIngest"
+import { shouldRunPipelineAfterSync } from "@/services/sync/pipelineTrigger"
+import {
+  decideContinueSync,
+  DEFAULT_CAUGHT_UP_WINDOW_MS,
+  DEFAULT_MAX_ITERATIONS,
+} from "@/services/sync/syncLoop"
 import { runPipeline, fetchResults, SeriesPoint } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import { useDashboard } from "@/context/DashboardContext"
@@ -111,6 +124,18 @@ export type BleContextValue = {
   syncStage: string
   syncProgress: DownloadProgress | null
   syncSummary: SyncSummary | null
+  // Strap-time window of the most recent persisted batch (updates each HistoryEnd).
+  lastBatchWindow: { oldestMs: number; newestMs: number; batchSize: number } | null
+  // Backend pipeline state — independent of isSyncing so the Sync button can
+  // re-enable as soon as the strap → SQLite leg finishes.
+  pipelineState: "idle" | "running" | "success" | "failed"
+  lastPipelineAt: string | null
+  // Loop progress inside a single Sync tap. A single download session pulls
+  // one strap-decided window; syncNow loops until the cursor catches up or
+  // a safety cap fires.
+  syncIteration: number
+  syncIterationCap: number
+  syncLastStopReason: string | null
   error: string | null
   scan: () => Promise<void>
   connect: (deviceId: string) => Promise<void>
@@ -294,9 +319,36 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const [scannedDevices, setScannedDevices] = useState<ScannedDevice[]>([])
   const [isSyncing, setIsSyncing] = useState(false)
   const isSyncingRef = useRef(false)
+  // Stable handle to the latest syncNow for the continuous-sync daemon.
+  // syncNow is recreated on each render via useCallback so we can't capture
+  // it in a setInterval closure directly.
+  const syncNowRef = useRef<() => Promise<void>>(async () => {})
+  // Did the LAST syncNow tear down the strap session cleanly? If yes, the
+  // next tap can skip the AbortHistoricalTransmits preflight entirely —
+  // sending it gratuitously was the cause of the 05/17 multi-gap pattern
+  // (the strap appears to advance its read pointer past chunks it had
+  // queued for delivery but never got to send before we aborted). The
+  // preflight is only valuable when the prior session crashed mid-stream.
+  const lastSyncCleanRef = useRef(true)
   const [syncStage, setSyncStage] = useState("")
   const [syncProgress, setSyncProgress] = useState<DownloadProgress | null>(null)
   const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null)
+  // Newest / oldest strap-time observed in the most recent persisted batch.
+  // Updated from persistBatch on each HistoryEnd so the Inspector can show
+  // "currently processing strap-time X" without us needing to poll the DB.
+  const [lastBatchWindow, setLastBatchWindow] = useState<{
+    oldestMs: number
+    newestMs: number
+    batchSize: number
+  } | null>(null)
+  const [pipelineState, setPipelineState] = useState<
+    "idle" | "running" | "success" | "failed"
+  >("idle")
+  const [lastPipelineAt, setLastPipelineAt] = useState<string | null>(null)
+  const isPipelineRunningRef = useRef(false)
+  const lastPipelineAtRef = useRef<number>(0)
+  const [syncIteration, setSyncIteration] = useState(0)
+  const [syncLastStopReason, setSyncLastStopReason] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const lastAutoSyncAttemptAt = useRef<number>(0)
 
@@ -331,8 +383,8 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     }
   }, [])
 
-  const persistPreference = useCallback(async (key: string, value: boolean) => {
-    await KVStore.setItemAsync(key, JSON.stringify(value))
+  const persistPreference = useCallback((key: string, value: boolean) => {
+    storage.set(key, JSON.stringify(value))
   }, [])
 
   const scan = useCallback(async () => {
@@ -359,6 +411,10 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       setError(null)
       try {
         await bleManager.connect(deviceId)
+        // Reconnect resets the strap's transmit state — anything that
+        // was unclean before the disconnect is gone now. Allow the next
+        // syncNow to skip the preflight.
+        lastSyncCleanRef.current = true
         setDeviceState((current) => ({
           ...current,
           deviceName: bleManager.getDeviceName() || "WHOOP",
@@ -376,10 +432,72 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     await bleManager.disconnect()
   }, [])
 
+  // Fire-and-forget pipeline + view refresh. Sync UX completes as soon as the
+  // strap → SQLite leg finishes; the backend pipeline runs on its own clock.
+  // Throttled so a rapid burst of small syncs doesn't trigger a 10–25s
+  // backend pipeline every time.
+  const runPipelineInBackground = useCallback(
+    (persistedCount: number) => {
+      const msSinceLastRun =
+        lastPipelineAtRef.current === 0
+          ? Number.POSITIVE_INFINITY
+          : Date.now() - lastPipelineAtRef.current
+      if (
+        !shouldRunPipelineAfterSync({
+          persistedCount,
+          isCurrentlyRunning: isPipelineRunningRef.current,
+          msSinceLastRun,
+        })
+      ) {
+        console.log(
+          `[syncNow] skipping background pipeline (persisted=${persistedCount}, msSinceLastRun=${
+            Number.isFinite(msSinceLastRun) ? Math.round(msSinceLastRun / 1000) + "s" : "first"
+          }, running=${isPipelineRunningRef.current})`,
+        )
+        return
+      }
+      isPipelineRunningRef.current = true
+      lastPipelineAtRef.current = Date.now()
+      setPipelineState("running")
+      void (async () => {
+        try {
+          await runPipeline()
+          const results = await fetchResults()
+          setSyncSummary({
+            nights: results.sleepDetections?.length ?? 0,
+            stages: results.sleepStages?.length ?? 0,
+            scores: results.dailyScores?.length ?? 0,
+          })
+          await refreshDashboard()
+          setPipelineState("success")
+          setLastPipelineAt(new Date().toISOString())
+        } catch (err: any) {
+          console.warn(
+            "[syncNow] background pipeline/fetchResults failed:",
+            err?.message ?? err,
+          )
+          setPipelineState("failed")
+        } finally {
+          isPipelineRunningRef.current = false
+        }
+      })()
+    },
+    [refreshDashboard],
+  )
+
   const syncNow = useCallback(async () => {
     console.log("[syncNow] start; bleState=", bleManager.connectionState)
     if (bleManager.connectionState !== "ready") {
       setError("Connect your WHOOP strap before syncing.")
+      return
+    }
+    // Re-entry guard: a second syncNow while one is in flight would run the
+    // preflight AbortHistoricalTransmits (cmd 20), killing the in-progress
+    // strap transfer and restarting the cycle from scratch. The Sync button
+    // in ActionsCard is disabled while isSyncing is true, but programmatic
+    // callers (auto-sync on auth-ready, deep links, etc.) need this guard too.
+    if (isSyncingRef.current) {
+      console.warn("[syncNow] ignored — a sync is already in flight")
       return
     }
 
@@ -387,90 +505,153 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     setIsSyncing(true)
     setSyncStage("Downloading from strap…")
     setSyncSummary(null)
+    setSyncIteration(0)
+    setSyncLastStopReason(null)
     setError(null)
 
     try {
-      // Preflight: cancel any half-finished prior history transmit on the
-      // strap. Safe — doesn't touch the trim/read pointer. Recovers from
-      // the case where a prior sync started but BLE dropped mid-stream.
       const commandService = new (
         await import("@/services/ble/command-service")
       ).CommandService()
-      await bleManager
-        .writeCommand(commandService.buildAbortHistoricalTransmits())
-        .catch(() => {})
+      // Preflight only when the prior session ended messily (throw, BLE
+      // drop mid-stream). When the prior session ended cleanly, sending
+      // cmd 20 here is what produced the 05/17 cursor-skip gaps: between
+      // taps the strap was idle, but the abort still kicked something
+      // loose and the next SendHistoricalData came back from an
+      // already-advanced read pointer. Skip on clean prior.
+      if (!lastSyncCleanRef.current) {
+        console.log("[syncNow] prior sync was unclean → running preflight abort")
+        await bleManager
+          .writeCommand(commandService.buildAbortHistoricalTransmits())
+          .catch(() => {})
+      }
+      // Optimistically mark this run unclean; only flip back to clean
+      // after the loop exits via a real terminal signal. A throw on the
+      // way out leaves it unclean, which is exactly what we want for the
+      // next tap's preflight decision.
+      lastSyncCleanRef.current = false
 
       const db = openDatabase()
       let persistedCount = 0
+      let totalRecords = 0
+      let iterations = 0
+      let prevNewestMs: number | null = null
+      let stuckCount = 0
+      let lastStopReason: string = "continue"
 
-      const downloader = new HistoryDownloader()
-      const records = await downloader.startDownload({
-        onProgress: setSyncProgress,
-        // Durable-ACK: commit each batch to local SQLite BEFORE the strap
-        // is ACK'd for that batch. If persistence fails, the ACK is
-        // skipped and the strap retains the batch (no more silent
-        // over-ACKing in release builds).
-        persistBatch: async (batch) => {
-          if (batch.length === 0) return
-          const mapped = batch.map(historicalRecordToRawRow)
-          const { ok, failed } = await ingestBleRecords(db, mapped)
-          // Throw if any record failed so the downloader skips the ACK
-          // and the strap keeps the batch for the next sync — preserves
-          // the durable-ACK guarantee.
-          if (failed > 0) {
-            throw new Error(
-              `persistBatch: ${failed}/${mapped.length} records failed to persist`,
-            )
-          }
-          persistedCount += ok
-        },
-      })
-      console.log(
-        "[syncNow] download resolved with",
-        records.length,
-        "records; persisted",
-        persistedCount,
-        "to local SQLite",
-      )
+      // Loop: a single SendHistoricalData round-trip pulls one strap-decided
+      // window. Re-issue until the cursor catches up to ~now, the strap
+      // returns nothing new, or a safety cap fires.
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        iterations += 1
+        setSyncIteration(iterations)
+        setSyncStage(
+          `Downloading from strap (pass ${iterations}/${DEFAULT_MAX_ITERATIONS})…`,
+        )
+
+        let iterationRecords = 0
+        let iterationNewestMs: number | null = null
+
+        const downloader = new HistoryDownloader()
+        const records = await downloader.startDownload({
+          onProgress: setSyncProgress,
+          // Durable-ACK: commit each batch to local SQLite BEFORE the strap
+          // is ACK'd for that batch. If persistence fails, the ACK is
+          // skipped and the strap retains the batch (no more silent
+          // over-ACKing in release builds).
+          persistBatch: async (batch) => {
+            if (batch.length === 0) return
+            const mapped = batch.map(historicalRecordToRawRow)
+            const { ok, failed } = await ingestBleRecords(db, mapped)
+            if (failed > 0) {
+              throw new Error(
+                `persistBatch: ${failed}/${mapped.length} records failed to persist`,
+              )
+            }
+            persistedCount += ok
+            iterationRecords += batch.length
+            let oldest = Number.POSITIVE_INFINITY
+            let newest = Number.NEGATIVE_INFINITY
+            for (const r of batch) {
+              const t = r.timestamp.getTime()
+              if (t < oldest) oldest = t
+              if (t > newest) newest = t
+            }
+            if (Number.isFinite(oldest) && Number.isFinite(newest)) {
+              setLastBatchWindow({
+                oldestMs: oldest,
+                newestMs: newest,
+                batchSize: batch.length,
+              })
+              if (iterationNewestMs == null || newest > iterationNewestMs) {
+                iterationNewestMs = newest
+              }
+            }
+          },
+        })
+        totalRecords += records.length
+        console.log(
+          `[syncNow] pass ${iterations}: ${records.length} records, persisted ${persistedCount} cumulative`,
+        )
+
+        const decision = decideContinueSync({
+          iterationRecords,
+          prevNewestMs,
+          currentNewestMs: iterationNewestMs,
+          stuckCount,
+          iterations,
+          nowMs: Date.now(),
+          maxIterations: DEFAULT_MAX_ITERATIONS,
+          caughtUpWindowMs: DEFAULT_CAUGHT_UP_WINDOW_MS,
+        })
+
+        stuckCount = decision.stuckThisIteration ? stuckCount + 1 : 0
+        if (iterationNewestMs != null) prevNewestMs = iterationNewestMs
+        lastStopReason = decision.reason
+
+        if (decision.stop) {
+          console.log(`[syncNow] loop stop: ${decision.reason} after ${iterations} passes`)
+          break
+        }
+
+        // NB: do NOT issue AbortHistoricalTransmits between passes here.
+        // The previous pass terminated cleanly (HistoryComplete / idle-
+        // resolved persistAndFinish), so there is no in-flight strap
+        // transmission to abort. The whoopsi RE notes (docs/whoop-trim-
+        // ack-investigation.md) leave open the question of whether the
+        // strap advances its read pointer on send vs ACK. If it advances
+        // on send, an abort fired mid-stream silently drops the chunks
+        // that crossed the BLE pipe but never got ACK'd — exactly the
+        // morning-of-05/17 multi-gap pattern. Even between passes,
+        // racing the strap's session-end signal with cmd 20 risks the
+        // same. The first-iteration preflight above is still correct;
+        // that's the only abort we issue per Sync tap now.
+      }
+
+      setSyncLastStopReason(lastStopReason)
+      // Loop reached a terminal signal (caught_up / no_records /
+      // stuck_cursor / iter_cap) without throwing — strap session is
+      // wound down cleanly. Next tap can skip the preflight.
+      lastSyncCleanRef.current = true
       setSyncProgress((current) => ({
         state: "complete",
         chunksReceived: current?.chunksReceived ?? 0,
-        recordsParsed: records.length,
+        recordsParsed: totalRecords,
         totalBytes: current?.totalBytes ?? 0,
       }))
 
       const lastSyncAt = new Date().toISOString()
-      await KVStore.setItemAsync(LAST_SYNC_KEY, lastSyncAt)
+      storage.set(LAST_SYNC_KEY, lastSyncAt)
       setDeviceState((current) => ({ ...current, lastSyncAt }))
 
-      if (records.length > 0) {
-        setSyncStage("Running pipeline…")
-        console.log("[syncNow] Running pipeline on backend")
-        // Don't let a slow / timing-out backend pipeline turn a successful
-        // local persist into a "Sync failed" toast. Records are already in
-        // SQLite + outbound queue at this point; the pipeline can finish
-        // on the next backend tick. We still try, but on failure we
-        // continue to refresh views and surface a soft warning rather
-        // than throwing.
-        try {
-          await runPipeline()
+      // Kick the backend pipeline off in the background. Sync UX is "done"
+      // once records are persisted locally and queued for upload; the
+      // pipeline is throttled inside runPipelineInBackground so frequent
+      // small syncs don't trigger a 10–25s backend run every time.
+      runPipelineInBackground(persistedCount)
 
-          setSyncStage("Refreshing views…")
-          const results = await fetchResults()
-          setSyncSummary({
-            nights: results.sleepDetections?.length ?? 0,
-            stages: results.sleepStages?.length ?? 0,
-            scores: results.dailyScores?.length ?? 0,
-          })
-        } catch (pipelineErr: any) {
-          console.warn(
-            "[syncNow] pipeline/fetchResults failed (records persisted locally; backend will catch up):",
-            pipelineErr?.message ?? pipelineErr,
-          )
-        }
-      }
-
-      await refreshDashboard()
+      void refreshDashboard().catch(() => {})
     } catch (nextError: any) {
       console.error("[syncNow] failed", nextError)
       setError(nextError?.message ?? "Sync failed")
@@ -479,7 +660,13 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       setIsSyncing(false)
       setSyncStage("")
     }
-  }, [refreshDashboard])
+  }, [refreshDashboard, runPipelineInBackground])
+
+  // Keep the daemon's syncNow handle pointing at the latest useCallback
+  // instance every render.
+  useEffect(() => {
+    syncNowRef.current = syncNow
+  }, [syncNow])
 
   const maybeAutoSync = useCallback(async () => {
     if (!isAuthenticated || isSyncingRef.current || bleManager.connectionState !== "ready") return
@@ -830,32 +1017,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         throw new Error("Connect your WHOOP strap before probing.")
       }
 
-      const collectResponse = (cmd: number, timeoutMs: number) =>
-        new Promise<{ bytes: number[]; hex: string }>((resolve, reject) => {
-          let settled = false
-          const timer = setTimeout(() => {
-            if (settled) return
-            settled = true
-            unsub()
-            reject(new Error(`No response for cmd ${cmd} within ${timeoutMs}ms`))
-          }, timeoutMs)
-          const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
-            if (settled) return
-            if (
-              packet.type !== PacketType.CommandResponse ||
-              packet.command !== cmd
-            ) {
-              return
-            }
-            settled = true
-            clearTimeout(timer)
-            unsub()
-            const bytes = Array.from(packet.data)
-            const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
-            resolve({ bytes, hex })
-          })
-        })
-
       const u32 = (bytes: number[], off: number): number | null => {
         if (off + 4 > bytes.length) return null
         return (
@@ -865,81 +1026,89 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
           ((bytes[off + 3] << 24) >>> 0)
         )
       }
-
       // Whoopsi: body starts at packet.data[2] (after [origin_seq, result]).
       // start@body[9..13], end@body[13..17], rollover@body[21..25].
-      const decodeRange = (bytes: number[]) => {
-        const start = u32(bytes, 11)
-        const end = u32(bytes, 15)
-        const rollover = u32(bytes, 23)
-        return { start, end, rollover }
-      }
+      const decodeRange = (bytes: number[]) => ({
+        start: u32(bytes, 11),
+        end: u32(bytes, 15),
+        rollover: u32(bytes, 23),
+      })
 
-      // 1. GetDataRange (before)
-      console.log("[probeRewindProbe] step 1: GetDataRange (before)")
-      const probe1 = collectResponse(CommandNumber.GetDataRange, 3000)
-      await bleManager.writeCommand(commandService.buildGetDataRange())
-      const before = await probe1
-      const beforeRange = decodeRange(before.bytes)
-      console.log(
-        "[probeRewindProbe] before:",
-        "hex=", before.hex,
-        "start=", beforeRange.start,
-        "end=", beforeRange.end,
-        "rollover=", beforeRange.rollover,
-      )
+      // Track in-flight awaits so a thrown writeCommand can't leak the
+      // onPacket subscription (otherwise listeners accumulate one per
+      // failed probe).
+      const pending: AwaitableResponse[] = []
+      try {
+        console.log("[probeRewindProbe] step 1: GetDataRange (before)")
+        const probe1 = awaitCommandResponse(CommandNumber.GetDataRange, 3000)
+        pending.push(probe1)
+        await bleManager.writeCommand(commandService.buildGetDataRange())
+        const before = await probe1.promise
+        const beforeRange = decodeRange(before.bytes)
+        console.log(
+          "[probeRewindProbe] before:",
+          "hex=", before.hex,
+          "start=", beforeRange.start,
+          "end=", beforeRange.end,
+          "rollover=", beforeRange.rollover,
+        )
 
-      // 2. SetReadPointer (sector, offset)
-      console.log(
-        "[probeRewindProbe] step 2: SetReadPointer sector=",
-        sector,
-        "offset=",
-        offset,
-      )
-      const probe2 = collectResponse(CommandNumber.SetReadPointer, 2000).catch(
-        (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
-      )
-      await bleManager.writeCommand(
-        commandService.buildSetReadPointerSectorOffset(sector, offset),
-      )
-      const response = await probe2
-      console.log("[probeRewindProbe] response: hex=", response.hex)
+        console.log(
+          "[probeRewindProbe] step 2: SetReadPointer sector=",
+          sector,
+          "offset=",
+          offset,
+        )
+        const probe2 = awaitCommandResponse(CommandNumber.SetReadPointer, 2000)
+        pending.push(probe2)
+        await bleManager.writeCommand(
+          commandService.buildSetReadPointerSectorOffset(sector, offset),
+        )
+        const response = await probe2.promise.catch((err) => ({
+          bytes: [] as number[],
+          hex: `(no response: ${err.message})`,
+        }))
+        console.log("[probeRewindProbe] response: hex=", response.hex)
 
-      // 3. GetDataRange (after) — settle for 250ms first so the strap
-      //    processes the pointer change.
-      await new Promise((r) => setTimeout(r, 250))
-      console.log("[probeRewindProbe] step 3: GetDataRange (after)")
-      const probe3 = collectResponse(CommandNumber.GetDataRange, 3000)
-      await bleManager.writeCommand(commandService.buildGetDataRange())
-      const after = await probe3
-      const afterRange = decodeRange(after.bytes)
-      console.log(
-        "[probeRewindProbe] after:",
-        "hex=", after.hex,
-        "start=", afterRange.start,
-        "end=", afterRange.end,
-        "rollover=", afterRange.rollover,
-      )
+        // Settle for 250ms so the strap processes the pointer change.
+        await new Promise((r) => setTimeout(r, 250))
 
-      // Only count BACKWARD movement of `start` as a real rewind. Forward
-      // drift of a few units is normal — the strap is writing new samples
-      // continuously between our two GetDataRange calls. A genuine rewind
-      // would push start substantially lower than its before value.
-      const movedStart =
-        beforeRange.start != null &&
-        afterRange.start != null &&
-        afterRange.start < beforeRange.start
-      console.log(
-        "[probeRewindProbe] VERDICT: read pointer rewound =",
-        movedStart,
-        `(${beforeRange.start} → ${afterRange.start}; forward drift = not a rewind)`,
-      )
+        console.log("[probeRewindProbe] step 3: GetDataRange (after)")
+        const probe3 = awaitCommandResponse(CommandNumber.GetDataRange, 3000)
+        pending.push(probe3)
+        await bleManager.writeCommand(commandService.buildGetDataRange())
+        const after = await probe3.promise
+        const afterRange = decodeRange(after.bytes)
+        console.log(
+          "[probeRewindProbe] after:",
+          "hex=", after.hex,
+          "start=", afterRange.start,
+          "end=", afterRange.end,
+          "rollover=", afterRange.rollover,
+        )
 
-      return {
-        before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
-        response: response.hex,
-        after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
-        movedStart,
+        // Only count BACKWARD movement of `start` as a real rewind. Forward
+        // drift of a few units is normal — the strap is writing new samples
+        // continuously between our two GetDataRange calls. A genuine rewind
+        // would push start substantially lower than its before value.
+        const movedStart =
+          beforeRange.start != null &&
+          afterRange.start != null &&
+          afterRange.start < beforeRange.start
+        console.log(
+          "[probeRewindProbe] VERDICT: read pointer rewound =",
+          movedStart,
+          `(${beforeRange.start} → ${afterRange.start}; forward drift = not a rewind)`,
+        )
+
+        return {
+          before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
+          response: response.hex,
+          after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
+          movedStart,
+        }
+      } finally {
+        for (const p of pending) p.abort()
       }
     },
     [],
@@ -1073,32 +1242,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       throw new Error("Connect your WHOOP strap first.")
     }
 
-    const collectResponse = (cmd: number, timeoutMs: number) =>
-      new Promise<{ bytes: number[]; hex: string }>((resolve, reject) => {
-        let settled = false
-        const timer = setTimeout(() => {
-          if (settled) return
-          settled = true
-          unsub()
-          reject(new Error(`No response for cmd ${cmd} within ${timeoutMs}ms`))
-        }, timeoutMs)
-        const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
-          if (settled) return
-          if (
-            packet.type !== PacketType.CommandResponse ||
-            packet.command !== cmd
-          ) {
-            return
-          }
-          settled = true
-          clearTimeout(timer)
-          unsub()
-          const bytes = Array.from(packet.data)
-          const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
-          resolve({ bytes, hex })
-        })
-      })
-
     const u32 = (bytes: number[], off: number): number | null => {
       if (off + 4 > bytes.length) return null
       return (
@@ -1114,96 +1257,100 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       rollover: u32(bytes, 23),
     })
 
-    // Step 0: ABORT_HISTORICAL_TRANSMITS (matches whoopsi init step 1)
-    console.log("[whoopsiInitThenForceTrim] step 0: ABORT_HISTORICAL_TRANSMITS")
-    await bleManager
-      .writeCommand(commandService.buildAbortHistoricalTransmits())
-      .catch(() => {})
-    await new Promise((r) => setTimeout(r, 200))
+    const pending: AwaitableResponse[] = []
+    try {
+      console.log("[whoopsiInitThenForceTrim] step 0: ABORT_HISTORICAL_TRANSMITS")
+      await bleManager
+        .writeCommand(commandService.buildAbortHistoricalTransmits())
+        .catch(() => {})
+      await new Promise((r) => setTimeout(r, 200))
 
-    // Step 1: GET_HELLO_EXT in Maverick framing (the identity exchange
-    // we've been missing)
-    console.log("[whoopsiInitThenForceTrim] step 1: GET_HELLO_EXT (Maverick)")
-    const helloProbe = collectResponse(CommandNumber.GetHelloExt, 3000).catch(
-      (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
-    )
-    await bleManager.writeCommand(commandService.buildGetHelloExtMaverick())
-    const helloRsp = await helloProbe
-    console.log(
-      "[whoopsiInitThenForceTrim] GET_HELLO_EXT response (len=",
-      helloRsp.bytes.length,
-      "): hex=",
-      helloRsp.hex,
-    )
+      console.log("[whoopsiInitThenForceTrim] step 1: GET_HELLO_EXT (Maverick)")
+      const helloProbe = awaitCommandResponse(CommandNumber.GetHelloExt, 3000)
+      pending.push(helloProbe)
+      await bleManager.writeCommand(commandService.buildGetHelloExtMaverick())
+      const helloRsp = await helloProbe.promise.catch((err) => ({
+        bytes: [] as number[],
+        hex: `(no response: ${err.message})`,
+      }))
+      console.log(
+        "[whoopsiInitThenForceTrim] GET_HELLO_EXT response (len=",
+        helloRsp.bytes.length,
+        "): hex=",
+        helloRsp.hex,
+      )
 
-    // Step 2: battery queries (matches whoopsi init steps 3-4)
-    console.log("[whoopsiInitThenForceTrim] step 2: battery info")
-    await bleManager
-      .writeCommand(commandService.buildGetBatteryLevel())
-      .catch(() => {})
-    await new Promise((r) => setTimeout(r, 200))
-    await bleManager
-      .writeCommand(commandService.buildGetExtendedBatteryInfo())
-      .catch(() => {})
-    await new Promise((r) => setTimeout(r, 500))
+      console.log("[whoopsiInitThenForceTrim] step 2: battery info")
+      await bleManager
+        .writeCommand(commandService.buildGetBatteryLevel())
+        .catch(() => {})
+      await new Promise((r) => setTimeout(r, 200))
+      await bleManager
+        .writeCommand(commandService.buildGetExtendedBatteryInfo())
+        .catch(() => {})
+      await new Promise((r) => setTimeout(r, 500))
 
-    // Step 3: GetDataRange BEFORE
-    console.log("[whoopsiInitThenForceTrim] step 3: GetDataRange (before)")
-    const probe1 = collectResponse(CommandNumber.GetDataRange, 3000)
-    await bleManager.writeCommand(commandService.buildGetDataRange())
-    const before = await probe1
-    const beforeRange = decodeRange(before.bytes)
-    console.log(
-      "[whoopsiInitThenForceTrim] before:",
-      "start=", beforeRange.start,
-      "end=", beforeRange.end,
-      "rollover=", beforeRange.rollover,
-    )
+      console.log("[whoopsiInitThenForceTrim] step 3: GetDataRange (before)")
+      const probe1 = awaitCommandResponse(CommandNumber.GetDataRange, 3000)
+      pending.push(probe1)
+      await bleManager.writeCommand(commandService.buildGetDataRange())
+      const before = await probe1.promise
+      const beforeRange = decodeRange(before.bytes)
+      console.log(
+        "[whoopsiInitThenForceTrim] before:",
+        "start=", beforeRange.start,
+        "end=", beforeRange.end,
+        "rollover=", beforeRange.rollover,
+      )
 
-    // Step 4: FORCE_TRIM(0, 0) in Maverick framing
-    console.log("[whoopsiInitThenForceTrim] step 4: FORCE_TRIM(0,0) Maverick")
-    const trimProbe = collectResponse(CommandNumber.ForceTrim, 3000).catch(
-      (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
-    )
-    await bleManager.writeCommand(commandService.buildForceTrimMaverick(0, 0))
-    const trimRsp = await trimProbe
-    console.log("[whoopsiInitThenForceTrim] FORCE_TRIM response: hex=", trimRsp.hex)
+      console.log("[whoopsiInitThenForceTrim] step 4: FORCE_TRIM(0,0) Maverick")
+      const trimProbe = awaitCommandResponse(CommandNumber.ForceTrim, 3000)
+      pending.push(trimProbe)
+      await bleManager.writeCommand(commandService.buildForceTrimMaverick(0, 0))
+      const trimRsp = await trimProbe.promise.catch((err) => ({
+        bytes: [] as number[],
+        hex: `(no response: ${err.message})`,
+      }))
+      console.log("[whoopsiInitThenForceTrim] FORCE_TRIM response: hex=", trimRsp.hex)
 
-    // Step 5: GetDataRange AFTER
-    await new Promise((r) => setTimeout(r, 1500))
-    console.log("[whoopsiInitThenForceTrim] step 5: GetDataRange (after)")
-    const probe3 = collectResponse(CommandNumber.GetDataRange, 3000)
-    await bleManager.writeCommand(commandService.buildGetDataRange())
-    const after = await probe3
-    const afterRange = decodeRange(after.bytes)
-    console.log(
-      "[whoopsiInitThenForceTrim] after:",
-      "start=", afterRange.start,
-      "end=", afterRange.end,
-      "rollover=", afterRange.rollover,
-    )
+      await new Promise((r) => setTimeout(r, 1500))
+      console.log("[whoopsiInitThenForceTrim] step 5: GetDataRange (after)")
+      const probe3 = awaitCommandResponse(CommandNumber.GetDataRange, 3000)
+      pending.push(probe3)
+      await bleManager.writeCommand(commandService.buildGetDataRange())
+      const after = await probe3.promise
+      const afterRange = decodeRange(after.bytes)
+      console.log(
+        "[whoopsiInitThenForceTrim] after:",
+        "start=", afterRange.start,
+        "end=", afterRange.end,
+        "rollover=", afterRange.rollover,
+      )
 
-    const rewound =
-      beforeRange.start != null &&
-      afterRange.start != null &&
-      afterRange.start < beforeRange.start
-    console.log(
-      "[whoopsiInitThenForceTrim] VERDICT: rewound =",
-      rewound,
-      `(${beforeRange.start} → ${afterRange.start})`,
-    )
+      const rewound =
+        beforeRange.start != null &&
+        afterRange.start != null &&
+        afterRange.start < beforeRange.start
+      console.log(
+        "[whoopsiInitThenForceTrim] VERDICT: rewound =",
+        rewound,
+        `(${beforeRange.start} → ${afterRange.start})`,
+      )
 
-    if (rewound) {
-      console.log("[whoopsiInitThenForceTrim] Rewind succeeded — triggering syncNow")
-      await syncNow()
-    }
+      if (rewound) {
+        console.log("[whoopsiInitThenForceTrim] Rewind succeeded — triggering syncNow")
+        await syncNow()
+      }
 
-    return {
-      helloExtResponse: helloRsp.hex,
-      before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
-      trimResponse: trimRsp.hex,
-      after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
-      rewound,
+      return {
+        helloExtResponse: helloRsp.hex,
+        before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
+        trimResponse: trimRsp.hex,
+        after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
+        rewound,
+      }
+    } finally {
+      for (const p of pending) p.abort()
     }
   }, [syncNow])
 
@@ -1223,32 +1370,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         throw new Error("Connect your WHOOP strap before forcing trim.")
       }
 
-      const collectResponse = (cmd: number, timeoutMs: number) =>
-        new Promise<{ bytes: number[]; hex: string }>((resolve, reject) => {
-          let settled = false
-          const timer = setTimeout(() => {
-            if (settled) return
-            settled = true
-            unsub()
-            reject(new Error(`No response for cmd ${cmd} within ${timeoutMs}ms`))
-          }, timeoutMs)
-          const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
-            if (settled) return
-            if (
-              packet.type !== PacketType.CommandResponse ||
-              packet.command !== cmd
-            ) {
-              return
-            }
-            settled = true
-            clearTimeout(timer)
-            unsub()
-            const bytes = Array.from(packet.data)
-            const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
-            resolve({ bytes, hex })
-          })
-        })
-
       const u32 = (bytes: number[], off: number): number | null => {
         if (off + 4 > bytes.length) return null
         return (
@@ -1264,78 +1385,81 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         rollover: u32(bytes, 23),
       })
 
-      // Step 1: GetDataRange BEFORE
-      console.log("[forceTrimRewindAndSync] step 1: GetDataRange (before)")
-      const probe1 = collectResponse(CommandNumber.GetDataRange, 3000)
-      await bleManager.writeCommand(commandService.buildGetDataRange())
-      const before = await probe1
-      const beforeRange = decodeRange(before.bytes)
-      console.log(
-        "[forceTrimRewindAndSync] before:",
-        "start=", beforeRange.start,
-        "end=", beforeRange.end,
-        "rollover=", beforeRange.rollover,
-      )
+      const pending: AwaitableResponse[] = []
+      try {
+        console.log("[forceTrimRewindAndSync] step 1: GetDataRange (before)")
+        const probe1 = awaitCommandResponse(CommandNumber.GetDataRange, 3000)
+        pending.push(probe1)
+        await bleManager.writeCommand(commandService.buildGetDataRange())
+        const before = await probe1.promise
+        const beforeRange = decodeRange(before.bytes)
+        console.log(
+          "[forceTrimRewindAndSync] before:",
+          "start=", beforeRange.start,
+          "end=", beforeRange.end,
+          "rollover=", beforeRange.rollover,
+        )
 
-      // Step 2: FORCE_TRIM(sector, offset) in either legacy or Maverick framing
-      console.log(
-        "[forceTrimRewindAndSync] step 2: FORCE_TRIM sector=",
-        sector,
-        "offset=",
-        offset,
-        "framing=",
-        framing,
-      )
-      const probe2 = collectResponse(CommandNumber.ForceTrim, 3000).catch(
-        (err) => ({ bytes: [] as number[], hex: `(no response: ${err.message})` }),
-      )
-      const cmdBytes =
-        framing === "maverick"
-          ? commandService.buildForceTrimMaverick(sector, offset)
-          : commandService.buildForceTrim(sector, offset)
-      await bleManager.writeCommand(cmdBytes)
-      const trimResponse = await probe2
-      console.log("[forceTrimRewindAndSync] FORCE_TRIM response: hex=", trimResponse.hex)
+        console.log(
+          "[forceTrimRewindAndSync] step 2: FORCE_TRIM sector=",
+          sector,
+          "offset=",
+          offset,
+          "framing=",
+          framing,
+        )
+        const probe2 = awaitCommandResponse(CommandNumber.ForceTrim, 3000)
+        pending.push(probe2)
+        const cmdBytes =
+          framing === "maverick"
+            ? commandService.buildForceTrimMaverick(sector, offset)
+            : commandService.buildForceTrim(sector, offset)
+        await bleManager.writeCommand(cmdBytes)
+        const trimResponse = await probe2.promise.catch((err) => ({
+          bytes: [] as number[],
+          hex: `(no response: ${err.message})`,
+        }))
+        console.log("[forceTrimRewindAndSync] FORCE_TRIM response: hex=", trimResponse.hex)
 
-      // Step 3: settle then GetDataRange AFTER
-      await new Promise((r) => setTimeout(r, 1500))
-      console.log("[forceTrimRewindAndSync] step 3: GetDataRange (after)")
-      const probe3 = collectResponse(CommandNumber.GetDataRange, 3000)
-      await bleManager.writeCommand(commandService.buildGetDataRange())
-      const after = await probe3
-      const afterRange = decodeRange(after.bytes)
-      console.log(
-        "[forceTrimRewindAndSync] after:",
-        "start=", afterRange.start,
-        "end=", afterRange.end,
-        "rollover=", afterRange.rollover,
-      )
+        await new Promise((r) => setTimeout(r, 1500))
+        console.log("[forceTrimRewindAndSync] step 3: GetDataRange (after)")
+        const probe3 = awaitCommandResponse(CommandNumber.GetDataRange, 3000)
+        pending.push(probe3)
+        await bleManager.writeCommand(commandService.buildGetDataRange())
+        const after = await probe3.promise
+        const afterRange = decodeRange(after.bytes)
+        console.log(
+          "[forceTrimRewindAndSync] after:",
+          "start=", afterRange.start,
+          "end=", afterRange.end,
+          "rollover=", afterRange.rollover,
+        )
 
-      // Backward movement = real rewind. Forward drift is just the
-      // strap continuing to write samples between our calls.
-      const rewound =
-        beforeRange.start != null &&
-        afterRange.start != null &&
-        afterRange.start < beforeRange.start
-      console.log(
-        "[forceTrimRewindAndSync] VERDICT: rewound =",
-        rewound,
-        `(${beforeRange.start} → ${afterRange.start})`,
-      )
+        const rewound =
+          beforeRange.start != null &&
+          afterRange.start != null &&
+          afterRange.start < beforeRange.start
+        console.log(
+          "[forceTrimRewindAndSync] VERDICT: rewound =",
+          rewound,
+          `(${beforeRange.start} → ${afterRange.start})`,
+        )
 
-      // Step 4: if rewind worked, sync to pull the freshly-exposed data
-      if (rewound) {
-        console.log("[forceTrimRewindAndSync] Rewind succeeded — triggering syncNow")
-        await syncNow()
-      } else {
-        console.log("[forceTrimRewindAndSync] No rewind — skipping syncNow")
-      }
+        if (rewound) {
+          console.log("[forceTrimRewindAndSync] Rewind succeeded — triggering syncNow")
+          await syncNow()
+        } else {
+          console.log("[forceTrimRewindAndSync] No rewind — skipping syncNow")
+        }
 
-      return {
-        before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
-        trimResponse: trimResponse.hex,
-        after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
-        rewound,
+        return {
+          before: `start=${beforeRange.start} end=${beforeRange.end} rollover=${beforeRange.rollover}`,
+          trimResponse: trimResponse.hex,
+          after: `start=${afterRange.start} end=${afterRange.end} rollover=${afterRange.rollover}`,
+          rewound,
+        }
+      } finally {
+        for (const p of pending) p.abort()
       }
     },
     [syncNow],
@@ -1364,71 +1488,54 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         new Date(unixTs * 1000).toISOString(),
       )
 
-      // Listen for the response before we send. Resolves either when
-      // we see a CommandResponse with command=33, or after 1.5s.
-      const responsePromise = new Promise<void>((resolve) => {
-        const timer = setTimeout(() => {
-          unsub()
+      const probe = awaitCommandResponse(CommandNumber.SetReadPointer, 1500)
+      try {
+        await bleManager.writeCommand(
+          commandService.buildSetReadPointer(unixTs, shape),
+        )
+        const rsp = await probe.promise.catch(() => null)
+        if (rsp) {
+          console.log(
+            "[rewindAndResync] CommandResponse for cmd 33: len=",
+            rsp.bytes.length,
+            "hex=",
+            rsp.hex,
+          )
+        } else {
           console.log(
             "[rewindAndResync] no CommandResponse for cmd 33 within 1.5s — strap likely ignored or doesn't implement it",
           )
-          resolve()
-        }, 1500)
-        const unsub = bleManager.onPacket(CMD_FROM_STRAP_UUID, (packet) => {
-          if (
-            packet.type === PacketType.CommandResponse &&
-            packet.command === CommandNumber.SetReadPointer
-          ) {
-            clearTimeout(timer)
-            unsub()
-            const bytes = Array.from(packet.data)
-            const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")
-            console.log(
-              "[rewindAndResync] CommandResponse for cmd 33: len=",
-              bytes.length,
-              "hex=",
-              hex,
-            )
-            resolve()
-          }
-        })
-      })
-
-      await bleManager.writeCommand(
-        commandService.buildSetReadPointer(unixTs, shape),
-      )
-      await responsePromise
+        }
+      } finally {
+        probe.abort()
+      }
       await syncNow()
     },
     [syncNow],
   )
 
   useEffect(() => {
-    KVStore.getItemAsync(LAST_SYNC_KEY).then((lastSyncAt) => {
-      setDeviceState((current) => ({ ...current, lastSyncAt }))
-    })
+    const lastSyncAt = storage.getString(LAST_SYNC_KEY) ?? null
+    setDeviceState((current) => ({ ...current, lastSyncAt }))
   }, [])
 
   useEffect(() => {
-    Promise.all([
-      KVStore.getItemAsync(REALTIME_HR_KEY),
-      KVStore.getItemAsync(BROADCAST_HR_KEY),
-      KVStore.getItemAsync(RAW_STREAM_KEY),
-    ]).then(([realtimeValue, broadcastValue, rawStreamValue]) => {
-      setDeviceState((current) => ({
-        ...current,
-        isRealtimeHeartRateEnabled:
-          realtimeValue == null ? current.isRealtimeHeartRateEnabled : JSON.parse(realtimeValue),
-        isBroadcastHeartRateEnabled:
-          broadcastValue == null
-            ? current.isBroadcastHeartRateEnabled
-            : JSON.parse(broadcastValue),
-        isRawDataStreamingEnabled:
-          rawStreamValue == null
-            ? current.isRawDataStreamingEnabled
-            : JSON.parse(rawStreamValue),
-      }))
-    })
+    const realtimeValue = storage.getString(REALTIME_HR_KEY)
+    const broadcastValue = storage.getString(BROADCAST_HR_KEY)
+    const rawStreamValue = storage.getString(RAW_STREAM_KEY)
+    setDeviceState((current) => ({
+      ...current,
+      isRealtimeHeartRateEnabled:
+        realtimeValue == null ? current.isRealtimeHeartRateEnabled : JSON.parse(realtimeValue),
+      isBroadcastHeartRateEnabled:
+        broadcastValue == null
+          ? current.isBroadcastHeartRateEnabled
+          : JSON.parse(broadcastValue),
+      isRawDataStreamingEnabled:
+        rawStreamValue == null
+          ? current.isRawDataStreamingEnabled
+          : JSON.parse(rawStreamValue),
+    }))
   }, [])
 
   useEffect(() => {
@@ -1465,10 +1572,20 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         startAndroidForegroundService().catch((err) =>
           console.warn("[android-fgs] start failed", err),
         )
+        // Continuous BLE pump — polls SendHistoricalData every 30s so the
+        // strap's read pointer never gets ahead of our persistence.
+        // Internal guards skip when a sync is already in flight or the
+        // strap is no longer connected.
+        startContinuousSyncDaemon({
+          syncNow: () => syncNowRef.current(),
+          isSyncingRef,
+          isConnected: () => bleManager.connectionState === "ready",
+        })
       } else if (connectionState === "disconnected") {
         stopAndroidForegroundService().catch((err) =>
           console.warn("[android-fgs] stop failed", err),
         )
+        stopContinuousSyncDaemon()
       }
     })
 
@@ -1653,16 +1770,14 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
     })
 
+    // Single source of truth for foreground/background state is SyncContext's
+    // AppState listener, which also fires runBackgroundDrain on transition.
+    // We only need to track the flag locally so the packet-drain debounce
+    // knows whether to fire (only while backgrounded).
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
     let isBackground = AppState.currentState !== "active"
     const appStateSub = AppState.addEventListener("change", (next) => {
-      const wasForeground = !isBackground
       isBackground = next !== "active"
-      if (wasForeground && isBackground) {
-        runBackgroundDrain(15_000).catch((err) =>
-          console.warn("[bg-flush-on-background] failed", err),
-        )
-      }
     })
 
     const unsubscribePacketsForDrain = bleManager.onPacket("*", () => {
@@ -1703,6 +1818,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       imuForwarder.stop()
       realtimeForwarder.endSession()
       consoleLogForwarder.stop()
+      stopContinuousSyncDaemon()
       if (debounceTimer) clearTimeout(debounceTimer)
     }
   }, [maybeAutoSync, refreshDeviceState])
@@ -1737,6 +1853,12 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       syncStage,
       syncProgress,
       syncSummary,
+      lastBatchWindow,
+      pipelineState,
+      lastPipelineAt,
+      syncIteration,
+      syncIterationCap: DEFAULT_MAX_ITERATIONS,
+      syncLastStopReason,
       error,
       scan,
       connect,
@@ -1766,6 +1888,11 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       syncStage,
       syncProgress,
       syncSummary,
+      lastBatchWindow,
+      pipelineState,
+      lastPipelineAt,
+      syncIteration,
+      syncLastStopReason,
       error,
       scan,
       connect,
