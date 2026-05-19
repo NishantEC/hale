@@ -8,6 +8,7 @@ pub mod spo2_events;
 pub mod strain;
 pub mod stress;
 pub mod timestamp_slice;
+pub mod training_load;
 pub mod util;
 
 pub use timestamp_slice::{
