@@ -48,7 +48,9 @@
       "NSHealthShareUsageDescription": "Noop reads steps, workouts, heart rate, sleep, and other Apple Health data so it can blend Apple Watch and iPhone signals with your WHOOP recovery and strain.",
       "NSHealthUpdateUsageDescription": "Noop writes recovery, strain, sleep stages, and workout data back to Apple Health so other apps can use them.",
       "NSMotionUsageDescription": "Noop reads iPhone barometer and motion data to detect hill climbs, stair climbing, and other altitude-aware activities the WHOOP strap can't see.",
-      "UIBackgroundModes": ["bluetooth-central", "processing"]
+      "UIBackgroundModes": ["bluetooth-central", "processing"],
+      "NSSupportsLiveActivities": true,
+      "NSSupportsLiveActivitiesFrequentUpdates": true
     },
     "appleTeamId": "LGMF2TG7P6"
   },
@@ -59,6 +61,12 @@
   "plugins": [
     "expo-localization",
     "expo-font",
+    [
+      "expo-live-activity",
+      {
+        "frequentUpdates": true
+      }
+    ],
     [
       "react-native-ble-plx",
       {

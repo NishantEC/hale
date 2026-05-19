@@ -17,6 +17,7 @@ import tamaguiConfig from "../../tamagui.config"
 import { AuthProvider } from "@/context/AuthContext"
 import { SyncProvider } from "@/context/SyncContext"
 import { BleProvider } from "@/context/BleContext"
+import { SyncLiveActivityBridge } from "@/services/sync/useSyncLiveActivity"
 import { ToastProviderWithViewport } from "@/components/reactx/toast"
 import { DashboardProvider } from "@/context/DashboardContext"
 import { HealthKitProvider } from "@/context/HealthKitContext"
@@ -111,6 +112,7 @@ export default function RootLayout() {
                     <BleProvider>
                       <HealthKitProvider>
                         <ToastProviderWithViewport>
+                          <SyncLiveActivityBridge />
                           <RootStackLayout />
                         </ToastProviderWithViewport>
                       </HealthKitProvider>

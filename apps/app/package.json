@@ -65,6 +65,7 @@
     "expo-intent-launcher": "~55.0.12",
     "expo-linear-gradient": "~55.0.11",
     "expo-linking": "~55.0.7",
+    "expo-live-activity": "^0.4.2",
     "expo-localization": "~55.0.8",
     "expo-network": "~55.0.13",
     "expo-router": "~55.0.10",
