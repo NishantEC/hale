@@ -33,10 +33,13 @@ const LIGHT_COLORS = {
   statusAmber: "#D97706",
   statusRed: "#DC2626",
   statusStale: "#9CA3AF",
-  ringSleep: "#7C3AED",
-  ringRecovery: "#16A34A",
-  ringStrain: "#D97706",
-  ringHrv: "#539df5",
+  // Ring tints — muted/darker shades to reduce home-page visual noise. The
+  // bright Tailwind-500 originals fought with the card surfaces and overall
+  // hierarchy. These are slate-derived versions of the same hues.
+  ringSleep: "#6B5BB8",
+  ringRecovery: "#3F7C5A",
+  ringStrain: "#A86826",
+  ringHrv: "#5B7BB5",
   switchTrackOff: "#e0e0e0",
   switchTrackOn: "rgba(29,29,31,0.42)",
   glowPrimary: "#1d1d1f",
@@ -108,10 +111,13 @@ const DARK_COLORS: typeof LIGHT_COLORS = {
   statusAmber: "#ffa42b",
   statusRed: "#f3727f",
   statusStale: "#666666",
-  ringSleep: "#A78BFA",
-  ringRecovery: "#1ed760",
-  ringStrain: "#ffa42b",
-  ringHrv: "#539df5",
+  // Ring tints — muted dark-theme variants. Dialed down from the original
+  // vivid #A78BFA / #1ed760 / #ffa42b which were over-saturated against the
+  // surface elevations.
+  ringSleep: "#8C7BB8",
+  ringRecovery: "#5DA47A",
+  ringStrain: "#C58642",
+  ringHrv: "#6B85A8",
   switchTrackOff: "#4d4d4d",
   switchTrackOn: "rgba(255,255,255,0.55)",
   glowPrimary: "#FFFFFF",

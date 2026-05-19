@@ -65,10 +65,10 @@ const SIZE_TABLE: Record<
     labelMarginTop: number
   }
 > = {
-  default: { size: 112, strokeWidth: 6, valueSize: 30, valueLineHeight: 34, unitSize: 12, labelMarginTop: 10 },
-  hero: { size: 125, strokeWidth: 6, valueSize: 32, valueLineHeight: 36, unitSize: 13, labelMarginTop: 8 },
-  "hero-xl": { size: 170, strokeWidth: 9, valueSize: 50, valueLineHeight: 54, unitSize: 17, labelMarginTop: 12 },
-  compact: { size: 130, strokeWidth: 7, valueSize: 28, valueLineHeight: 34, unitSize: 14, labelMarginTop: 8 },
+  default: { size: 96, strokeWidth: 5, valueSize: 24, valueLineHeight: 28, unitSize: 11, labelMarginTop: 8 },
+  hero: { size: 108, strokeWidth: 6, valueSize: 26, valueLineHeight: 30, unitSize: 12, labelMarginTop: 8 },
+  "hero-xl": { size: 144, strokeWidth: 8, valueSize: 40, valueLineHeight: 44, unitSize: 14, labelMarginTop: 10 },
+  compact: { size: 110, strokeWidth: 6, valueSize: 24, valueLineHeight: 28, unitSize: 12, labelMarginTop: 8 },
 }
 
 const RingItem: FC<{ ring: Ring; size: RingSize }> = ({ ring, size }) => {
