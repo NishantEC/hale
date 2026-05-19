@@ -329,7 +329,6 @@ export const HomeScreen: FC = () => {
       unit: "%",
       progress: homeView?.rings.recovery.progress ?? 0,
       color: colors.ringRecovery,
-      hero: true,
       onPress: () => navigateTo("HomeMetric", "home-metric", { metric: "recovery" }),
     },
     {
@@ -476,8 +475,9 @@ export const HomeScreen: FC = () => {
                 exiting={FadeOut.duration(90)}
               >
                 <MetricRingsRow
-                  rings={[ringTrio[0], ringTrio[1], ringTrio[2]] as any}
-                  layout="left-hero"
+                  // Strain (left) · Recovery (middle) · Sleep (right) at equal size.
+                  rings={[ringTrio[2], ringTrio[1], ringTrio[0]] as any}
+                  layout="row"
                 />
 
                 <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>

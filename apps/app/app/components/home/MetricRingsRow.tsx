@@ -46,7 +46,7 @@ export const MetricRingsRow: FC<Props> = ({ rings, layout = "row" }) => {
   return (
     <View style={styles.row}>
       {rings.map((r) => (
-        <RingItem key={r.key} ring={r} size={r.hero ? "hero" : "default"} />
+        <RingItem key={r.key} ring={r} size="default" />
       ))}
     </View>
   )
@@ -65,7 +65,7 @@ const SIZE_TABLE: Record<
     labelMarginTop: number
   }
 > = {
-  default: { size: 96, strokeWidth: 5, valueSize: 24, valueLineHeight: 28, unitSize: 10, labelMarginTop: 8 },
+  default: { size: 112, strokeWidth: 6, valueSize: 30, valueLineHeight: 34, unitSize: 12, labelMarginTop: 10 },
   hero: { size: 125, strokeWidth: 6, valueSize: 32, valueLineHeight: 36, unitSize: 13, labelMarginTop: 8 },
   "hero-xl": { size: 170, strokeWidth: 9, valueSize: 50, valueLineHeight: 54, unitSize: 17, labelMarginTop: 12 },
   compact: { size: 130, strokeWidth: 7, valueSize: 28, valueLineHeight: 34, unitSize: 14, labelMarginTop: 8 },
@@ -139,8 +139,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 4,
-    marginBottom: 18,
+    marginTop: 8,
+    marginBottom: 28,
   } as ViewStyle,
   heroRow: {
     flexDirection: "row",
