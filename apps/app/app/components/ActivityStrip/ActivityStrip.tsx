@@ -16,11 +16,10 @@ const TONE_COLOR: Record<AccessoryTone, string> = {
   gray:   "#8E8E93",
 }
 
+// Only rotate icons that are visually designed to spin. The chart, wave, and
+// up-arrow glyphs read as broken when spun.
 const SPIN_STATES: ReadonlySet<AccessoryState> = new Set<AccessoryState>([
   "ble_syncing",
-  "pipeline_running",
-  "upload_draining",
-  "ble_connecting",
 ])
 
 export const ActivityStrip = memo(function ActivityStrip({ view }: { view: ActivityStripView }) {
