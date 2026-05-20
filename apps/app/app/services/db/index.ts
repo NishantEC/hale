@@ -24,6 +24,8 @@ export function openDatabase(): NoopDatabase {
   sqliteInstance.executeSync("PRAGMA foreign_keys = ON;")
   sqliteInstance.executeSync("PRAGMA busy_timeout = 5000;")
   sqliteInstance.executeSync("PRAGMA synchronous = NORMAL;")
+  sqliteInstance.executeSync("PRAGMA cache_size = -64000;")
+  sqliteInstance.executeSync("PRAGMA temp_store = MEMORY;")
   dbInstance = drizzle(sqliteInstance, { schema })
   return dbInstance
 }
