@@ -61,6 +61,20 @@ import { openDatabase } from "@/services/db"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAuth } from "@/context/AuthContext"
 import { setBaselineRhr } from "@/stores/bleStore"
+import {
+  setIsSyncing as setStoreIsSyncing,
+  setSyncStage as setStoreSyncStage,
+  setSyncProgress as setStoreSyncProgress,
+  setSyncSummary as setStoreSyncSummary,
+  setSyncIteration as setStoreSyncIteration,
+  setSyncLastStopReason as setStoreSyncLastStopReason,
+  setPipelineState as setStorePipelineState,
+  setLastPipelineAt as setStoreLastPipelineAt,
+  setLastBatchWindow as setStoreLastBatchWindow,
+  setSyncError as setStoreSyncError,
+  setScannedDevices as setStoreScannedDevices,
+  useSyncStore,
+} from "@/stores/syncStore"
 // Battery parsers live in a separate module so they can be unit-tested
 // without dragging in BleProvider's dependency graph.
 import {
@@ -320,8 +334,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const { isAuthenticated } = useAuth()
 
   const [deviceState, setDeviceState] = useState<BleDeviceState>(emptyDeviceState)
-  const [scannedDevices, setScannedDevices] = useState<ScannedDevice[]>([])
-  const [isSyncing, setIsSyncing] = useState(false)
   const isSyncingRef = useRef(false)
   // Stable handle to the latest syncNow for the continuous-sync daemon.
   // syncNow is recreated on each render via useCallback so we can't capture
@@ -334,29 +346,40 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   // queued for delivery but never got to send before we aborted). The
   // preflight is only valuable when the prior session crashed mid-stream.
   const lastSyncCleanRef = useRef(true)
-  const [syncStage, setSyncStage] = useState("")
-  const [syncProgress, setSyncProgress] = useState<DownloadProgress | null>(null)
-  const [syncSummary, setSyncSummary] = useState<SyncSummary | null>(null)
-  // Newest / oldest strap-time observed in the most recent persisted batch.
-  // Updated from persistBatch on each HistoryEnd so the Inspector can show
-  // "currently processing strap-time X" without us needing to poll the DB.
-  const [lastBatchWindow, setLastBatchWindow] = useState<{
-    oldestMs: number
-    newestMs: number
-    batchSize: number
-  } | null>(null)
-  const [pipelineState, setPipelineState] = useState<
-    "idle" | "running" | "success" | "failed"
-  >("idle")
-  const [lastPipelineAt, setLastPipelineAt] = useState<string | null>(null)
   const isPipelineRunningRef = useRef(false)
   const lastPipelineAtRef = useRef<number>(0)
-  const [syncIteration, setSyncIteration] = useState(0)
-  const [syncLastStopReason, setSyncLastStopReason] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const lastAutoSyncAttemptAt = useRef<number>(0)
 
-  const clearError = useCallback(() => setError(null), [])
+  // Sync-state scalars now live in syncStore (apps/app/app/stores/syncStore.ts).
+  // BleProvider subscribes via selector hooks and forwards them on the value
+  // object so unmigrated consumers calling `useBle()` keep working. The local
+  // `set*` aliases below write through to the store so syncNow / scan /
+  // callbacks below don't need to be rewritten.
+  const scannedDevices = useSyncStore((s) => s.scannedDevices)
+  const isSyncing = useSyncStore((s) => s.isSyncing)
+  const syncStage = useSyncStore((s) => s.syncStage)
+  const syncProgress = useSyncStore((s) => s.syncProgress)
+  const syncSummary = useSyncStore((s) => s.syncSummary)
+  const lastBatchWindow = useSyncStore((s) => s.lastBatchWindow)
+  const pipelineState = useSyncStore((s) => s.pipelineState)
+  const lastPipelineAt = useSyncStore((s) => s.lastPipelineAt)
+  const syncIteration = useSyncStore((s) => s.syncIteration)
+  const syncLastStopReason = useSyncStore((s) => s.syncLastStopReason)
+  const error = useSyncStore((s) => s.error)
+
+  const setScannedDevices = setStoreScannedDevices
+  const setIsSyncing = setStoreIsSyncing
+  const setSyncStage = setStoreSyncStage
+  const setSyncProgress = setStoreSyncProgress
+  const setSyncSummary = setStoreSyncSummary
+  const setLastBatchWindow = setStoreLastBatchWindow
+  const setPipelineState = setStorePipelineState
+  const setLastPipelineAt = setStoreLastPipelineAt
+  const setSyncIteration = setStoreSyncIteration
+  const setSyncLastStopReason = setStoreSyncLastStopReason
+  const setError = setStoreSyncError
+
+  const clearError = useCallback(() => setError(null), [setError])
 
   // Cheap reads only. Safe to call on every screen focus.
   const refreshDeviceState = useCallback(async () => {
