@@ -53,6 +53,13 @@ jest.mock("react-native-reanimated", () => {
   }
 })
 
+// op-sqlite is a native turbomodule; it can't load under Jest. The manual
+// mock at __mocks__/@op-engineering/op-sqlite.ts ships a fully-stubbed
+// `open()` so any test that transitively imports app/services/db/index.ts
+// doesn't crash at module-init. DB tests still run against better-sqlite3
+// via test/db/helpers.ts.
+jest.mock("@op-engineering/op-sqlite")
+
 jest.mock("i18next", () => ({
   currentLocale: "en",
   t: (key: string, params: Record<string, string>) => {
