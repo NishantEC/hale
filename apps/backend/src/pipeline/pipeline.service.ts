@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository, MoreThanOrEqual } from 'typeorm';
 import { randomUUID } from 'crypto';
@@ -257,13 +257,17 @@ export class PipelineService {
       return { table: tableName, stored };
     }
 
-    // Tables with their own direct endpoints (telemetry, journal). Acked so
-    // the queue drains; canonical writes happen on the direct path. Add real
-    // per-table handlers here when the direct path becomes optional.
+    // Unknown table — reject with 400. The mobile drainer treated the prior
+    // 2xx ack as "shipped" and deleted the queue rows, silently dropping data
+    // for tables routed through this endpoint that lacked a handler (codex
+    // adversarial review 2026-05-21, finding #1). Failing loud forces the
+    // drainer to retain the row until a real handler ships.
     this.logger.warn(
-      `ingestTable: tableName=${tableName} not yet routed; ${rows.length} rows acked without storing`,
+      `ingestTable: tableName=${tableName} has no handler; refusing ${rows.length} rows`,
     );
-    return { table: tableName, stored: 0, ignored: rows.length };
+    throw new BadRequestException(
+      `ingestTable: no handler registered for table "${tableName}"`,
+    );
   }
 
   // -------------------------------------------------------------- runPipeline

@@ -7,6 +7,37 @@ const BASE_URL =
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   DEFAULT_BASE_URL;
 const REQUEST_TIMEOUT_MS = 20000;
+
+// Cap concurrent in-flight HTTP requests from the app. Without this, the
+// daemon, sync, view, telemetry, and downlink modules can collectively
+// fire 25+ requests in parallel during a single foreground/sync moment.
+// That floods Cloud Run's concurrency * max-instances slot budget and
+// returns immediate `429 Rate exceeded` for the overflow (verified via
+// gcloud logs 2026-05-21). 6 in-flight keeps server-side queueing tight
+// while still allowing UI views, telemetry, and ingest to make progress
+// in parallel.
+const MAX_IN_FLIGHT_REQUESTS = 6;
+let activeRequestCount = 0;
+const requestWaiters: Array<() => void> = [];
+
+async function acquireRequestSlot(): Promise<void> {
+  if (activeRequestCount < MAX_IN_FLIGHT_REQUESTS) {
+    activeRequestCount += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    requestWaiters.push(() => {
+      activeRequestCount += 1;
+      resolve();
+    });
+  });
+}
+
+function releaseRequestSlot(): void {
+  activeRequestCount -= 1;
+  const next = requestWaiters.shift();
+  if (next) next();
+}
 // Aggregate reads (home/sleep/trends/health views, debug overview) join across
 // raw + derived tables; under cold-backend / mobile-network conditions a single
 // request can easily push past 20s. Bumped per-endpoint so fast CRUD paths
@@ -468,6 +499,14 @@ export function setSessionToken(token?: string | null) {
 }
 
 async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  // Wait for a slot before consuming any timeout budget — counting the
+  // semaphore wait against `timeoutMs` would turn local queueing into
+  // spurious "Request timed out" failures.
+  await acquireRequestSlot();
+  return requestJsonImpl(path, init, timeoutMs).finally(releaseRequestSlot);
+}
+
+async function requestJsonImpl(path: string, init: RequestInit, timeoutMs: number) {
   const controller = new AbortController();
   // Include path so the user (and we) know which endpoint stalled — the
   // CFNetwork `<private>` URL redaction in iOS logs makes this impossible to
