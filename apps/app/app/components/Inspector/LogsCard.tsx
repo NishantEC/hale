@@ -7,7 +7,7 @@ import * as Sharing from "expo-sharing"
 import { Text } from "@/components/Text"
 import {
   getTodayLogPath,
-  readRecentLogLines,
+  readAllTodayLogLines,
 } from "@/services/observability/persistentLog"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
@@ -22,7 +22,7 @@ export const LogsCard: FC = () => {
 
   const refresh = useCallback(async () => {
     try {
-      const tail = await readRecentLogLines(100)
+      const tail = await readAllTodayLogLines()
       setLines(tail)
     } catch (err) {
       console.warn("[LogsCard] read failed", err)

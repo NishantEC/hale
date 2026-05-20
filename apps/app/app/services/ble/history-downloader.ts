@@ -2,7 +2,13 @@ import { PacketType, MetadataType, CommandNumber, WhoopPacket, HistoricalRecord,
 import { parseHistoricalPacketBatch } from './history-parser';
 import { bleManager } from './ble-manager';
 import { CommandService } from './command-service';
-import { recordPersistFailure } from '../sync/syncTelemetry';
+import { awaitCommandResponse } from './awaitable-response';
+import { recordAckResponse, recordPersistFailure } from '../sync/syncTelemetry';
+
+// How long to wait for the strap's CommandResponse to our HistoricalDataAck
+// before recording a "timed out" entry. The legitimate response (per the
+// whoopsi reference) arrives within ~50ms; 1.5s leaves plenty of margin.
+const ACK_RESPONSE_TIMEOUT_MS = 1500;
 
 const DOWNLOAD_TIMEOUT_MS = 120000;
 const IDLE_TIMEOUT_MS = 15000; // If no packets for 15s after receiving data, assume done
@@ -287,19 +293,13 @@ export class HistoryDownloader {
     if (!persist || batchRecords.length === 0) {
       // No persistence required — still serialize the ACK through the
       // chain so it can't fire ahead of a pending batch persist.
-      this.persistChain = this.persistChain.then(() => {
-        bleManager
-          .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
-          .catch(() => {});
-      });
+      this.persistChain = this.persistChain.then(() => this.sendAckWithResponse(trimValue));
       return;
     }
     this.persistChain = this.persistChain.then(async () => {
       try {
         await persist(batchRecords);
-        bleManager
-          .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
-          .catch(() => {});
+        await this.sendAckWithResponse(trimValue);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         recordPersistFailure({
@@ -316,6 +316,49 @@ export class HistoryDownloader {
         throw err;
       }
     });
+  }
+
+  // Send HistoricalDataAck(trimValue) and observe whether the strap emits
+  // a CommandResponse for cmd 23. Telemetry records both arms (response
+  // arrived vs timed out) so we can tell empirically whether the strap is
+  // even acknowledging our acks — central to the cursor-loss investigation.
+  private async sendAckWithResponse(trimValue: number): Promise<void> {
+    const startedAt = Date.now();
+    // Subscribe BEFORE the write so a fast response can't slip through.
+    const waiter = awaitCommandResponse(
+      CommandNumber.HistoricalDataResult,
+      ACK_RESPONSE_TIMEOUT_MS,
+    );
+    try {
+      await bleManager
+        .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
+        .catch(() => undefined);
+      try {
+        const { bytes, hex } = await waiter.promise;
+        recordAckResponse({
+          at: Date.now(),
+          trimValue,
+          durationMs: Date.now() - startedAt,
+          responseHex: hex,
+          originSeq: bytes.length > 0 ? bytes[0] : null,
+          status: bytes.length > 1 ? bytes[1] : null,
+        });
+      } catch {
+        // Timeout — no CommandResponse arrived. Recording this case is
+        // the entire point: a consistent timeout means our acks are
+        // being ignored.
+        recordAckResponse({
+          at: Date.now(),
+          trimValue,
+          durationMs: Date.now() - startedAt,
+          responseHex: null,
+          originSeq: null,
+          status: null,
+        });
+      }
+    } finally {
+      waiter.abort();
+    }
   }
 
   private emitProgress(state: DownloadProgress['state']) {

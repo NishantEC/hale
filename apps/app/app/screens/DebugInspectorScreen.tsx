@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { ActionsRow } from "@/components/Inspector/ActionsRow"
 import { DaemonDrilldown } from "@/components/Inspector/DaemonDrilldown"
 import { buildEvents, EventsCard } from "@/components/Inspector/EventsCard"
+import { AckResponsesCard } from "@/components/Inspector/AckResponsesCard"
 import { ExpertActions } from "@/components/Inspector/ExpertActions"
 import { LocalVsBackendCard } from "@/components/Inspector/LocalVsBackendCard"
 import { HealthStrip } from "@/components/Inspector/HealthStrip"
@@ -460,6 +461,8 @@ export const DebugInspectorScreen: FC = () => {
           onClearQueue={handleClearQueue}
           onForceUpload={handleForceUpload}
         />
+
+        {expert ? <AckResponsesCard /> : null}
 
         {expert ? <LocalVsBackendCard /> : null}
 

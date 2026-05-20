@@ -145,6 +145,18 @@ export async function readRecentLogLines(maxLines = 200): Promise<string[]> {
   return lines.slice(-maxLines).reverse() // newest first for the Inspector
 }
 
+// Read every line from today's log file. No cap. Inspector uses this so
+// "copy" yields the whole thing — partial logs were useless for the
+// strap-cursor investigation where the gap could span 30+ minutes of events.
+export async function readAllTodayLogLines(): Promise<string[]> {
+  await ensureDir()
+  const path = logPath(todayKey())
+  const info = await FileSystem.getInfoAsync(path)
+  if (!info.exists) return []
+  const contents = await FileSystem.readAsStringAsync(path)
+  return contents.split("\n").filter((l) => l.length > 0).reverse()
+}
+
 // Returns the file path of today's log, or null if it doesn't exist yet.
 // Used by the "Export" button to hand the file to iOS share sheet.
 export async function getTodayLogPath(): Promise<string | null> {

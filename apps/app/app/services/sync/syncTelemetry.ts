@@ -66,11 +66,31 @@ export type DetectedGap = {
   durationMinutes: number
 }
 
+// One per HistoricalDataAck (cmd 23) we send. Captures whether the strap
+// emitted a CommandResponse for it, what bytes it returned, and how long
+// we waited. The whole point is to determine *empirically* whether the
+// strap actually consumed our trim — investigation H1 vs auto-trim
+// hypothesis (see docs/whoop-trim-ack-investigation.md).
+export type AckResponse = {
+  at: number
+  trimValue: number
+  durationMs: number
+  // null = timed out waiting for response (most informative case if it
+  // happens consistently — means the strap is NOT acknowledging the ack).
+  responseHex: string | null
+  // First two bytes parsed: bytes[0] = the ack origin-seq we echoed back,
+  // bytes[1] = the strap's status byte (0 = OK, non-zero per whoopsi RE
+  // notes = some kind of error). null when no response arrived.
+  originSeq: number | null
+  status: number | null
+}
+
 const MAX_DRAIN_HISTORY = 20
 const MAX_PERSIST_FAILURES = 10
 const MAX_API_FAILURES = 10
 const MAX_SYNC_SESSIONS = 20
 const MAX_DETECTED_GAPS = 20
+const MAX_ACK_RESPONSES = 30
 const PERSIST_FAILURE_REPORT_INTERVAL_MS = 60_000
 const API_FAILURE_REPORT_INTERVAL_MS = 60_000
 
@@ -84,6 +104,11 @@ let apiFailures: ApiFailureRecord[] = []
 let lastApiFailureReportAt = 0
 let syncSessions: SyncSession[] = []
 let detectedGaps: DetectedGap[] = []
+let ackResponses: AckResponse[] = []
+let ackSent = 0
+let ackResponded = 0
+let ackTimedOut = 0
+let ackRejected = 0
 
 const listeners = new Set<() => void>()
 
@@ -200,6 +225,26 @@ export function recordDetectedGap(rec: DetectedGap): void {
   emit()
 }
 
+export function recordAckResponse(rec: AckResponse): void {
+  ackResponses = [rec, ...ackResponses].slice(0, MAX_ACK_RESPONSES)
+  ackSent += 1
+  if (rec.responseHex == null) {
+    ackTimedOut += 1
+  } else {
+    ackResponded += 1
+    // status byte != 0 is treated as a rejection per whoopsi convention.
+    if (rec.status != null && rec.status !== 0) ackRejected += 1
+  }
+  appendLog(rec.responseHex == null ? "warn" : "info", "ble", "ack response", {
+    trimValue: rec.trimValue,
+    durationMs: rec.durationMs,
+    responseHex: rec.responseHex,
+    originSeq: rec.originSeq,
+    status: rec.status,
+  })
+  emit()
+}
+
 export function getSyncTelemetry() {
   return {
     lastDrain,
@@ -210,6 +255,13 @@ export function getSyncTelemetry() {
     apiFailures,
     syncSessions,
     detectedGaps,
+    ackResponses,
+    ackCounters: {
+      sent: ackSent,
+      responded: ackResponded,
+      timedOut: ackTimedOut,
+      rejected: ackRejected,
+    },
   }
 }
 
