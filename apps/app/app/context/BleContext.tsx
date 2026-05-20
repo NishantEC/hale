@@ -1941,6 +1941,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     }),
     [
       deviceState,
+      homeView,
       scannedDevices,
       isSyncing,
       syncStage,
