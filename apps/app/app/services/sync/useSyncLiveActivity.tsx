@@ -14,6 +14,7 @@
  */
 
 import { FC, useEffect, useRef } from "react"
+import { AppState, AppStateStatus } from "react-native"
 
 import { useBle } from "@/context/BleContext"
 import { useSyncContext } from "@/context/SyncContext"
@@ -65,32 +66,93 @@ export const SyncLiveActivityBridge: FC = () => {
   const pendingAtStartRef = useRef(0)
   const wasSyncingRef = useRef(false)
 
+  // Foreground-aware: the in-app ActivityStrip already shows this info while
+  // the app is active. Live Activities only earn screen real estate when the
+  // user has navigated away or locked the phone.
+  const isBackgroundRef = useRef<boolean>(AppState.currentState !== "active")
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+      const nowBackground = next !== "active"
+      const wasBackground = isBackgroundRef.current
+      isBackgroundRef.current = nowBackground
+
+      if (!wasSyncingRef.current) return
+
+      if (!wasBackground && nowBackground) {
+        // Foreground -> background mid-sync: spin up the activity now so the
+        // user sees it on Lock Screen / Dynamic Island for the rest of the run.
+        syncLiveActivity.start({
+          title: ble.isSyncing ? "Syncing strap" : "Uploading",
+          subtitle: subtitleFor(
+            ble.isSyncing,
+            ble.syncStage,
+            ble.syncIteration,
+            ble.syncIterationCap,
+            sync.isSyncing,
+            sync.pendingCount,
+          ),
+          progress: progressFraction(
+            ble.isSyncing,
+            ble.syncIteration,
+            ble.syncIterationCap,
+            sync.isSyncing,
+            sync.pendingCount,
+            pendingAtStartRef.current,
+          ),
+        })
+      } else if (wasBackground && !nowBackground) {
+        // Background -> foreground mid-sync: tear the activity down. The
+        // in-app strip takes over visibility from here.
+        syncLiveActivity.stop({
+          title: ble.isSyncing ? "Syncing strap" : "Uploading",
+          progress: progressFraction(
+            ble.isSyncing,
+            ble.syncIteration,
+            ble.syncIterationCap,
+            sync.isSyncing,
+            sync.pendingCount,
+            pendingAtStartRef.current,
+          ),
+        })
+      }
+    })
+    return () => sub.remove()
+    // Intentionally empty deps — the listener reads live refs / context. We
+    // don't want this effect to tear down and rebuild on every signal tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const anySyncing = ble.isSyncing || sync.isSyncing
 
   useEffect(() => {
     if (anySyncing && !wasSyncingRef.current) {
-      // Edge: idle → syncing. Start activity.
+      // Edge: idle → syncing. Mark the run as live; only start the activity
+      // if we're already in the background (otherwise the AppState listener
+      // will start it on the next foreground→background transition).
       pendingAtStartRef.current = sync.pendingCount
-      syncLiveActivity.start({
-        title: ble.isSyncing ? "Syncing strap" : "Uploading",
-        subtitle: subtitleFor(
-          ble.isSyncing,
-          ble.syncStage,
-          ble.syncIteration,
-          ble.syncIterationCap,
-          sync.isSyncing,
-          sync.pendingCount,
-        ),
-        progress: progressFraction(
-          ble.isSyncing,
-          ble.syncIteration,
-          ble.syncIterationCap,
-          sync.isSyncing,
-          sync.pendingCount,
-          pendingAtStartRef.current,
-        ),
-      })
       wasSyncingRef.current = true
+      if (isBackgroundRef.current) {
+        syncLiveActivity.start({
+          title: ble.isSyncing ? "Syncing strap" : "Uploading",
+          subtitle: subtitleFor(
+            ble.isSyncing,
+            ble.syncStage,
+            ble.syncIteration,
+            ble.syncIterationCap,
+            sync.isSyncing,
+            sync.pendingCount,
+          ),
+          progress: progressFraction(
+            ble.isSyncing,
+            ble.syncIteration,
+            ble.syncIterationCap,
+            sync.isSyncing,
+            sync.pendingCount,
+            pendingAtStartRef.current,
+          ),
+        })
+      }
     } else if (anySyncing && wasSyncingRef.current) {
       // Mid-run update.
       syncLiveActivity.update({
