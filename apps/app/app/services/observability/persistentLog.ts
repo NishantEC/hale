@@ -18,6 +18,7 @@
 // the top-level export is the new File/Directory API. We use the legacy
 // readAsStringAsync / writeAsStringAsync / getInfoAsync.
 import * as FileSystem from "expo-file-system/legacy"
+import { AppState, type AppStateStatus } from "react-native"
 
 export type LogLevel = "info" | "warn" | "error"
 export type LogCategory =
@@ -106,18 +107,57 @@ function formatLine(
   return `${ts} ${level.toUpperCase()} ${category} ${message}${metaStr}\n`
 }
 
-export function appendLog(
-  level: LogLevel,
-  category: LogCategory,
-  message: string,
-  meta?: Record<string, unknown>,
-): void {
-  const line = formatLine(level, category, message, meta)
+// Coalescing buffer: at 10 lines/sec, read+concat+write per line was ~10MB/sec
+// of disk churn against a 1MB daily file. Batch by line-count or time so a
+// single concat+write covers a chunk of writes. Flushed on AppState change
+// (background/inactive) for crash safety, and on every read so callers see
+// buffered-but-not-yet-flushed lines.
+const FLUSH_LINE_THRESHOLD = 50
+const FLUSH_INTERVAL_MS = 500
+
+let pendingLines: string[] = []
+let flushTimer: ReturnType<typeof setTimeout> | null = null
+let appStateSubscribed = false
+
+function ensureAppStateHook(): void {
+  if (appStateSubscribed) return
+  appStateSubscribed = true
+  AppState.addEventListener("change", (next: AppStateStatus) => {
+    if (next === "background" || next === "inactive") {
+      // Best-effort sync hop to disk — don't drop lines if the OS kills us.
+      void flushPendingLines()
+    }
+  })
+}
+
+function scheduleFlush(): void {
+  if (flushTimer !== null) return
+  flushTimer = setTimeout(() => {
+    flushTimer = null
+    void flushPendingLines()
+  }, FLUSH_INTERVAL_MS)
+}
+
+function clearFlushTimer(): void {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer)
+    flushTimer = null
+  }
+}
+
+async function flushPendingLines(): Promise<void> {
+  if (pendingLines.length === 0) {
+    clearFlushTimer()
+    return
+  }
+  const batch = pendingLines.join("")
+  pendingLines = []
+  clearFlushTimer()
+
   writeQueue = writeQueue
     .then(async () => {
       await ensureDir()
       const path = logPath(todayKey())
-      // First write of the day: prune old + trim oversize.
       const info = await FileSystem.getInfoAsync(path)
       if (!info.exists) {
         await pruneOldDays()
@@ -125,17 +165,37 @@ export function appendLog(
         await trimIfOversize(path)
       }
       // expo-file-system 55 has no append API — read+rewrite is the
-      // documented workaround. Daily roll keeps file size bounded so
-      // the cost is fine (<5MB per day).
+      // documented workaround. Batching multiple lines into a single
+      // read+concat+write is the whole point of this buffer.
       const existing = info.exists ? await FileSystem.readAsStringAsync(path) : ""
-      await FileSystem.writeAsStringAsync(path, existing + line)
+      await FileSystem.writeAsStringAsync(path, existing + batch)
     })
     .catch((err) => {
       console.warn("[persistentLog] write failed", err)
     })
 }
 
+export function appendLog(
+  level: LogLevel,
+  category: LogCategory,
+  message: string,
+  meta?: Record<string, unknown>,
+): void {
+  const line = formatLine(level, category, message, meta)
+  ensureAppStateHook()
+  pendingLines.push(line)
+  if (pendingLines.length >= FLUSH_LINE_THRESHOLD) {
+    void flushPendingLines()
+  } else {
+    // Schedule once per batch — timer fires ~500ms after the first queued
+    // line lands, matching the "≥ 500ms since first buffered line" rule.
+    scheduleFlush()
+  }
+}
+
 export async function readRecentLogLines(maxLines = 200): Promise<string[]> {
+  await flushPendingLines()
+  await writeQueue
   await ensureDir()
   const path = logPath(todayKey())
   const info = await FileSystem.getInfoAsync(path)
@@ -149,6 +209,8 @@ export async function readRecentLogLines(maxLines = 200): Promise<string[]> {
 // "copy" yields the whole thing — partial logs were useless for the
 // strap-cursor investigation where the gap could span 30+ minutes of events.
 export async function readAllTodayLogLines(): Promise<string[]> {
+  await flushPendingLines()
+  await writeQueue
   await ensureDir()
   const path = logPath(todayKey())
   const info = await FileSystem.getInfoAsync(path)
@@ -160,6 +222,8 @@ export async function readAllTodayLogLines(): Promise<string[]> {
 // Returns the file path of today's log, or null if it doesn't exist yet.
 // Used by the "Export" button to hand the file to iOS share sheet.
 export async function getTodayLogPath(): Promise<string | null> {
+  await flushPendingLines()
+  await writeQueue
   await ensureDir()
   const path = logPath(todayKey())
   const info = await FileSystem.getInfoAsync(path)
