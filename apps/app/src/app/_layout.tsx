@@ -27,6 +27,7 @@ import { useNavigationTheme } from "@/navigators/useNavigationTheme"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { loadDateFnsLocale } from "@/utils/formatDate"
 import { runMigrations, wipeDatabase } from "@/services/db"
+import { initBleStoreBridge } from "@/stores/bleStoreBridge"
 
 function RootStackLayout() {
   const navigationTheme = useNavigationTheme()
@@ -63,7 +64,10 @@ export default function RootLayout() {
     const attempt = () => {
       runMigrations()
         .then(() => {
-          if (!cancelled) setIsDbReady(true)
+          if (!cancelled) {
+            initBleStoreBridge()
+            setIsDbReady(true)
+          }
         })
         .catch((err) => {
           if (cancelled) return
