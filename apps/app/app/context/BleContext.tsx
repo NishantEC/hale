@@ -60,6 +60,7 @@ import { runPipeline, fetchResults, SeriesPoint } from "@/services/api/noopClien
 import { openDatabase } from "@/services/db"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAuth } from "@/context/AuthContext"
+import { setBaselineRhr } from "@/stores/bleStore"
 // Battery parsers live in a separate module so they can be unit-tested
 // without dragging in BleProvider's dependency graph.
 import {
@@ -1570,6 +1571,15 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     const lastSyncAt = storage.getString(LAST_SYNC_KEY) ?? null
     setDeviceState((current) => ({ ...current, lastSyncAt }))
   }, [])
+
+  // Mirror the per-user RHR baseline from the dashboard into bleStore so the
+  // bridge's liveStressLevel derivation uses the same constant the context's
+  // value-object below already uses. Otherwise migrated consumers (reading
+  // liveStressLevel via the store) and unmigrated consumers (reading it via
+  // useBle()) would diverge — the store has its own derivation in the bridge.
+  useEffect(() => {
+    setBaselineRhr(homeView?.activities.baselineRhr ?? null)
+  }, [homeView?.activities.baselineRhr])
 
   useEffect(() => {
     const realtimeValue = storage.getString(REALTIME_HR_KEY)

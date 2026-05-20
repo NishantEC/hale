@@ -231,10 +231,11 @@ export function initBleStoreBridge(): () => void {
       }
       useBleStore.setState((s) => {
         const realtimeSamples = [...s.realtimeSamples.slice(-39), sample]
+        const restingBpm = s.baselineRhr ?? LIVE_STRESS_RESTING_BPM_DEFAULT
         return {
           realtimeHeartRate,
           realtimeSamples,
-          liveStressLevel: deriveLiveStressLevel(realtimeSamples),
+          liveStressLevel: deriveLiveStressLevel(realtimeSamples, restingBpm),
         }
       })
     }

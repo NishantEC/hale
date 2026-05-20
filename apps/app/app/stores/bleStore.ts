@@ -39,6 +39,11 @@ export interface BleStoreState {
   syncIterationCap: number
   syncLastStopReason: string | null
   error: string | null
+  // Per-user resting heart rate baseline (bpm), mirrored from the
+  // dashboard's homeView.activities.baselineRhr by BleProvider. Null means
+  // "not yet computed" — the bridge falls back to a constant default when
+  // deriving liveStressLevel.
+  baselineRhr: number | null
 }
 
 const initialState: BleStoreState = {
@@ -74,6 +79,7 @@ const initialState: BleStoreState = {
   syncIterationCap: DEFAULT_MAX_ITERATIONS,
   syncLastStopReason: null,
   error: null,
+  baselineRhr: null,
 }
 
 export const useBleStore = create<BleStoreState>()(() => initialState)
@@ -112,6 +118,14 @@ export const useBleSyncIteration = () => useBleStore((s) => s.syncIteration)
 export const useBleSyncIterationCap = () => useBleStore((s) => s.syncIterationCap)
 export const useBleSyncLastStopReason = () => useBleStore((s) => s.syncLastStopReason)
 export const useBleError = () => useBleStore((s) => s.error)
+export const useBleBaselineRhr = () => useBleStore((s) => s.baselineRhr)
+
+// Mutator: called from BleProvider whenever the dashboard's homeView
+// publishes a non-null activities.baselineRhr. Keeps the bridge's
+// liveStressLevel derivation aligned with the per-user RHR baseline.
+export const setBaselineRhr = (baselineRhr: number | null) => {
+  useBleStore.setState({ baselineRhr })
+}
 
 export const useBleConnectionInfo = () =>
   useBleStore(
