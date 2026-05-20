@@ -9,6 +9,7 @@ import {
 import { PacketAssembler } from './packet-assembler';
 import { base64ToUint8Array } from './packet-codec';
 import { runBackgroundDrain } from '../sync/backgroundSync';
+import { appendLog } from '../observability/persistentLog';
 
 const PREFERRED_DEVICE_KEY = 'noop.preferredDeviceId';
 const SCAN_TIMEOUT_MS = 15000;
@@ -254,8 +255,8 @@ class WhoopBleManager {
     try {
       const existing = await this.manager.isDeviceConnected(deviceId);
       const connected = existing
-        ? await this.manager.devices([deviceId]).then((devices) => devices[0] ?? this.manager.connectToDevice(deviceId, { timeout: 8000 }))
-        : await this.manager.connectToDevice(deviceId, { timeout: 8000 });
+        ? await this.manager.devices([deviceId]).then((devices) => devices[0] ?? this.manager.connectToDevice(deviceId, { timeout: 15000 }))
+        : await this.manager.connectToDevice(deviceId, { timeout: 15000 });
       this.device = connected;
       // Register the disconnect handler IMMEDIATELY — before discovery,
       // before notifications. If the strap drops between connectToDevice
@@ -291,22 +292,41 @@ class WhoopBleManager {
       return false;
     }
     const preferredId = await AsyncStorage.getItem(PREFERRED_DEVICE_KEY);
-    if (!preferredId) return false;
+    if (!preferredId) {
+      appendLog('warn', 'ble', 'autoConnect skipped', { reason: 'no_preferred_device' });
+      return false;
+    }
 
     const poweredOn = await this.ensurePoweredOn();
     if (!poweredOn) {
+      appendLog('warn', 'ble', 'autoConnect deferred', { reason: 'ble_not_powered_on' });
       this.pendingAutoConnect = true;
       return false;
     }
 
+    appendLog('info', 'ble', 'autoConnect attempt', {
+      preferredId,
+      attempt: this.reconnectAttempt + 1,
+    });
     try {
       await this.connect(preferredId);
       // Successful connection — reset backoff so the next disconnect
       // starts retrying at the short interval again.
       this.reconnectAttempt = 0;
+      appendLog('info', 'ble', 'autoConnect ok', { preferredId });
       return true;
-    } catch {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      appendLog('warn', 'ble', 'autoConnect failed', { preferredId, message: msg });
       this.pendingAutoConnect = true;
+      // Without this, a launch-time autoConnect failure (strap not yet
+      // advertising, BLE not yet warm) leaves the app sitting in
+      // "disconnected" with no retry until the next AppState transition.
+      // Schedule a retry so the user doesn't have to manually re-trigger
+      // from the settings screen.
+      if (!this.manualDisconnect) {
+        this.scheduleReconnect().catch(() => undefined);
+      }
       return false;
     }
   }

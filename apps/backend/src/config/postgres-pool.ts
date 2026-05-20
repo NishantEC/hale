@@ -11,7 +11,11 @@ type PoolConfigInput = {
 
 export function postgresPoolOptions({
   maxEnv = 'DB_POOL_MAX',
-  defaultMax = 5,
+  // db-f1-micro caps Postgres max_connections at 25. With maxScale=2 and
+  // ~2 Cloud Run Job migrations during deploy, max=3 keeps us at
+  // 2*3 + 2 = 8 connections — comfortably under the cap even with deploy
+  // jobs overlapping. Bump this AND the SQL tier if we need real scale.
+  defaultMax = 3,
 }: PoolConfigInput = {}): PostgresPoolOptions {
   return {
     max: positiveInt(process.env[maxEnv], defaultMax),

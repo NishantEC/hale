@@ -67,6 +67,30 @@ export class CommandService {
     return this.buildCommand(CommandNumber.HistoricalDataResult, data);
   }
 
+  /**
+   * Same payload as buildHistoricalDataAck, framed in Maverick / official-app
+   * style. Task #90 evidence (logs 2026-05-20 22:02-22:03) showed legacy-
+   * framed acks getting either silent-dropped or returned status=1
+   * ("00 01 00 00 00") — the strap never advanced its cursor. FORCE_TRIM
+   * and SetReadPointerSectorOffset already work in Maverick framing per
+   * docs/whoop-trim-ack-investigation.md, so HistoricalDataResult should
+   * land the same way.
+   */
+  buildHistoricalDataAckMaverick(trimValue: number): string {
+    const params = new Uint8Array(9);
+    params[0] = 0x01;
+    params[1] = trimValue & 0xff;
+    params[2] = (trimValue >> 8) & 0xff;
+    params[3] = (trimValue >> 16) & 0xff;
+    params[4] = (trimValue >> 24) & 0xff;
+    const frame = encodeFrameMaverick(
+      CommandNumber.HistoricalDataResult,
+      this.nextSequence(),
+      params,
+    );
+    return uint8ArrayToBase64(frame);
+  }
+
   buildSetClock(date: Date = new Date()): string {
     const unix = Math.floor(date.getTime() / 1000);
     const data = new Uint8Array(4);

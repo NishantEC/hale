@@ -331,7 +331,7 @@ export class HistoryDownloader {
     );
     try {
       await bleManager
-        .writeCommand(this.commandService.buildHistoricalDataAck(trimValue))
+        .writeCommand(this.commandService.buildHistoricalDataAckMaverick(trimValue))
         .catch(() => undefined);
       try {
         const { bytes, hex } = await waiter.promise;

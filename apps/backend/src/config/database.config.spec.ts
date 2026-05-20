@@ -17,7 +17,7 @@ describe('databaseConfig', () => {
   it('caps the runtime Postgres pool by default', () => {
     expect(databaseConfig()).toMatchObject({
       extra: {
-        max: 5,
+        max: 3,
         idleTimeoutMillis: 10_000,
         connectionTimeoutMillis: 5_000,
       },
