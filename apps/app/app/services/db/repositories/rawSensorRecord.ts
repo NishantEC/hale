@@ -1,5 +1,5 @@
 import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm"
-import type { NoopDatabase } from "../index"
+import { getReadDb, type NoopDatabase } from "../index"
 import { withWrite, type WriteTx } from "../transaction"
 import { rawSensorRecords } from "../schema"
 import { getActiveUserId, peekActiveUserId } from "../session"
@@ -176,14 +176,17 @@ export async function listRawSensorRecordsByDateRange(
 }
 
 export async function countRawSensorRecordsPerHour(
-  db: NoopDatabase,
+  _db: NoopDatabase,
   hours: number,
 ): Promise<Array<{ hourStartUtc: string; rows: number }>> {
+  // Long-running aggregation — route to the read-only connection so it
+  // doesn't park behind the WAL writer (drain commits / streaming inserts).
+  const readDb = getReadDb()
   const userId = getActiveUserId()
   const nowMs = Date.now()
   const bucketStartMs = Math.floor((nowMs - hours * 3_600_000) / 3_600_000) * 3_600_000
 
-  const rows = (await db
+  const rows = (await readDb
     .select({
       bucket: sql<number>`((${rawSensorRecords.timestamp}) / 3600000) * 3600000`.as("bucket"),
       count: sql<number>`COUNT(*)`.as("count"),

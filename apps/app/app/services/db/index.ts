@@ -11,6 +11,8 @@ export type NoopDatabase = OPSQLiteDatabase<typeof schema>
 
 let dbInstance: NoopDatabase | null = null
 let sqliteInstance: DB | null = null
+let readDbInstance: NoopDatabase | null = null
+let readSqliteInstance: DB | null = null
 
 // op-sqlite gives multi-connection per file and a properly async Drizzle
 // adapter that awaits transaction callbacks. That's what makes the old
@@ -30,12 +32,34 @@ export function openDatabase(): NoopDatabase {
   return dbInstance
 }
 
+// Second connection to the same SQLite file, reserved for long-running
+// dashboard/aggregation reads. Lazy + module-cached. The primary connection
+// keeps the WAL writer hot; routing big SELECTs here means a multi-second
+// scan can't park behind a drainer commit (or vice versa).
+export function getReadDb(): NoopDatabase {
+  if (readDbInstance) return readDbInstance
+  readSqliteInstance = open({ name: "noop.db" })
+  readSqliteInstance.executeSync("PRAGMA journal_mode = WAL;")
+  readSqliteInstance.executeSync("PRAGMA foreign_keys = ON;")
+  readSqliteInstance.executeSync("PRAGMA busy_timeout = 5000;")
+  readSqliteInstance.executeSync("PRAGMA synchronous = NORMAL;")
+  readSqliteInstance.executeSync("PRAGMA cache_size = -64000;")
+  readSqliteInstance.executeSync("PRAGMA temp_store = MEMORY;")
+  readDbInstance = drizzle(readSqliteInstance, { schema })
+  return readDbInstance
+}
+
 export async function runMigrations(): Promise<void> {
   const db = openDatabase()
   await migrate(db, migrations)
 }
 
 export async function wipeDatabase(): Promise<void> {
+  if (readSqliteInstance) {
+    readSqliteInstance.close()
+    readDbInstance = null
+    readSqliteInstance = null
+  }
   if (!sqliteInstance) return
   sqliteInstance.close()
   sqliteInstance.delete()
