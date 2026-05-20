@@ -1,9 +1,11 @@
 import journal from "./meta/_journal.json"
 
-type Entry = { idx: number; when: number; tag: string }
+type Entry = { idx: number; version: string; when: number; tag: string }
+type Journal = { version: string; dialect: string; entries: Entry[] }
 
 describe("_journal.json", () => {
-  const entries = (journal as { entries: Entry[] }).entries
+  const j = journal as Journal
+  const entries = j.entries
 
   it("has at least one entry", () => {
     expect(entries.length).toBeGreaterThan(0)
@@ -26,5 +28,23 @@ describe("_journal.json", () => {
     entries.forEach((e, i) => {
       expect(e.idx).toBe(i)
     })
+  })
+
+  it("top-level version is the drizzle-kit journal format version (7)", () => {
+    // drizzle-kit 0.31.x writes the JOURNAL format version at the top level
+    // (snapshotVersion = "7" in bin.cjs:5601) and the per-entry SNAPSHOT
+    // version inside each entry (for sqlite the dialect snapshot version is
+    // "6" in bin.cjs:8144). These intentionally differ — top-level "7" and
+    // per-entry "6" is correct, not a bug. This assertion exists so a
+    // well-meaning hand-edit doesn't "reconcile" them and silently break
+    // future drizzle-kit reads.
+    expect(j.version).toBe("7")
+    expect(j.dialect).toBe("sqlite")
+  })
+
+  it("all entries share the same snapshot version", () => {
+    const versions = new Set(entries.map((e) => e.version))
+    expect(versions.size).toBe(1)
+    expect(entries[0].version).toBe("6")
   })
 })
