@@ -186,11 +186,17 @@ class WhoopBleManager {
   async requestPermissions(): Promise<boolean> {
     if (Platform.OS === 'ios') return true;
     if (Platform.OS === 'android' && Platform.Version >= 31) {
-      const result = await PermissionsAndroid.requestMultiple([
+      const perms: string[] = [
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
         PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
         PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-      ]);
+      ];
+      if (Platform.Version >= 33) {
+        perms.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+      }
+      const result = await PermissionsAndroid.requestMultiple(
+        perms as Parameters<typeof PermissionsAndroid.requestMultiple>[0],
+      );
       return Object.values(result).every(v => v === 'granted');
     }
     if (Platform.OS === 'android') {
