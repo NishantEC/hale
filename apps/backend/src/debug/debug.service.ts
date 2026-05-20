@@ -199,7 +199,6 @@ export class DebugService {
       dateInput,
       timeZoneInput,
     );
-    const cutoff = new Date(selectedDate.getTime() - 45 * 24 * 60 * 60 * 1000);
     const { start, end } = calendarDayBounds(selectedKey, timeZone);
 
     const [
@@ -224,8 +223,16 @@ export class DebugService {
       this.sleepStageRepo.count({ where: { userId } }),
       this.dailyScoreRepo.count({ where: { userId } }),
       this.dailyMetricRepo.count({ where: { userId } }),
-      this.rawSensorRepo.findOne({ where: { userId }, order: { timestamp: 'ASC' } }),
-      this.rawSensorRepo.findOne({ where: { userId }, order: { timestamp: 'DESC' } }),
+      this.rawSensorRepo.findOne({
+        where: { userId },
+        order: { timestamp: 'ASC' },
+        select: ['id', 'timestamp'],
+      }),
+      this.rawSensorRepo.findOne({
+        where: { userId },
+        order: { timestamp: 'DESC' },
+        select: ['id', 'timestamp'],
+      }),
       // updatedAt MAX is distinct from timestamp MAX. After 2 days of strap
       // silence we noticed timestamp was stuck at 17:42 IST while updatedAt
       // was 5 min ago — drainer was filling earlier-strap-time gaps. Surfacing
@@ -242,16 +249,19 @@ export class DebugService {
         .andWhere('raw.timestamp >= :start', { start })
         .andWhere('raw.timestamp < :end', { end })
         .getCount(),
+      // Only the row matching the selected day is consumed below — load just
+      // that one. The previous 45-day window pulled megabytes of jsonb
+      // epochTimeline per night for nothing.
       this.sleepDetectionRepo.find({
-        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        where: { userId, nightDate: Between(start, end) },
         order: { nightDate: 'ASC' },
       }),
       this.sleepStageRepo.find({
-        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        where: { userId, nightDate: Between(start, end) },
         order: { nightDate: 'ASC' },
       }),
       this.nightFeatureRepo.find({
-        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        where: { userId, nightDate: Between(start, end) },
         order: { nightDate: 'ASC' },
       }),
       this.sleepPlanRepo.findOne({ where: { userId } }),
@@ -459,19 +469,19 @@ export class DebugService {
       dateInput,
       timeZoneInput,
     );
-    const cutoff = new Date(selectedDate.getTime() - 45 * 24 * 60 * 60 * 1000);
+    const { start, end } = calendarDayBounds(selectedKey, timeZone);
 
     const [detections, stages, features] = await Promise.all([
       this.sleepDetectionRepo.find({
-        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        where: { userId, nightDate: Between(start, end) },
         order: { nightDate: 'ASC' },
       }),
       this.sleepStageRepo.find({
-        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        where: { userId, nightDate: Between(start, end) },
         order: { nightDate: 'ASC' },
       }),
       this.nightFeatureRepo.find({
-        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        where: { userId, nightDate: Between(start, end) },
         order: { nightDate: 'ASC' },
       }),
     ]);
