@@ -368,20 +368,33 @@ class WhoopBleManager {
         uuid,
         (error, char) => {
           if (error || !char?.value) return;
-          const packets = assembler.feed(char.value);
-          const listeners = this.packetListeners.get(uuid);
-          if (listeners) {
-            for (const packet of packets) {
-              listeners.forEach(cb => cb(packet));
+          const value = char.value;
+          // Defer the synchronous parse + fan-out off the BLE callback thread.
+          // queueMicrotask preserves FIFO ordering across invocations (unlike
+          // setTimeout), so packets still hit listeners in arrival order while
+          // freeing the BLE bridge to drain its native queue. Critical under
+          // 90x history sync where Hermes was getting starved.
+          queueMicrotask(() => {
+            try {
+              const packets = assembler.feed(value);
+              const listeners = this.packetListeners.get(uuid);
+              if (listeners) {
+                for (const packet of packets) {
+                  listeners.forEach(cb => cb(packet));
+                }
+              }
+              // Also notify "all" listeners
+              const allListeners = this.packetListeners.get('*');
+              if (allListeners) {
+                for (const packet of packets) {
+                  allListeners.forEach(cb => cb(packet));
+                }
+              }
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              appendLog('error', 'ble', 'packet parse/fanout failed', { uuid, message: msg });
             }
-          }
-          // Also notify "all" listeners
-          const allListeners = this.packetListeners.get('*');
-          if (allListeners) {
-            for (const packet of packets) {
-              allListeners.forEach(cb => cb(packet));
-            }
-          }
+          });
         },
       );
       this.subscriptions.push(sub);
