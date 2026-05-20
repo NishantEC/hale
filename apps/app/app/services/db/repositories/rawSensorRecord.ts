@@ -175,6 +175,41 @@ export async function listRawSensorRecordsByDateRange(
     .orderBy(asc(rawSensorRecords.timestamp))
 }
 
+export async function countRawSensorRecordsPerHour(
+  db: NoopDatabase,
+  hours: number,
+): Promise<Array<{ hourStartUtc: string; rows: number }>> {
+  const userId = getActiveUserId()
+  const nowMs = Date.now()
+  const bucketStartMs = Math.floor((nowMs - hours * 3_600_000) / 3_600_000) * 3_600_000
+
+  const rows = (await db
+    .select({
+      bucket: sql<number>`((${rawSensorRecords.timestamp}) / 3600000) * 3600000`.as("bucket"),
+      count: sql<number>`COUNT(*)`.as("count"),
+    })
+    .from(rawSensorRecords)
+    .where(
+      and(
+        eq(rawSensorRecords.userId, userId),
+        gte(rawSensorRecords.timestamp, bucketStartMs),
+      ),
+    )
+    .groupBy(sql`bucket`)
+    .orderBy(sql`bucket ASC`)) as Array<{ bucket: number; count: number }>
+
+  const byHour = new Map<number, number>()
+  for (const r of rows) byHour.set(Number(r.bucket), Number(r.count))
+
+  const totalBuckets = Math.ceil((nowMs - bucketStartMs) / 3_600_000) + 1
+  const out: Array<{ hourStartUtc: string; rows: number }> = []
+  for (let i = 0; i < totalBuckets; i++) {
+    const t = bucketStartMs + i * 3_600_000
+    out.push({ hourStartUtc: new Date(t).toISOString(), rows: byHour.get(t) ?? 0 })
+  }
+  return out
+}
+
 export async function markRawSensorRecordsSynced(
   db: NoopDatabase,
   ids: string[],

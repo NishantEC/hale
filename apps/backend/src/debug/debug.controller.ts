@@ -158,6 +158,17 @@ export class DebugController {
     }
   }
 
+  @Get('hourly-coverage')
+  async getHourlyCoverage(@Req() req: any, @Query('hours') hours?: string) {
+    try {
+      const h = hours ? Math.min(Math.max(parseInt(hours, 10) || 12, 1), 168) : 12;
+      return await this.debugService.getHourlyCoverage(req.user.userId, h);
+    } catch (e) {
+      this.logger.error(`hourly-coverage failed: ${e.message}`, e.stack);
+      throw e;
+    }
+  }
+
   @Post('seed')
   async seedDemoData(@Req() req: any, @Query('nights') nights?: string) {
     try {

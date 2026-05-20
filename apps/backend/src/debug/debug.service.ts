@@ -1052,6 +1052,42 @@ export class DebugService {
     };
   }
 
+  async getHourlyCoverage(userId: string, hours: number) {
+    this.assertEnabled();
+    const nowMs = Date.now();
+    const sinceMs = nowMs - hours * 60 * 60 * 1000;
+    // Align to whole-hour buckets so phone and backend bucket identically.
+    const bucketStartMs = Math.floor(sinceMs / 3_600_000) * 3_600_000;
+    const since = new Date(bucketStartMs);
+
+    const rows: Array<{ bucket: Date; count: string }> = await this.rawSensorRepo
+      .createQueryBuilder('r')
+      .select(`date_trunc('hour', r."timestamp")`, 'bucket')
+      .addSelect('count(*)::text', 'count')
+      .where('r."userId" = :userId', { userId })
+      .andWhere('r."timestamp" >= :since', { since })
+      .groupBy('bucket')
+      .orderBy('bucket', 'ASC')
+      .getRawMany();
+
+    const byHour = new Map<number, number>();
+    for (const r of rows) {
+      byHour.set(new Date(r.bucket).getTime(), parseInt(r.count, 10) || 0);
+    }
+
+    const totalBuckets = Math.ceil((nowMs - bucketStartMs) / 3_600_000) + 1;
+    const series: Array<{ hourStartUtc: string; rows: number }> = [];
+    for (let i = 0; i < totalBuckets; i++) {
+      const t = bucketStartMs + i * 3_600_000;
+      series.push({
+        hourStartUtc: new Date(t).toISOString(),
+        rows: byHour.get(t) ?? 0,
+      });
+    }
+
+    return { hours, generatedAt: new Date(nowMs).toISOString(), series };
+  }
+
   async getTelemetry(userId: string, limit: number) {
     this.assertEnabled();
 

@@ -1054,6 +1054,16 @@ export async function runDebugPipeline(date: string): Promise<{
   );
 }
 
+export type DebugHourlyCoverage = {
+  hours: number
+  generatedAt: string
+  series: Array<{ hourStartUtc: string; rows: number }>
+}
+
+export async function fetchDebugHourlyCoverage(hours = 12): Promise<DebugHourlyCoverage> {
+  return apiGet(`/debug/hourly-coverage?hours=${hours}`, VIEW_TIMEOUT_MS)
+}
+
 export async function fetchDebugPipelineRuns(limit = 30): Promise<{
   count: number;
   stageMedians: Record<string, number>;

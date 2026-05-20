@@ -14,6 +14,7 @@ import { ActionsRow } from "@/components/Inspector/ActionsRow"
 import { DaemonDrilldown } from "@/components/Inspector/DaemonDrilldown"
 import { buildEvents, EventsCard } from "@/components/Inspector/EventsCard"
 import { ExpertActions } from "@/components/Inspector/ExpertActions"
+import { LocalVsBackendCard } from "@/components/Inspector/LocalVsBackendCard"
 import { HealthStrip } from "@/components/Inspector/HealthStrip"
 import { LogsCard } from "@/components/Inspector/LogsCard"
 import { SyncProgressCard } from "@/components/Inspector/SyncProgressCard"
@@ -459,6 +460,8 @@ export const DebugInspectorScreen: FC = () => {
           onClearQueue={handleClearQueue}
           onForceUpload={handleForceUpload}
         />
+
+        {expert ? <LocalVsBackendCard /> : null}
 
         {expert ? (
           <ExpertActions
