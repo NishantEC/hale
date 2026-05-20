@@ -38,6 +38,7 @@ import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
+import { useBleConnectionState, useBleBatteryLevel, useBleIsCharging } from "@/stores/bleStore"
 import { useDashboard } from "@/context/DashboardContext"
 import { useHealthKit } from "@/context/HealthKitContext"
 import { buildTodayTape, type TapeEvent } from "@/utils/buildTodayTape"
@@ -99,7 +100,10 @@ export const HomeScreen: FC = () => {
     refreshDashboard,
     clearError,
   } = useDashboard()
-  const { connectionState, batteryLevel, isCharging, isSyncing } = useBle()
+  const { isSyncing } = useBle()
+  const connectionState = useBleConnectionState()
+  const batteryLevel = useBleBatteryLevel()
+  const isCharging = useBleIsCharging()
   const { setActiveDate: setHealthKitActiveDate } = useHealthKit()
   const [isHorizontalDaySwipeActive, setIsHorizontalDaySwipeActive] = useState(false)
   const [isCalendarOpen, setCalendarOpen] = useState(false)

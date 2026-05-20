@@ -6,6 +6,8 @@ import * as Haptics from "expo-haptics"
 import * as Updates from "expo-updates"
 
 import { useBle } from "@/context/BleContext"
+import { useBleStore } from "@/stores/bleStore"
+import { useShallow } from "zustand/react/shallow"
 import { useSyncContext } from "@/context/SyncContext"
 import { runPipeline } from "@/services/api/noopClient"
 
@@ -100,6 +102,16 @@ function buildSnapshot(
 
 export function useActivityStripState(): ActivityStripView {
   const ble = useBle()
+  const bleScalars = useBleStore(
+    useShallow((s) => ({
+      connectionState: s.connectionState,
+      isWorn: s.isWorn,
+      batteryLevel: s.batteryLevel,
+      isCharging: s.isCharging,
+      strapAlarmArmed: s.strapAlarmArmed,
+      strapAlarmAt: s.strapAlarmAt,
+    })),
+  )
   const sync = useSyncContext()
   const [reducerState, dispatch] = useReducer(accessoryReducer, initialReducerState)
 
@@ -125,22 +137,32 @@ export function useActivityStripState(): ActivityStripView {
     }
   }, [])
 
+  const mergedBle = {
+    ...ble,
+    connectionState: bleScalars.connectionState,
+    isWorn: bleScalars.isWorn,
+    batteryLevel: bleScalars.batteryLevel,
+    isCharging: bleScalars.isCharging,
+    strapAlarmArmed: bleScalars.strapAlarmArmed,
+    strapAlarmAt: bleScalars.strapAlarmAt,
+  }
+
   const snapshot = useMemo(
-    () => buildSnapshot(ble, sync, isLowPowerMode, isAppUpdateAvailable, Date.now()),
+    () => buildSnapshot(mergedBle, sync, isLowPowerMode, isAppUpdateAvailable, Date.now()),
     [
       ble.error,
-      ble.connectionState,
-      ble.isWorn,
+      bleScalars.connectionState,
+      bleScalars.isWorn,
       ble.lastSyncAt,
       ble.isSyncing,
       ble.syncStage,
       ble.syncIteration,
       ble.syncIterationCap,
       ble.pipelineState,
-      ble.batteryLevel,
-      ble.isCharging,
-      ble.strapAlarmArmed,
-      ble.strapAlarmAt,
+      bleScalars.batteryLevel,
+      bleScalars.isCharging,
+      bleScalars.strapAlarmArmed,
+      bleScalars.strapAlarmAt,
       ble.syncSummary,
       sync.syncError,
       sync.deadCount,
@@ -170,13 +192,13 @@ export function useActivityStripState(): ActivityStripView {
     return () => clearTimeout(id)
   }, [candidate])
 
-  const prevPipelineRef = useRef(ble.pipelineState)
+  const prevPipelineRef = useRef(mergedBle.pipelineState)
   useEffect(() => {
-    if (prevPipelineRef.current === "running" && ble.pipelineState === "success") {
+    if (prevPipelineRef.current === "running" && mergedBle.pipelineState === "success") {
       dispatch({ type: "SYNCED_OK", now: Date.now() })
     }
-    prevPipelineRef.current = ble.pipelineState
-  }, [ble.pipelineState])
+    prevPipelineRef.current = mergedBle.pipelineState
+  }, [mergedBle.pipelineState])
 
   const prevQueueRef = useRef({ syncing: sync.isSyncing, pending: sync.pendingCount })
   useEffect(() => {
@@ -205,7 +227,7 @@ export function useActivityStripState(): ActivityStripView {
     if (target === "__DISMISS_ALARM__") {
       return () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
-        ble.disarmAlarm?.().catch(() => {})
+        mergedBle.disarmAlarm?.().catch(() => {})
       }
     }
     if (target === "__OPEN_SETTINGS__") {
@@ -223,7 +245,7 @@ export function useActivityStripState(): ActivityStripView {
     return () => {
       router.push(target as never)
     }
-  }, [state, ble, sync])
+  }, [state, mergedBle, sync])
 
   const onDismiss = useMemo<(() => void) | null>(() => {
     if (!DISMISSABLE_STATES.has(state)) return null

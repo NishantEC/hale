@@ -35,6 +35,7 @@ import { BlurHeader } from "@/components/BlurHeader"
 import { Text } from "@/components/Text"
 import { useAuth } from "@/context/AuthContext"
 import { useBle } from "@/context/BleContext"
+import { useBleConnectionState, useBleDeviceName, useBleFirmwareVersion } from "@/stores/bleStore"
 import { ColorMode, useColorMode } from "@/context/ThemeContext"
 import { DateOfBirthSheet } from "@/components/DateOfBirthSheet"
 import { fetchProfile, updateProfile, type UserProfileData } from "@/services/api/noopClient"
@@ -46,7 +47,10 @@ export const SettingsScreen: FC = () => {
   const colors = LOCAL_THEME.colors
   const isDark = LOCAL_THEME.isDark
   const { authEmail, logout } = useAuth()
-  const { connectionState, lastSyncAt, deviceName, firmwareVersion } = useBle()
+  const { lastSyncAt } = useBle()
+  const connectionState = useBleConnectionState()
+  const deviceName = useBleDeviceName()
+  const firmwareVersion = useBleFirmwareVersion()
   const { mode: colorMode, setMode: setColorMode } = useColorMode()
   const [now, setNow] = useState(Date.now())
   const [refreshing, setRefreshing] = useState(false)

@@ -14,7 +14,7 @@ import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { TrendSparkline } from "@/components/TrendSparkline"
 import { VitalCard } from "@/components/VitalCard"
-import { useBle } from "@/context/BleContext"
+import { useBleRealtimeHr } from "@/stores/bleStore"
 import { useDashboard } from "@/context/DashboardContext"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
@@ -34,7 +34,7 @@ export const StrainActivityScreen: FC = () => {
     selectedDate,
     setSelectedDate,
   } = useDashboard()
-  const { realtimeHeartRate } = useBle()
+  const realtimeHeartRate = useBleRealtimeHr()
 
   const lastShownError = useRef<string | null>(null)
   const scrollY = useSharedValue(0)

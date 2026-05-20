@@ -12,6 +12,7 @@ import { router } from "expo-router"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { useBle } from "@/context/BleContext"
+import { useBleConnectionState, useBleStrapAlarmArmed } from "@/stores/bleStore"
 import { useDashboard } from "@/context/DashboardContext"
 import { SleepViewModel } from "@/services/api/noopClient"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
@@ -33,7 +34,9 @@ function formatClockMinutes(minutes: number) {
 export const SleepPlannerScreen: FC = () => {
   const colors = LOCAL_THEME.colors
   const { sleepView, saveSleepPlan } = useDashboard()
-  const { connectionState, strapAlarmArmed, armAlarm, disarmAlarm } = useBle()
+  const { armAlarm, disarmAlarm } = useBle()
+  const connectionState = useBleConnectionState()
+  const strapAlarmArmed = useBleStrapAlarmArmed()
 
   const updatePlanner = useCallback(
     async (patch: Partial<SleepViewModel["planner"]>) => {

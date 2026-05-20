@@ -9,7 +9,7 @@ import { GlassCard } from "@/components/GlassCard"
 import { InlineLineChart } from "@/components/InlineLineChart"
 import { Text } from "@/components/Text"
 import { XStack, YStack } from "@/components/tamagui-primitives"
-import { useBle } from "@/context/BleContext"
+import { useBleConnectionState, useBleRealtimeSamples } from "@/stores/bleStore"
 import { useDashboard } from "@/context/DashboardContext"
 
 const METRIC_OPTIONS = [
@@ -38,7 +38,8 @@ export const HomeMetricScreen: FC = () => {
   const metric = resolveMetric(metricParam)
   const { width } = useWindowDimensions()
   const { homeView, sleepView } = useDashboard()
-  const { connectionState, realtimeSamples } = useBle()
+  const connectionState = useBleConnectionState()
+  const realtimeSamples = useBleRealtimeSamples()
   const accent = "#C76542"
 
   const content = useMemo(() => {

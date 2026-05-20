@@ -7,13 +7,13 @@ import { GlassCard } from "@/components/GlassCard"
 import { InlineLineChart } from "@/components/InlineLineChart"
 import { Text } from "@/components/Text"
 import { XStack } from "@/components/tamagui-primitives"
-import { useBle } from "@/context/BleContext"
+import { useBleRealtimeSamples } from "@/stores/bleStore"
 import { useDashboard } from "@/context/DashboardContext"
 
 export const HomeDetailsScreen: FC = () => {
   const { width } = useWindowDimensions()
   const { homeView, sleepView } = useDashboard()
-  const { realtimeSamples } = useBle()
+  const realtimeSamples = useBleRealtimeSamples()
 
   const lookupSleepMetric = (label: string): string => {
     const m = sleepView?.metrics.find((x) => x.label === label)
