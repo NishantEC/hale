@@ -1624,6 +1624,21 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         }
       })
 
+      // FGS runs during ANY active BLE state (scanning / connecting /
+      // discovering / ready) so the OS keeps the BLE stack hot during
+      // transitions. Only `disconnected` shuts the FGS down (and re-arms
+      // the OS-scheduled catchup task via the start/stop mutex inside
+      // androidForegroundService.ts).
+      if (connectionState !== "disconnected") {
+        startAndroidForegroundService().catch((err) =>
+          console.warn("[android-fgs] start failed", err),
+        )
+      } else {
+        stopAndroidForegroundService().catch((err) =>
+          console.warn("[android-fgs] stop failed", err),
+        )
+      }
+
       if (connectionState === "ready") {
         eventForwarder.start()
         if (CMD_RESP_INGEST_ENABLED) commandResponseForwarder.start()
@@ -1632,9 +1647,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         consoleLogForwarder.start(bleManager.getDeviceId() || "unknown")
         refreshDeviceState().catch(() => undefined)
         maybeAutoSync().catch(() => undefined)
-        startAndroidForegroundService().catch((err) =>
-          console.warn("[android-fgs] start failed", err),
-        )
         // Continuous BLE pump — polls SendHistoricalData every 30s so the
         // strap's read pointer never gets ahead of our persistence.
         // Internal guards skip when a sync is already in flight or the
@@ -1645,9 +1657,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
           isConnected: () => bleManager.connectionState === "ready",
         })
       } else if (connectionState === "disconnected") {
-        stopAndroidForegroundService().catch((err) =>
-          console.warn("[android-fgs] stop failed", err),
-        )
         stopContinuousSyncDaemon()
       }
     })
