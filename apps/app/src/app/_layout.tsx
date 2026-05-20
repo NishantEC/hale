@@ -28,6 +28,7 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 import { loadDateFnsLocale } from "@/utils/formatDate"
 import { runMigrations, wipeDatabase } from "@/services/db"
 import { initBleStoreBridge } from "@/stores/bleStoreBridge"
+import { initSyncStoreBridge } from "@/stores/syncStoreBridge"
 
 function RootStackLayout() {
   const navigationTheme = useNavigationTheme()
@@ -66,6 +67,7 @@ export default function RootLayout() {
         .then(() => {
           if (!cancelled) {
             initBleStoreBridge()
+            initSyncStoreBridge()
             setIsDbReady(true)
           }
         })
