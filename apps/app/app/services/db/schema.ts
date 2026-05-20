@@ -264,6 +264,11 @@ export const syncState = sqliteTable("sync_state", {
   tableName: text("table_name").primaryKey(),
   lastSyncAt: integer("last_sync_at").notNull().default(0),
   lastSyncedRowTimestamp: integer("last_synced_row_timestamp"),
+  // Companion to lastSyncAt for keyset paging: the id of the last row at
+  // that updatedAt. Server pages with (updatedAt > since) OR (updatedAt =
+  // since AND id > lastSyncedRowId) so a tie at the page boundary can't
+  // drop rows from the device mirror.
+  lastSyncedRowId: text("last_synced_row_id"),
 })
 
 export const settings = sqliteTable("settings", {

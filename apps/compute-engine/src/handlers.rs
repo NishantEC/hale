@@ -1,5 +1,7 @@
 use axum::{Json, http::StatusCode, response::IntoResponse};
-use std::time::Duration;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 use tokio::time::timeout;
 
 use crate::{
@@ -83,6 +85,16 @@ pub async fn compute_batch(Json(req): Json<ComputeBatchRequestV1>) -> impl IntoR
     );
     let _enter = span.enter();
 
+    // Cooperative cancellation flag (codex adversarial review 2026-05-21,
+    // finding #4). When the outer timeout fires, we flip this and the
+    // blocking worker bails between days instead of running the next
+    // compute_derived_metrics call. Without this the spawn_blocking
+    // kept burning CPU after we'd already returned 503, hiding the real
+    // capacity drain.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel_worker = Arc::clone(&cancel);
+    let deadline_at = Instant::now() + BATCH_SERVER_DEADLINE;
+
     let join = tokio::task::spawn_blocking(move || -> Result<ComputeBatchResultV1, String> {
         // Build a per-day request that reuses the shared input arrays by
         // cloning. Inputs are not mutated, so cloning is just a memcpy of
@@ -91,6 +103,11 @@ pub async fn compute_batch(Json(req): Json<ComputeBatchRequestV1>) -> impl IntoR
         // per day; that's accepted as Phase 1 parity — Phase 3 can hoist it.
         let mut entries: Vec<ComputeBatchResultEntry> = Vec::with_capacity(req.day_dates.len());
         for day in req.day_dates.iter() {
+            // Deadline-check before each day so a worker that's already
+            // past the budget stops burning CPU instead of plowing on.
+            if cancel_worker.load(Ordering::Relaxed) || Instant::now() >= deadline_at {
+                return Err("deadline_exceeded".to_string());
+            }
             let day_req = ComputeDerivedMetricsDayRequestV1 {
                 schema_version: 1,
                 samples: req.samples.clone(),
@@ -133,6 +150,12 @@ pub async fn compute_batch(Json(req): Json<ComputeBatchRequestV1>) -> impl IntoR
         }
         Err(_) => {
             tracing::warn!("batch server-side 115s deadline exceeded; returning 503");
+            // Flip the cancel flag so the blocking worker stops at the
+            // next per-day check instead of consuming CPU after the
+            // handler returns. The worker can't be force-cancelled from
+            // Tokio, but the cooperative check between days bounds the
+            // wasted work to one compute_derived_metrics call.
+            cancel.store(true, Ordering::Relaxed);
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 Json(serde_json::json!({"error": "deadline_exceeded"})),

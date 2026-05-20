@@ -41,11 +41,18 @@ export class SyncController {
     @Param('tableName') tableName: string,
     @Query('since') since?: string,
     @Query('limit') limit?: string,
+    @Query('cursorId') cursorId?: string,
   ) {
     try {
       const sinceMs = Number(since ?? 0) || 0;
       const parsedLimit = Math.min(Number(limit ?? 1000) || 1000, 5000);
-      return await this.syncService.pullSince(req.user.userId, tableName, sinceMs, parsedLimit);
+      return await this.syncService.pullSince(
+        req.user.userId,
+        tableName,
+        sinceMs,
+        parsedLimit,
+        cursorId,
+      );
     } catch (e) {
       this.logger.error(`pullSince(${tableName}) failed: ${e.message}`, e.stack);
       throw new HttpException(`Pull failed: ${e.message}`, HttpStatus.INTERNAL_SERVER_ERROR);

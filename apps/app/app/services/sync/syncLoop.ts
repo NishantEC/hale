@@ -50,6 +50,18 @@ export function decideContinueSync(input: ContinueSyncInput): ContinueSyncDecisi
   }
 
   if (stuckThisIteration && input.stuckCount + 1 >= 2) {
+    // If the cursor stopped advancing because we're already at the live
+    // edge (newestMs is within the caught-up window of now), treat it as
+    // a normal "caught up" terminal — not a failure. Before this, every
+    // healthy session at the live tail surfaced a "Sync failed — Tap to
+    // retry" toast because the daemon polls every 30 s and the strap
+    // has nothing new to deliver yet.
+    if (
+      input.currentNewestMs != null &&
+      input.currentNewestMs >= input.nowMs - input.caughtUpWindowMs
+    ) {
+      return { stop: true, reason: "caught_up", stuckThisIteration }
+    }
     return { stop: true, reason: "stuck_cursor", stuckThisIteration }
   }
 

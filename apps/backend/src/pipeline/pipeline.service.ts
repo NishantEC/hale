@@ -1111,39 +1111,20 @@ export class PipelineService {
     }
   }
 
+  // All derived day/night upserts switched to INSERT ... ON CONFLICT
+  // DO UPDATE (codex adversarial review 2026-05-21, finding #5). With
+  // the UNIQUE (userId, dayDate/nightDate) constraint now in place,
+  // read-then-save would race-crash on concurrent /pipeline/run; the
+  // upsert path is single-statement and idempotent.
   private async upsertNightFeature(
     repo: Repository<NightFeature>,
     userId: string,
     features: import('../processing/interfaces.js').NightFeatureSet,
     nightDate: Date,
-    timeZone: string,
+    _timeZone: string,
   ) {
-    const existing = await this.findOneByCalendarDay(
-      repo,
-      userId,
-      'nightDate',
-      nightDate,
-      timeZone,
-    );
-
-    if (existing) {
-      Object.assign(existing, {
-        nightDate,
-        restingHeartRate: features.restingHeartRate,
-        rmssd: features.rmssd,
-        sdnn: features.sdnn,
-        pnn50: features.pnn50,
-        respiratoryRate: features.respiratoryRate,
-        continuity: features.continuity,
-        regularity: features.regularity,
-        validCoverage: features.validCoverage,
-        confidenceRaw: features.confidenceRaw,
-        sleepEstimateHours: features.sleepEstimateHours,
-        sourceBlend: features.sourceBlend,
-      });
-      await repo.save(existing);
-    } else {
-      const entity = repo.create({
+    await repo.upsert(
+      {
         userId,
         nightDate,
         restingHeartRate: features.restingHeartRate,
@@ -1157,80 +1138,56 @@ export class PipelineService {
         confidenceRaw: features.confidenceRaw,
         sleepEstimateHours: features.sleepEstimateHours,
         sourceBlend: features.sourceBlend,
-      });
-      await repo.save(entity);
-    }
+      },
+      { conflictPaths: ['userId', 'nightDate'] },
+    );
   }
 
   private async upsertSleepDetection(
     repo: Repository<SleepDetection>,
     userId: string,
     detection: import('../processing/interfaces.js').SleepDetectionSummary,
-    timeZone: string,
+    _timeZone: string,
   ) {
-    const nightDate = detection.nightDate;
-    const existing = await this.findOneByCalendarDay(
-      repo,
-      userId,
-      'nightDate',
-      nightDate,
-      timeZone,
+    await repo.upsert(
+      {
+        userId,
+        nightDate: detection.nightDate,
+        bedtime: detection.bedtime,
+        wakeTime: detection.wakeTime,
+        durationHours: detection.durationHours,
+        interruptionCount: detection.interruptionCount,
+        continuity: detection.continuity,
+        regularity: detection.regularity,
+        validCoverage: detection.validCoverage,
+        confidence: detection.confidence,
+      },
+      { conflictPaths: ['userId', 'nightDate'] },
     );
-
-    const data = {
-      bedtime: detection.bedtime,
-      wakeTime: detection.wakeTime,
-      durationHours: detection.durationHours,
-      interruptionCount: detection.interruptionCount,
-      continuity: detection.continuity,
-      regularity: detection.regularity,
-      validCoverage: detection.validCoverage,
-      confidence: detection.confidence,
-    };
-
-    if (existing) {
-      Object.assign(existing, { nightDate, ...data });
-      await repo.save(existing);
-    } else {
-      const entity = repo.create({ userId, nightDate, ...data });
-      await repo.save(entity);
-    }
   }
 
   private async upsertSleepStage(
     repo: Repository<SleepStage>,
     userId: string,
     stage: import('../processing/interfaces.js').SleepStageSummary,
-    timeZone: string,
+    _timeZone: string,
   ) {
-    const nightDate = stage.nightDate;
-    const existing = await this.findOneByCalendarDay(
-      repo,
-      userId,
-      'nightDate',
-      nightDate,
-      timeZone,
+    await repo.upsert(
+      {
+        userId,
+        nightDate: stage.nightDate,
+        remMinutes: stage.remMinutes,
+        coreMinutes: stage.coreMinutes,
+        deepMinutes: stage.deepMinutes,
+        awakeMinutes: stage.awakeMinutes,
+        unknownMinutes: stage.unknownMinutes,
+        confidence: stage.confidence,
+        source: stage.source,
+        epochTimeline: stage.epochTimeline as any,
+        epochMinutes: stage.epochMinutes,
+      },
+      { conflictPaths: ['userId', 'nightDate'] },
     );
-
-    const data = {
-      remMinutes: stage.remMinutes,
-      coreMinutes: stage.coreMinutes,
-      deepMinutes: stage.deepMinutes,
-      awakeMinutes: stage.awakeMinutes,
-      unknownMinutes: stage.unknownMinutes,
-      confidence: stage.confidence,
-      source: stage.source,
-      epochTimeline: stage.epochTimeline as any,
-      epochMinutes: stage.epochMinutes,
-    };
-
-    if (existing) {
-      Object.assign(existing, { nightDate, ...data });
-      await repo.save(existing);
-    } else {
-      const entity = repo.create({ userId, nightDate, ...data });
-      await repo.save(entity);
-    }
   }
 
   private async upsertDailyScore(
@@ -1238,34 +1195,22 @@ export class PipelineService {
     userId: string,
     score: import('../processing/interfaces.js').DailyWellnessScore,
     sleepScore: number | null,
-    timeZone: string,
+    _timeZone: string,
   ) {
-    const dayDate = score.dayDate;
-    const existing = await this.findOneByCalendarDay(
-      repo,
-      userId,
-      'dayDate',
-      dayDate,
-      timeZone,
+    await repo.upsert(
+      {
+        userId,
+        dayDate: score.dayDate,
+        dailyBalance: score.dailyBalance,
+        loadPressure: score.loadPressure,
+        sleepReserveHours: score.sleepReserveHours,
+        confidence: score.confidence,
+        recommendation: score.recommendation,
+        detail: score.detail,
+        sleepScore,
+      },
+      { conflictPaths: ['userId', 'dayDate'] },
     );
-
-    const data = {
-      dailyBalance: score.dailyBalance,
-      loadPressure: score.loadPressure,
-      sleepReserveHours: score.sleepReserveHours,
-      confidence: score.confidence,
-      recommendation: score.recommendation,
-      detail: score.detail,
-      sleepScore,
-    };
-
-    if (existing) {
-      Object.assign(existing, { dayDate, ...data });
-      await repo.save(existing);
-    } else {
-      const entity = repo.create({ userId, dayDate, ...data });
-      await repo.save(entity);
-    }
   }
 
   private async upsertDailyMetric(
@@ -1273,43 +1218,32 @@ export class PipelineService {
     userId: string,
     metrics: import('../processing/interfaces.js').DerivedMetricsBundle,
     dayDate: Date,
-    timeZone: string,
+    _timeZone: string,
   ) {
-    const existing = await this.findOneByCalendarDay(
-      repo,
-      userId,
-      'dayDate',
-      dayDate,
-      timeZone,
+    await repo.upsert(
+      {
+        userId,
+        dayDate,
+        stressAverage: metrics.stressAverage,
+        spo2Average: metrics.spo2Average,
+        skinTempAvgCelsius: metrics.skinTempAvgCelsius,
+        skinTempDeltaCelsius: metrics.skinTempDeltaCelsius,
+        strainScore: metrics.strainScore,
+        sleepConsistencyScore: metrics.sleepConsistencyScore,
+        detectedSleepNights: metrics.detectedSleepNights,
+        lfHfRatioAverage: metrics.lfHfRatioAverage,
+        recoveryIndex: metrics.recoveryIndex,
+        trainingLoadRatio: metrics.trainingLoadRatio,
+        trainingLoadRiskZone: metrics.trainingLoadRiskZone,
+        spo2DipCount: metrics.spo2DipCount,
+        odiPerHour: metrics.odiPerHour,
+        lowestSpo2: metrics.lowestSpo2,
+        coreTemperatureEstimate: metrics.coreTemperatureEstimate,
+        circadianNadir: metrics.circadianNadir,
+        sleepArchitectureScore: metrics.sleepArchitectureScore,
+      } as any,
+      { conflictPaths: ['userId', 'dayDate'] },
     );
-
-    const data = {
-      stressAverage: metrics.stressAverage,
-      spo2Average: metrics.spo2Average,
-      skinTempAvgCelsius: metrics.skinTempAvgCelsius,
-      skinTempDeltaCelsius: metrics.skinTempDeltaCelsius,
-      strainScore: metrics.strainScore,
-      sleepConsistencyScore: metrics.sleepConsistencyScore,
-      detectedSleepNights: metrics.detectedSleepNights,
-      lfHfRatioAverage: metrics.lfHfRatioAverage,
-      recoveryIndex: metrics.recoveryIndex,
-      trainingLoadRatio: metrics.trainingLoadRatio,
-      trainingLoadRiskZone: metrics.trainingLoadRiskZone,
-      spo2DipCount: metrics.spo2DipCount,
-      odiPerHour: metrics.odiPerHour,
-      lowestSpo2: metrics.lowestSpo2,
-      coreTemperatureEstimate: metrics.coreTemperatureEstimate,
-      circadianNadir: metrics.circadianNadir,
-      sleepArchitectureScore: metrics.sleepArchitectureScore,
-    };
-
-    if (existing) {
-      Object.assign(existing, { dayDate, ...data });
-      await repo.save(existing);
-    } else {
-      const entity = repo.create({ userId, dayDate, ...data } as any);
-      await repo.save(entity);
-    }
   }
 
   private async upsertBaseline(

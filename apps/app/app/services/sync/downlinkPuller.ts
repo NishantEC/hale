@@ -1,5 +1,5 @@
 import type { NoopDatabase } from "../db"
-import { getLastSyncAt, setLastSyncAt } from "../db/repositories/syncState"
+import { getSyncCursor, setLastSyncAt } from "../db/repositories/syncState"
 import {
   upsertDailyMetrics,
   upsertDailyScores,
@@ -27,40 +27,67 @@ const UPSERTERS: Record<string, Upserter> = {
 }
 
 export interface PullOptions {
-  apiGet: (path: string) => Promise<{ rows: any[]; hasMore: boolean }>
+  apiGet: (path: string) => Promise<{
+    rows: any[]
+    hasMore: boolean
+    nextCursorAt?: number | null
+    nextCursorId?: string | null
+  }>
   tables: string[]
   pageSize?: number
 }
 
-// Pulls new rows from the backend since each table's lastSyncAt cursor.
-// Advances the cursor to the max updatedAt of each page. Loops until the
-// backend reports no more data for a table.
+// Pulls new rows from the backend since each table's keyset cursor
+// (updatedAt, id). Server pages with (updatedAt > since) OR (updatedAt =
+// since AND id > cursorId) so tied-updatedAt batches at the page
+// boundary can't drop rows from the device mirror (codex adversarial
+// review 2026-05-21, finding #2).
 
 export async function pullDownlink(db: NoopDatabase, opts: PullOptions): Promise<void> {
   const pageSize = opts.pageSize ?? 1000
   for (const tableName of opts.tables) {
     const upserter = UPSERTERS[tableName]
     if (!upserter) continue
-    let since = await getLastSyncAt(db, tableName)
+    let { lastSyncAt: since, lastSyncedRowId: cursorId } = await getSyncCursor(db, tableName)
     for (;;) {
-      const path = `/sync/${tableName}?since=${since}&limit=${pageSize}`
-      const { rows, hasMore } = await opts.apiGet(path)
+      const params = new URLSearchParams()
+      params.set("since", String(since))
+      params.set("limit", String(pageSize))
+      if (cursorId) params.set("cursorId", cursorId)
+      const path = `/sync/${tableName}?${params.toString()}`
+      const res = await opts.apiGet(path)
+      const rows = res.rows
       if (rows.length === 0) break
       await upserter(db, rows)
-      let maxUpdatedAt = since
-      for (const r of rows) {
-        const raw = (r as any).updatedAt
-        const ts =
-          typeof raw === "number"
-            ? raw
-            : raw
-              ? new Date(raw).getTime()
-              : NaN
-        if (Number.isFinite(ts) && ts > maxUpdatedAt) maxUpdatedAt = ts
+
+      // Prefer the server-issued cursor when present. Old server builds
+      // (pre-keyset) don't return one — fall back to max(updatedAt)
+      // across rows so we still make forward progress.
+      let nextAt = res.nextCursorAt ?? null
+      let nextId = res.nextCursorId ?? null
+      if (nextAt == null) {
+        let maxUpdatedAt = since
+        let tailId: string | null = null
+        for (const r of rows) {
+          const raw = (r as any).updatedAt
+          const ts =
+            typeof raw === "number"
+              ? raw
+              : raw
+                ? new Date(raw).getTime()
+                : NaN
+          if (Number.isFinite(ts) && ts >= maxUpdatedAt) {
+            maxUpdatedAt = ts
+            tailId = typeof (r as any).id === "string" ? (r as any).id : tailId
+          }
+        }
+        nextAt = maxUpdatedAt
+        nextId = tailId
       }
-      since = maxUpdatedAt
-      await setLastSyncAt(db, tableName, since)
-      if (!hasMore) break
+      since = nextAt
+      cursorId = nextId
+      await setLastSyncAt(db, tableName, since, undefined, cursorId)
+      if (!res.hasMore) break
     }
   }
 }

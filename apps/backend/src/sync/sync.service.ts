@@ -38,26 +38,59 @@ export class SyncService {
     private activityDetectionRepo: Repository<ActivityDetection>,
   ) {}
 
-  // Per-table incremental pull keyed on updatedAt. The app's downlinkPuller
-  // walks this with since=lastSyncAt, reads updatedAt from each row, and
-  // advances its cursor to the max returned. hasMore signals when more rows
-  // exist past the limit so the caller can page.
+  // Per-table incremental pull with keyset cursor (codex adversarial
+  // review 2026-05-21, finding #2). Previously ordered by updatedAt
+  // only; if a batch of rows shared the same updatedAt (common after
+  // bulk pipeline writes) and that timestamp fell exactly at the page
+  // boundary, the next page advanced past them and silently dropped
+  // rows from the device mirror.
+  //
+  // New contract: keyset on (updatedAt, id). Caller supplies
+  // `sinceMs` (legacy) and optional `cursorId`. We page deterministically
+  // with WHERE (updatedAt > since) OR (updatedAt = since AND id > cursorId).
   async pullSince(
     userId: string,
     tableName: string,
     sinceMs: number,
     limit: number,
-  ): Promise<{ rows: any[]; hasMore: boolean }> {
+    cursorId?: string | null,
+  ): Promise<{
+    rows: any[]
+    hasMore: boolean
+    nextCursorAt: number | null
+    nextCursorId: string | null
+  }> {
     const repo = this.pickRepo(tableName);
-    if (!repo) return { rows: [], hasMore: false };
+    if (!repo) {
+      return { rows: [], hasMore: false, nextCursorAt: null, nextCursorId: null };
+    }
     const sinceDate = new Date(sinceMs);
-    const rows = await repo.find({
-      where: { userId, updatedAt: MoreThan(sinceDate) },
-      order: { updatedAt: 'ASC' },
-      take: limit + 1,
-    });
+    const qb = repo
+      .createQueryBuilder('r')
+      .where('r."userId" = :userId', { userId })
+      .orderBy('r."updatedAt"', 'ASC')
+      .addOrderBy('r.id', 'ASC')
+      .take(limit + 1);
+
+    if (cursorId) {
+      qb.andWhere(
+        '(r."updatedAt" > :since OR (r."updatedAt" = :since AND r.id > :cursorId))',
+        { since: sinceDate, cursorId },
+      );
+    } else {
+      qb.andWhere('r."updatedAt" > :since', { since: sinceDate });
+    }
+
+    const rows = await qb.getMany();
     const hasMore = rows.length > limit;
-    return { rows: rows.slice(0, limit), hasMore };
+    const trimmed = rows.slice(0, limit);
+    const tail = trimmed[trimmed.length - 1];
+    return {
+      rows: trimmed,
+      hasMore,
+      nextCursorAt: tail?.updatedAt ? new Date(tail.updatedAt).getTime() : null,
+      nextCursorId: tail?.id ?? null,
+    };
   }
 
   private pickRepo(tableName: string): Repository<any> | null {
