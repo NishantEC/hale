@@ -11,7 +11,12 @@ import { recordAckResponse, recordPersistFailure } from '../sync/syncTelemetry';
 const ACK_RESPONSE_TIMEOUT_MS = 1500;
 
 const DOWNLOAD_TIMEOUT_MS = 120000;
-const IDLE_TIMEOUT_MS = 15000; // If no packets for 15s after receiving data, assume done
+// Drop-time after the last received packet before we treat the strap's
+// historical stream as "done." 15 s was too generous now that Maverick
+// acks come back in ~150 ms — most idle-windows are the strap waiting
+// for the next SendHistoricalData round-trip, and 5 s still leaves
+// ~3× the typical inter-batch gap as headroom against early termination.
+const IDLE_TIMEOUT_MS = 5000;
 
 /**
  * Called once per batch BEFORE the strap is ACK'd for that batch. Must

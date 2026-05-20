@@ -41,4 +41,13 @@ export async function wipeDatabase(): Promise<void> {
   sqliteInstance = null
 }
 
+// Resolve the on-device filesystem path of the active SQLite file. Used
+// by the Inspector "Export DB" action so the user can hand the file to a
+// SQLite client on Mac via expo-sharing. Returns null if the database
+// hasn't been opened yet (caller should call openDatabase() first).
+export function getDatabaseFilePath(): string | null {
+  if (!sqliteInstance) return null
+  return sqliteInstance.getDbPath()
+}
+
 export { schema }

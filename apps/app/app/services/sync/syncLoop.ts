@@ -2,7 +2,6 @@ export type ContinueSyncReason =
   | "no_records"
   | "caught_up"
   | "stuck_cursor"
-  | "iter_cap"
   | "continue"
 
 export type ContinueSyncInput = {
@@ -12,7 +11,6 @@ export type ContinueSyncInput = {
   stuckCount: number
   iterations: number
   nowMs: number
-  maxIterations: number
   caughtUpWindowMs: number
 }
 
@@ -22,7 +20,16 @@ export type ContinueSyncDecision = {
   stuckThisIteration: boolean
 }
 
-export const DEFAULT_MAX_ITERATIONS = 20
+// Kept exported for backwards compat with callers that haven't migrated;
+// no longer enforced inside decideContinueSync. iter_cap was a fixed-loop
+// guard that fired prematurely once acks started working (each iteration
+// drains ~17 records, so 20 passes = ~6 min of strap-time even when
+// hundreds of minutes are queued). Real safeties remaining:
+//   - DOWNLOAD_TIMEOUT_MS (120 s) inside HistoryDownloader caps any
+//     single iteration's wall-clock to 2 min.
+//   - stuck_cursor fires after 2 consecutive non-advancing iterations.
+//   - no_records / caught_up stop on natural end-of-stream.
+export const DEFAULT_MAX_ITERATIONS = Number.POSITIVE_INFINITY
 export const DEFAULT_CAUGHT_UP_WINDOW_MS = 5 * 60_000
 
 export function decideContinueSync(input: ContinueSyncInput): ContinueSyncDecision {
@@ -44,10 +51,6 @@ export function decideContinueSync(input: ContinueSyncInput): ContinueSyncDecisi
 
   if (stuckThisIteration && input.stuckCount + 1 >= 2) {
     return { stop: true, reason: "stuck_cursor", stuckThisIteration }
-  }
-
-  if (input.iterations >= input.maxIterations) {
-    return { stop: true, reason: "iter_cap", stuckThisIteration }
   }
 
   return { stop: false, reason: "continue", stuckThisIteration }

@@ -146,7 +146,8 @@ export function copyFor(state: AccessoryState, snapshot: AccessorySnapshot): str
       const stage = snapshot.syncStage
       const iter = snapshot.syncIteration
       const cap = snapshot.syncIterationCap
-      if (iter != null && cap != null && cap > 1) return `Syncing · ${iter} of ${cap}`
+      if (iter != null && cap != null && Number.isFinite(cap) && cap > 1) return `Syncing · ${iter} of ${cap}`
+      if (iter != null && iter > 0) return `Syncing · pass ${iter}`
       return stage ? `Syncing · ${stage}` : "Syncing…"
     }
     case "upload_draining":       return `Uploading ${snapshot.pendingCount} record${snapshot.pendingCount === 1 ? "" : "s"}`

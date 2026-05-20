@@ -38,7 +38,9 @@ export type ApiFailureRecord = {
 
 // Per-syncNow invocation. The "Recent syncs" Inspector section reads this
 // — gives a fast read on whether sessions are stopping for the right
-// reasons (no_records / caught_up) vs error / stuck_cursor / iter_cap.
+// reasons (no_records / caught_up) vs error / stuck_cursor. "iter_cap"
+// remains in the union so old persisted sessions still decode after the
+// 20-loop iteration cap was removed.
 export type SyncSession = {
   startedAt: number
   durationMs: number

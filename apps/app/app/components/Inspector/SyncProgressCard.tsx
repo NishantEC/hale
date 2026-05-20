@@ -70,7 +70,11 @@ export const SyncProgressCard: FC = () => {
         label="Pass"
         value={
           visibleIteration > 0
-            ? `${visibleIteration}/${ble.syncIterationCap}${
+            ? `${visibleIteration}${
+                Number.isFinite(ble.syncIterationCap)
+                  ? `/${ble.syncIterationCap}`
+                  : ""
+              }${
                 !ble.isSyncing && ble.syncLastStopReason
                   ? ` · stopped: ${ble.syncLastStopReason}`
                   : ""

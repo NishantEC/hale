@@ -558,9 +558,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       while (true) {
         iterations += 1
         setSyncIteration(iterations)
-        setSyncStage(
-          `Downloading from strap (pass ${iterations}/${DEFAULT_MAX_ITERATIONS})…`,
-        )
+        setSyncStage(`Downloading from strap (pass ${iterations})…`)
 
         let iterationRecords = 0
         let iterationNewestMs: number | null = null
@@ -624,7 +622,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
           stuckCount,
           iterations,
           nowMs: Date.now(),
-          maxIterations: DEFAULT_MAX_ITERATIONS,
           caughtUpWindowMs: DEFAULT_CAUGHT_UP_WINDOW_MS,
         })
 

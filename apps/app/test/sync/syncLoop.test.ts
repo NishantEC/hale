@@ -7,7 +7,6 @@ const baseInput = {
   stuckCount: 0,
   iterations: 1,
   nowMs: 1_700_010_000_000,
-  maxIterations: 20,
   caughtUpWindowMs: 5 * 60_000,
 }
 
@@ -72,10 +71,10 @@ describe("decideContinueSync", () => {
     expect(d.reason).toBe("stuck_cursor")
   })
 
-  test("stops at iteration cap", () => {
-    const d = decideContinueSync({ ...baseInput, iterations: 20, maxIterations: 20 })
-    expect(d.stop).toBe(true)
-    expect(d.reason).toBe("iter_cap")
+  test("continues past 20 iterations (iter_cap removed; stuck_cursor is the safety net)", () => {
+    const d = decideContinueSync({ ...baseInput, iterations: 50 })
+    expect(d.stop).toBe(false)
+    expect(d.reason).toBe("continue")
   })
 
   test("first iteration with null prevNewestMs is not stuck", () => {
