@@ -31,16 +31,26 @@ export const AckResponsesCard: FC = () => {
   const counters = telemetry.ackCounters
   const responses: AckResponse[] = telemetry.ackResponses
 
+  // Post c33cc6e4 the strap *not* responding to acks is the steady state —
+  // we made ack-response observation fire-and-forget so the persistChain
+  // advances on the BLE link-layer ack instead. So "0/N responded" is
+  // normal and shouldn't paint the pill red. Only firmware-rejected acks
+  // (status != 0 in a real response) are an actual problem.
   const pillTone =
-    counters.timedOut > 0 || counters.rejected > 0
-      ? counters.responded === 0
-        ? "bad"
-        : "warn"
+    counters.rejected > 0
+      ? "warn"
       : counters.sent > 0
-        ? "ok"
+        ? counters.responded > 0
+          ? "ok"
+          : "dim"
         : "dim"
 
-  const pillText = `${counters.responded}/${counters.sent} ok`
+  const pillText =
+    counters.sent === 0
+      ? "idle"
+      : counters.responded > 0
+        ? `${counters.responded}/${counters.sent} resp`
+        : `${counters.sent} sent`
 
   return (
     <InspectorCard
@@ -49,7 +59,7 @@ export const AckResponsesCard: FC = () => {
       defaultExpanded
     >
       <Text
-        text="Strap's reply to each HistoricalDataAck (task #90). Timeouts mean the strap is ignoring our acks."
+        text="Strap's reply to each HistoricalDataAck. The strap normally doesn't respond — we observe it fire-and-forget so the persist chain advances on the BLE link-layer ack. Timeouts here are expected and harmless."
         size="xxs"
         style={{ color: colors.textDim, paddingBottom: 8 }}
       />

@@ -1,11 +1,12 @@
 import { FC, useCallback, useEffect, useState } from "react"
 import { ScrollView, TouchableOpacity, View, ViewStyle } from "react-native"
-import { Copy as CopyIcon, Export as ExportIcon } from "phosphor-react-native"
+import { Copy as CopyIcon, Export as ExportIcon, Trash as TrashIcon } from "phosphor-react-native"
 import * as Clipboard from "expo-clipboard"
 import * as Sharing from "expo-sharing"
 
 import { Text } from "@/components/Text"
 import {
+  clearAllLogs,
   getTodayLogPath,
   readAllTodayLogLines,
 } from "@/services/observability/persistentLog"
@@ -17,7 +18,7 @@ import { StatusPill } from "./StatusPill"
 export const LogsCard: FC = () => {
   const { colors } = LOCAL_THEME
   const [lines, setLines] = useState<string[]>([])
-  const [busyKind, setBusyKind] = useState<"copy" | "export" | null>(null)
+  const [busyKind, setBusyKind] = useState<"copy" | "export" | "clear" | null>(null)
   const [toast, setToast] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -52,6 +53,20 @@ export const LogsCard: FC = () => {
       setBusyKind(null)
     }
   }, [lines])
+
+  const onClear = useCallback(async () => {
+    setBusyKind("clear")
+    try {
+      await clearAllLogs()
+      setLines([])
+      flashToast("Cleared")
+    } catch (err) {
+      console.warn("[LogsCard] clear failed", err)
+      flashToast("Couldn't clear")
+    } finally {
+      setBusyKind(null)
+    }
+  }, [])
 
   const onExport = useCallback(async () => {
     setBusyKind("export")
@@ -112,6 +127,18 @@ export const LogsCard: FC = () => {
             accessibilityLabel="Export logs"
           >
             <ExportIcon size={13} color={colors.text} weight="regular" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onClear}
+            disabled={busyKind != null || lines.length === 0}
+            style={[
+              $iconBtn,
+              { backgroundColor: colors.surfaceElevated },
+              busyKind != null || lines.length === 0 ? { opacity: 0.4 } : null,
+            ]}
+            accessibilityLabel="Clear logs"
+          >
+            <TrashIcon size={13} color={colors.statusRed} weight="regular" />
           </TouchableOpacity>
         </View>
       </View>

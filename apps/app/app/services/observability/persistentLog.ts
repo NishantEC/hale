@@ -229,3 +229,22 @@ export async function getTodayLogPath(): Promise<string | null> {
   const info = await FileSystem.getInfoAsync(path)
   return info.exists ? path : null
 }
+
+// Drop every persisted log file plus any not-yet-flushed buffered lines.
+// The Inspector "Clear" button uses this when the log view has become
+// noisy enough that scrolling/exporting is more effort than starting fresh.
+export async function clearAllLogs(): Promise<void> {
+  pendingLines = []
+  clearFlushTimer()
+  await writeQueue
+  await ensureDir()
+  try {
+    const entries = await FileSystem.readDirectoryAsync(LOG_DIR)
+    for (const name of entries) {
+      if (!name.endsWith(".log")) continue
+      await FileSystem.deleteAsync(`${LOG_DIR}/${name}`, { idempotent: true })
+    }
+  } catch (err) {
+    console.warn("[persistentLog] clearAllLogs failed", err)
+  }
+}

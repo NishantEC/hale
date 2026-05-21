@@ -575,6 +575,11 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
         if (decision.stop) {
           console.log(`[syncNow] loop stop: ${decision.reason} after ${iterations} passes`)
+          // Bump the link on cross-pass stuck so the in-pass empty-echo
+          // detector doesn't have to wait for the strap to roll its buffer.
+          if (decision.reason === "stuck_cursor") {
+            void bleManager.forceReconnect("syncNow_stuck_cursor_terminal")
+          }
           break
         }
 

@@ -13,6 +13,7 @@ import { sql } from "drizzle-orm"
 import { Text } from "@/components/Text"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { getDatabaseFilePath, openDatabase } from "@/services/db"
+import { createObservable } from "@/services/db/observable"
 
 import { InspectorCard } from "./InspectorCard"
 import { StatusPill } from "./StatusPill"
@@ -78,6 +79,23 @@ export const DbSnapshotCard: FC = () => {
 
   useEffect(() => {
     void refresh()
+    // Live-refresh while sync is writing. Without this the card silently
+    // stays at "0 rows" through a 4-pass sync because the user has no
+    // signal to know they should tap the refresh icon. Coalesce bursts
+    // (one notify per batch) into a single refresh on the trailing edge.
+    let pending: ReturnType<typeof setTimeout> | null = null
+    const queueRefresh = () => {
+      if (pending !== null) return
+      pending = setTimeout(() => {
+        pending = null
+        void refresh()
+      }, 600)
+    }
+    const unsubs = TABLES.map((t) => createObservable(t, queueRefresh))
+    return () => {
+      if (pending !== null) clearTimeout(pending)
+      unsubs.forEach((u) => u())
+    }
   }, [refresh])
 
   const onExport = useCallback(async () => {
