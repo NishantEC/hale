@@ -23,6 +23,7 @@ import { SyncProgressCard } from "@/components/Inspector/SyncProgressCard"
 import { useExpertMode } from "@/components/Inspector/useExpertMode"
 import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
+import { useSyncIsRunning } from "@/stores/syncStore"
 import { useDashboard } from "@/context/DashboardContext"
 import { useOutboundQueueStats } from "@/hooks/useOutboundQueueStats"
 import {
@@ -64,6 +65,7 @@ export const DebugInspectorScreen: FC = () => {
   const { colors } = LOCAL_THEME
   const { selectedDate, refreshDashboard } = useDashboard()
   const ble = useBle()
+  const isSyncing = useSyncIsRunning()
   const {
     syncNow,
     rebootStrap,
@@ -428,7 +430,7 @@ export const DebugInspectorScreen: FC = () => {
           onTapPhone={() => setDrilldownOpen((v) => !v)}
         />
 
-        {ble.isSyncing ? <SyncProgressCard /> : null}
+        {isSyncing ? <SyncProgressCard /> : null}
 
         <EventsCard
           events={buildEvents({
@@ -455,7 +457,7 @@ export const DebugInspectorScreen: FC = () => {
         <LogsCard />
 
         <ActionsRow
-          isSyncing={ble.isSyncing}
+          isSyncing={isSyncing}
           queueDepth={queueStats.depth ?? 0}
           onSync={handleSync}
           onRefresh={() => void refreshInspector()}

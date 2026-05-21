@@ -7,6 +7,7 @@ import * as Updates from "expo-updates"
 
 import { useBle } from "@/context/BleContext"
 import { useBleStore } from "@/stores/bleStore"
+import { useSyncStore } from "@/stores/syncStore"
 import { useShallow } from "zustand/react/shallow"
 import { useSyncContext } from "@/context/SyncContext"
 import { runPipeline } from "@/services/api/noopClient"
@@ -60,6 +61,7 @@ function parseIso(s: string | null | undefined): number | null {
 
 function buildSnapshot(
   ble: ReturnType<typeof useBle>,
+  syncScalars: SyncScalars,
   sync: ReturnType<typeof useSyncContext>,
   isLowPowerMode: boolean,
   isAppUpdateAvailable: boolean,
@@ -67,21 +69,24 @@ function buildSnapshot(
 ): AccessorySnapshot {
   const lastSyncAt = parseIso(ble.lastSyncAt)
   return {
-    bleError: ble.error ?? null,
+    bleError: syncScalars.error ?? null,
     connectionState: ble.connectionState,
     // v1: treat "currently worn or has ever synced" as worn-recently;
     // the predicate also requires disconnectedAt > 90s ago.
     wasWornRecently: !!ble.isWorn || lastSyncAt != null,
     disconnectedAt: ble.connectionState === "disconnected" ? lastSyncAt : null,
     lastSyncAt,
-    bleIsSyncing: ble.isSyncing,
-    syncStage: ble.syncStage || null,
-    syncProgress: ble.syncProgress
-      ? { recordsRead: ble.syncProgress.recordsParsed, total: ble.syncProgress.totalBytes || null }
+    bleIsSyncing: syncScalars.isSyncing,
+    syncStage: syncScalars.syncStage || null,
+    syncProgress: syncScalars.syncProgress
+      ? {
+          recordsRead: syncScalars.syncProgress.recordsParsed,
+          total: syncScalars.syncProgress.totalBytes || null,
+        }
       : null,
-    syncIteration: ble.syncIteration ?? null,
-    syncIterationCap: ble.syncIterationCap ?? null,
-    pipelineState: ble.pipelineState,
+    syncIteration: syncScalars.syncIteration ?? null,
+    syncIterationCap: syncScalars.syncIterationCap ?? null,
+    pipelineState: syncScalars.pipelineState,
     batteryLevel: ble.batteryLevel,
     isCharging: ble.isCharging,
     strapAlarmArmed: ble.strapAlarmArmed,
@@ -92,12 +97,23 @@ function buildSnapshot(
     isOnline: sync.isOnline,
     pendingCount: sync.pendingCount,
     queueIsSyncing: sync.isSyncing,
-    syncSummary: ble.syncSummary ?? null,
+    syncSummary: syncScalars.syncSummary ?? null,
 
     isAppUpdateAvailable,
     isLowPowerMode,
     now,
   }
+}
+
+type SyncScalars = {
+  isSyncing: boolean
+  syncStage: string
+  syncProgress: import("@/services/ble/packet-types").DownloadProgress | null
+  syncIteration: number
+  syncIterationCap: number
+  pipelineState: "idle" | "running" | "success" | "failed"
+  syncSummary: import("@/context/BleContext").SyncSummary | null
+  error: string | null
 }
 
 export function useActivityStripState(): ActivityStripView {
@@ -110,6 +126,18 @@ export function useActivityStripState(): ActivityStripView {
       isCharging: s.isCharging,
       strapAlarmArmed: s.strapAlarmArmed,
       strapAlarmAt: s.strapAlarmAt,
+    })),
+  )
+  const syncScalars: SyncScalars = useSyncStore(
+    useShallow((s) => ({
+      isSyncing: s.isSyncing,
+      syncStage: s.syncStage,
+      syncProgress: s.syncProgress,
+      syncIteration: s.syncIteration,
+      syncIterationCap: s.syncIterationCap,
+      pipelineState: s.pipelineState,
+      syncSummary: s.syncSummary,
+      error: s.error,
     })),
   )
   const sync = useSyncContext()
@@ -148,22 +176,11 @@ export function useActivityStripState(): ActivityStripView {
   }
 
   const snapshot = useMemo(
-    () => buildSnapshot(mergedBle, sync, isLowPowerMode, isAppUpdateAvailable, Date.now()),
+    () =>
+      buildSnapshot(mergedBle, syncScalars, sync, isLowPowerMode, isAppUpdateAvailable, Date.now()),
     [
-      ble.error,
-      bleScalars.connectionState,
-      bleScalars.isWorn,
-      ble.lastSyncAt,
-      ble.isSyncing,
-      ble.syncStage,
-      ble.syncIteration,
-      ble.syncIterationCap,
-      ble.pipelineState,
-      bleScalars.batteryLevel,
-      bleScalars.isCharging,
-      bleScalars.strapAlarmArmed,
-      bleScalars.strapAlarmAt,
-      ble.syncSummary,
+      mergedBle,
+      syncScalars,
       sync.syncError,
       sync.deadCount,
       sync.isOnline,
@@ -192,13 +209,13 @@ export function useActivityStripState(): ActivityStripView {
     return () => clearTimeout(id)
   }, [candidate])
 
-  const prevPipelineRef = useRef(mergedBle.pipelineState)
+  const prevPipelineRef = useRef(syncScalars.pipelineState)
   useEffect(() => {
-    if (prevPipelineRef.current === "running" && mergedBle.pipelineState === "success") {
+    if (prevPipelineRef.current === "running" && syncScalars.pipelineState === "success") {
       dispatch({ type: "SYNCED_OK", now: Date.now() })
     }
-    prevPipelineRef.current = mergedBle.pipelineState
-  }, [mergedBle.pipelineState])
+    prevPipelineRef.current = syncScalars.pipelineState
+  }, [syncScalars.pipelineState])
 
   const prevQueueRef = useRef({ syncing: sync.isSyncing, pending: sync.pendingCount })
   useEffect(() => {

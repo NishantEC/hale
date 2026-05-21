@@ -37,8 +37,8 @@ import { getViewCache, setViewCache } from "@/services/db/repositories/viewCache
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
 import { Text } from "@/components/Text"
-import { useBle } from "@/context/BleContext"
 import { useBleConnectionState, useBleBatteryLevel, useBleIsCharging } from "@/stores/bleStore"
+import { useSyncIsRunning } from "@/stores/syncStore"
 import { useDashboard } from "@/context/DashboardContext"
 import { useHealthKit } from "@/context/HealthKitContext"
 import { buildTodayTape, type TapeEvent } from "@/utils/buildTodayTape"
@@ -100,7 +100,7 @@ export const HomeScreen: FC = () => {
     refreshDashboard,
     clearError,
   } = useDashboard()
-  const { isSyncing } = useBle()
+  const isSyncing = useSyncIsRunning()
   const connectionState = useBleConnectionState()
   const batteryLevel = useBleBatteryLevel()
   const isCharging = useBleIsCharging()

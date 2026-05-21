@@ -9,6 +9,14 @@ import { XStack, YStack } from "@/components/tamagui-primitives"
 import { AnimatedProgressBar } from "@/components/reactx/progress"
 import { Toast } from "@/components/reactx/toast"
 import { useBle } from "@/context/BleContext"
+import {
+  useScannedDevices,
+  useSyncError,
+  useSyncIsRunning,
+  useSyncProgress,
+  useSyncStage,
+  useSyncSummary,
+} from "@/stores/syncStore"
 
 export const DeviceScreen: FC = () => {
   const {
@@ -21,18 +29,18 @@ export const DeviceScreen: FC = () => {
     isCharging,
     realtimeHeartRate,
     liveStressLevel,
-    scannedDevices,
-    isSyncing,
-    syncStage,
-    syncProgress,
-    syncSummary,
-    error,
     scan,
     connect,
     disconnect,
     syncNow,
     clearError,
   } = useBle()
+  const scannedDevices = useScannedDevices()
+  const isSyncing = useSyncIsRunning()
+  const syncStage = useSyncStage()
+  const syncProgress = useSyncProgress()
+  const syncSummary = useSyncSummary()
+  const error = useSyncError()
 
   const lastShownError = useRef<string | null>(null)
 

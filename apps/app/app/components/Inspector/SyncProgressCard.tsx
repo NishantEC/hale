@@ -2,8 +2,19 @@ import { FC, useEffect, useMemo, useState } from "react"
 import { View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
-import { useBle } from "@/context/BleContext"
 import { useOutboundQueueStats } from "@/hooks/useOutboundQueueStats"
+import {
+  useLastBatchWindow,
+  useLastPipelineAt,
+  usePipelineState,
+  useSyncIsRunning,
+  useSyncIteration,
+  useSyncIterationCap,
+  useSyncProgress,
+  useSyncStage,
+  useSyncStopReason,
+  useSyncSummary,
+} from "@/stores/syncStore"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 import { InspectorCard } from "./InspectorCard"
@@ -25,38 +36,47 @@ function formatKB(bytes: number): string {
 }
 
 export const SyncProgressCard: FC = () => {
-  const ble = useBle()
+  const isSyncing = useSyncIsRunning()
+  const syncStage = useSyncStage()
+  const syncProgress = useSyncProgress()
+  const syncSummary = useSyncSummary()
+  const syncIteration = useSyncIteration()
+  const syncIterationCap = useSyncIterationCap()
+  const syncLastStopReason = useSyncStopReason()
+  const pipelineState = usePipelineState()
+  const lastPipelineAt = useLastPipelineAt()
+  const lastBatchWindow = useLastBatchWindow()
   const queueStats = useOutboundQueueStats()
 
   // Damp the iteration counter ~500ms so users don't see flicker as the
   // strap finishes one pass and starts the next.
-  const [visibleIteration, setVisibleIteration] = useState(ble.syncIteration)
+  const [visibleIteration, setVisibleIteration] = useState(syncIteration)
   useEffect(() => {
-    if (ble.syncIteration === visibleIteration) return
-    const t = setTimeout(() => setVisibleIteration(ble.syncIteration), 500)
+    if (syncIteration === visibleIteration) return
+    const t = setTimeout(() => setVisibleIteration(syncIteration), 500)
     return () => clearTimeout(t)
-  }, [ble.syncIteration, visibleIteration])
+  }, [syncIteration, visibleIteration])
 
   const { tone, pill, defaultExpanded } = useMemo(() => {
-    if (ble.isSyncing) {
+    if (isSyncing) {
       const t: StatusTone = "warn"
       return { tone: t, pill: "Syncing", defaultExpanded: true }
     }
-    if (ble.pipelineState === "running") {
+    if (pipelineState === "running") {
       const t: StatusTone = "warn"
       return { tone: t, pill: "Pipeline", defaultExpanded: true }
     }
-    if (ble.pipelineState === "failed") {
+    if (pipelineState === "failed") {
       const t: StatusTone = "bad"
       return { tone: t, pill: "Pipeline failed", defaultExpanded: true }
     }
-    if (ble.syncSummary) {
+    if (syncSummary) {
       const t: StatusTone = "ok"
       return { tone: t, pill: "Idle", defaultExpanded: false }
     }
     const t: StatusTone = "dim"
     return { tone: t, pill: "Idle", defaultExpanded: false }
-  }, [ble.isSyncing, ble.pipelineState, ble.syncSummary])
+  }, [isSyncing, pipelineState, syncSummary])
 
   return (
     <InspectorCard
@@ -64,43 +84,37 @@ export const SyncProgressCard: FC = () => {
       pill={<StatusPill tone={tone} text={pill} />}
       defaultExpanded={defaultExpanded}
     >
-      <Row label="State" value={ble.syncProgress?.state ?? (ble.isSyncing ? "starting" : "idle")} />
-      <Row label="Stage" value={ble.syncStage || "—"} />
+      <Row label="State" value={syncProgress?.state ?? (isSyncing ? "starting" : "idle")} />
+      <Row label="Stage" value={syncStage || "—"} />
       <Row
         label="Pass"
         value={
           visibleIteration > 0
             ? `${visibleIteration}${
-                Number.isFinite(ble.syncIterationCap)
-                  ? `/${ble.syncIterationCap}`
-                  : ""
-              }${
-                !ble.isSyncing && ble.syncLastStopReason
-                  ? ` · stopped: ${ble.syncLastStopReason}`
-                  : ""
-              }`
+                Number.isFinite(syncIterationCap) ? `/${syncIterationCap}` : ""
+              }${!isSyncing && syncLastStopReason ? ` · stopped: ${syncLastStopReason}` : ""}`
             : "—"
         }
       />
       <Row
         label="Chunks received"
-        value={ble.syncProgress ? String(ble.syncProgress.chunksReceived) : "—"}
+        value={syncProgress ? String(syncProgress.chunksReceived) : "—"}
       />
       <Row
         label="Records parsed"
-        value={ble.syncProgress ? String(ble.syncProgress.recordsParsed) : "—"}
+        value={syncProgress ? String(syncProgress.recordsParsed) : "—"}
       />
       <Row
         label="Bytes transferred"
-        value={ble.syncProgress ? formatKB(ble.syncProgress.totalBytes) : "—"}
+        value={syncProgress ? formatKB(syncProgress.totalBytes) : "—"}
       />
       <Row
         label="Last batch"
         value={
-          ble.lastBatchWindow
-            ? `${ble.lastBatchWindow.batchSize} records · ${formatIst(
-                ble.lastBatchWindow.oldestMs,
-              )} → ${formatIst(ble.lastBatchWindow.newestMs)}`
+          lastBatchWindow
+            ? `${lastBatchWindow.batchSize} records · ${formatIst(
+                lastBatchWindow.oldestMs,
+              )} → ${formatIst(lastBatchWindow.newestMs)}`
             : "—"
         }
       />
@@ -111,19 +125,15 @@ export const SyncProgressCard: FC = () => {
       />
       <Row
         label="Pipeline"
-        value={formatPipeline(ble.pipelineState, ble.lastPipelineAt)}
+        value={formatPipeline(pipelineState, lastPipelineAt)}
         tone={
-          ble.pipelineState === "failed"
-            ? "bad"
-            : ble.pipelineState === "running"
-              ? "warn"
-              : undefined
+          pipelineState === "failed" ? "bad" : pipelineState === "running" ? "warn" : undefined
         }
       />
-      {ble.syncSummary ? (
+      {syncSummary ? (
         <Row
           label="Last summary"
-          value={`${ble.syncSummary.nights} nights · ${ble.syncSummary.stages} stages · ${ble.syncSummary.scores} scores`}
+          value={`${syncSummary.nights} nights · ${syncSummary.stages} stages · ${syncSummary.scores} scores`}
         />
       ) : null}
     </InspectorCard>

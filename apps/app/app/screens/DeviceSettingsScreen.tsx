@@ -24,6 +24,12 @@ import { Dialog } from "@/components/reactx/dialog"
 import { Toast } from "@/components/reactx/toast"
 import { useAuth } from "@/context/AuthContext"
 import { useBle } from "@/context/BleContext"
+import {
+  useScannedDevices,
+  useSyncIsRunning,
+  useSyncProgress,
+  useSyncStage,
+} from "@/stores/syncStore"
 import { forceLogout } from "@/services/api/noopClient"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
@@ -42,15 +48,15 @@ export const DeviceSettingsScreen: FC = () => {
     firmwareVersion,
     deviceClock,
     isWorn,
-    scannedDevices,
-    isSyncing,
-    syncStage,
-    syncProgress,
     scan,
     connect,
     disconnect,
     syncNow,
   } = useBle()
+  const scannedDevices = useScannedDevices()
+  const isSyncing = useSyncIsRunning()
+  const syncStage = useSyncStage()
+  const syncProgress = useSyncProgress()
 
   const isConnected = connectionState === "ready"
   const isBusy = connectionState === "connecting" || connectionState === "discovering"

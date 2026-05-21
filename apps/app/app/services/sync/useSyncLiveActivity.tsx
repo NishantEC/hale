@@ -16,8 +16,15 @@
 import { FC, useEffect, useRef } from "react"
 import { AppState, AppStateStatus } from "react-native"
 
-import { useBle } from "@/context/BleContext"
 import { useSyncContext } from "@/context/SyncContext"
+import {
+  useSyncError,
+  useSyncIsRunning,
+  useSyncIteration,
+  useSyncIterationCap,
+  useSyncStage,
+  useSyncSummary,
+} from "@/stores/syncStore"
 import { syncLiveActivity } from "./liveActivity"
 
 function progressFraction(
@@ -58,7 +65,12 @@ function subtitleFor(
 }
 
 export const SyncLiveActivityBridge: FC = () => {
-  const ble = useBle()
+  const bleIsSyncing = useSyncIsRunning()
+  const syncStage = useSyncStage()
+  const syncIteration = useSyncIteration()
+  const syncIterationCap = useSyncIterationCap()
+  const syncSummary = useSyncSummary()
+  const bleError = useSyncError()
   const sync = useSyncContext()
 
   // Track the queue's starting depth so we can derive a 0..1 progress for the
@@ -83,19 +95,19 @@ export const SyncLiveActivityBridge: FC = () => {
         // Foreground -> background mid-sync: spin up the activity now so the
         // user sees it on Lock Screen / Dynamic Island for the rest of the run.
         syncLiveActivity.start({
-          title: ble.isSyncing ? "Syncing strap" : "Uploading",
+          title: bleIsSyncing ? "Syncing strap" : "Uploading",
           subtitle: subtitleFor(
-            ble.isSyncing,
-            ble.syncStage,
-            ble.syncIteration,
-            ble.syncIterationCap,
+            bleIsSyncing,
+            syncStage,
+            syncIteration,
+            syncIterationCap,
             sync.isSyncing,
             sync.pendingCount,
           ),
           progress: progressFraction(
-            ble.isSyncing,
-            ble.syncIteration,
-            ble.syncIterationCap,
+            bleIsSyncing,
+            syncIteration,
+            syncIterationCap,
             sync.isSyncing,
             sync.pendingCount,
             pendingAtStartRef.current,
@@ -105,11 +117,11 @@ export const SyncLiveActivityBridge: FC = () => {
         // Background -> foreground mid-sync: tear the activity down. The
         // in-app strip takes over visibility from here.
         syncLiveActivity.stop({
-          title: ble.isSyncing ? "Syncing strap" : "Uploading",
+          title: bleIsSyncing ? "Syncing strap" : "Uploading",
           progress: progressFraction(
-            ble.isSyncing,
-            ble.syncIteration,
-            ble.syncIterationCap,
+            bleIsSyncing,
+            syncIteration,
+            syncIterationCap,
             sync.isSyncing,
             sync.pendingCount,
             pendingAtStartRef.current,
@@ -123,7 +135,7 @@ export const SyncLiveActivityBridge: FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const anySyncing = ble.isSyncing || sync.isSyncing
+  const anySyncing = bleIsSyncing || sync.isSyncing
 
   useEffect(() => {
     if (anySyncing && !wasSyncingRef.current) {
@@ -134,19 +146,19 @@ export const SyncLiveActivityBridge: FC = () => {
       wasSyncingRef.current = true
       if (isBackgroundRef.current) {
         syncLiveActivity.start({
-          title: ble.isSyncing ? "Syncing strap" : "Uploading",
+          title: bleIsSyncing ? "Syncing strap" : "Uploading",
           subtitle: subtitleFor(
-            ble.isSyncing,
-            ble.syncStage,
-            ble.syncIteration,
-            ble.syncIterationCap,
+            bleIsSyncing,
+            syncStage,
+            syncIteration,
+            syncIterationCap,
             sync.isSyncing,
             sync.pendingCount,
           ),
           progress: progressFraction(
-            ble.isSyncing,
-            ble.syncIteration,
-            ble.syncIterationCap,
+            bleIsSyncing,
+            syncIteration,
+            syncIterationCap,
             sync.isSyncing,
             sync.pendingCount,
             pendingAtStartRef.current,
@@ -156,19 +168,19 @@ export const SyncLiveActivityBridge: FC = () => {
     } else if (anySyncing && wasSyncingRef.current) {
       // Mid-run update.
       syncLiveActivity.update({
-        title: ble.isSyncing ? "Syncing strap" : "Uploading",
+        title: bleIsSyncing ? "Syncing strap" : "Uploading",
         subtitle: subtitleFor(
-          ble.isSyncing,
-          ble.syncStage,
-          ble.syncIteration,
-          ble.syncIterationCap,
+          bleIsSyncing,
+          syncStage,
+          syncIteration,
+          syncIterationCap,
           sync.isSyncing,
           sync.pendingCount,
         ),
         progress: progressFraction(
-          ble.isSyncing,
-          ble.syncIteration,
-          ble.syncIterationCap,
+          bleIsSyncing,
+          syncIteration,
+          syncIterationCap,
           sync.isSyncing,
           sync.pendingCount,
           pendingAtStartRef.current,
@@ -176,15 +188,15 @@ export const SyncLiveActivityBridge: FC = () => {
       })
     } else if (!anySyncing && wasSyncingRef.current) {
       // Edge: syncing → idle. Terminal payload.
-      const failed = sync.syncError != null || ble.error != null
+      const failed = sync.syncError != null || bleError != null
       if (failed) {
         syncLiveActivity.stop({
           title: "Sync failed",
-          subtitle: sync.syncError ?? ble.error ?? "Try again from Inspector",
+          subtitle: sync.syncError ?? bleError ?? "Try again from Inspector",
           progress: 1,
         })
       } else {
-        const s = ble.syncSummary
+        const s = syncSummary
         const nights = s?.nights ?? 0
         const stages = s?.stages ?? 0
         syncLiveActivity.stop({
@@ -201,12 +213,12 @@ export const SyncLiveActivityBridge: FC = () => {
     }
   }, [
     anySyncing,
-    ble.isSyncing,
-    ble.syncIteration,
-    ble.syncIterationCap,
-    ble.syncStage,
-    ble.syncSummary,
-    ble.error,
+    bleIsSyncing,
+    syncIteration,
+    syncIterationCap,
+    syncStage,
+    syncSummary,
+    bleError,
     sync.isSyncing,
     sync.pendingCount,
     sync.syncError,
