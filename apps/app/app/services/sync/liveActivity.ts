@@ -19,13 +19,39 @@
 
 import { Platform } from "react-native"
 
-import {
-  startActivity as nativeStart,
-  stopActivity as nativeStop,
-  updateActivity as nativeUpdate,
-  type LiveActivityState,
-  type LiveActivityConfig,
-} from "expo-live-activity"
+// expo-live-activity ships a SwiftUI widget extension that needs its own
+// signing identity at archive time. We don't have a beta-distribution
+// story for the extension yet, so the plugin is removed from app.json
+// and we require the JS bindings lazily — any call here is a no-op when
+// the native module isn't linked. Re-enable by re-adding the plugin to
+// app.json and running `expo prebuild --clean`.
+type LiveActivityState = {
+  title?: string
+  subtitle?: string
+  progressBar?: { progress: number }
+}
+type LiveActivityConfig = {
+  deepLinkUrl?: string
+  progressViewTint?: string
+  timerType?: string
+}
+type LiveActivityModule = {
+  startActivity: (s: LiveActivityState, c: LiveActivityConfig) => string | void
+  updateActivity: (id: string, s: LiveActivityState) => void
+  stopActivity: (id: string, s: LiveActivityState) => void
+}
+function loadNative(): LiveActivityModule | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require("expo-live-activity") as LiveActivityModule
+  } catch {
+    return null
+  }
+}
+const native = loadNative()
+const nativeStart = native?.startActivity
+const nativeUpdate = native?.updateActivity
+const nativeStop = native?.stopActivity
 
 const DEEP_LINK = "noop://sync"
 
@@ -38,12 +64,11 @@ export type SyncActivityPayload = {
 
 class SyncLiveActivityController {
   private currentId: string | null = null
-  private supported = Platform.OS === "ios"
+  private supported = Platform.OS === "ios" && native != null
 
   start(p: SyncActivityPayload): void {
-    if (!this.supported) return
+    if (!this.supported || !nativeStart) return
     if (this.currentId) {
-      // Already running — treat as an update so we don't fork two activities.
       this.update(p)
       return
     }
@@ -66,7 +91,7 @@ class SyncLiveActivityController {
   }
 
   update(p: SyncActivityPayload): void {
-    if (!this.supported || !this.currentId) return
+    if (!this.supported || !nativeUpdate || !this.currentId) return
     const state: LiveActivityState = {
       title: p.title,
       subtitle: p.subtitle,
@@ -81,7 +106,7 @@ class SyncLiveActivityController {
 
   /** Terminal state — Live Activity is dismissed after a short hold by iOS. */
   stop(p: SyncActivityPayload): void {
-    if (!this.supported || !this.currentId) return
+    if (!this.supported || !nativeStop || !this.currentId) return
     const state: LiveActivityState = {
       title: p.title,
       subtitle: p.subtitle,

@@ -324,22 +324,24 @@ export class HistoryDownloader {
   }
 
   // Send HistoricalDataAck(trimValue) and observe whether the strap emits
-  // a CommandResponse for cmd 23. Telemetry records both arms (response
-  // arrived vs timed out) so we can tell empirically whether the strap is
-  // even acknowledging our acks — central to the cursor-loss investigation.
+  // a CommandResponse for cmd 23. The response listener runs as a
+  // background observer (NOT awaited inside the persistChain) — when we
+  // serialized the ack-response wait into the chain, every timeout ate
+  // 1.5 s of chain time, and the strap's own internal timeout fired
+  // before we could process the next HistoryEnd, leaving the cursor
+  // stuck on the same batch (observed 2026-05-21 in production logs).
+  // Now: write the ack, return immediately, let the listener record
+  // whatever response arrives within the timeout asynchronously.
   private async sendAckWithResponse(trimValue: number): Promise<void> {
     const startedAt = Date.now();
-    // Subscribe BEFORE the write so a fast response can't slip through.
     const waiter = awaitCommandResponse(
       CommandNumber.HistoricalDataResult,
       ACK_RESPONSE_TIMEOUT_MS,
     );
-    try {
-      await bleManager
-        .writeCommand(this.commandService.buildHistoricalDataAckMaverick(trimValue))
-        .catch(() => undefined);
-      try {
-        const { bytes, hex } = await waiter.promise;
+    // Fire-and-forget observer. recordAckResponse runs whenever the
+    // response arrives (or never, on timeout) without gating the chain.
+    waiter.promise
+      .then(({ bytes, hex }) => {
         recordAckResponse({
           at: Date.now(),
           trimValue,
@@ -348,10 +350,8 @@ export class HistoryDownloader {
           originSeq: bytes.length > 0 ? bytes[0] : null,
           status: bytes.length > 1 ? bytes[1] : null,
         });
-      } catch {
-        // Timeout — no CommandResponse arrived. Recording this case is
-        // the entire point: a consistent timeout means our acks are
-        // being ignored.
+      })
+      .catch(() => {
         recordAckResponse({
           at: Date.now(),
           trimValue,
@@ -360,10 +360,14 @@ export class HistoryDownloader {
           originSeq: null,
           status: null,
         });
-      }
-    } finally {
-      waiter.abort();
-    }
+      });
+    // Await only the BLE write itself, not the response. writeCommand
+    // resolves once the GATT write is acknowledged at the link layer —
+    // typically <50 ms — so the chain advances to the next batch as
+    // soon as the strap has our ack on the wire.
+    await bleManager
+      .writeCommand(this.commandService.buildHistoricalDataAckMaverick(trimValue))
+      .catch(() => undefined);
   }
 
   private emitProgress(state: DownloadProgress['state']) {
