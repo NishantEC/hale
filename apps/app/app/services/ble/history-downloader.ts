@@ -18,6 +18,14 @@ const DOWNLOAD_TIMEOUT_MS = 120000;
 // ~3× the typical inter-batch gap as headroom against early termination.
 const IDLE_TIMEOUT_MS = 5000;
 
+// When the strap gets wedged it sends HistoryEnd with an empty buffer at
+// the same trim value over and over (observed 2026-05-21: trim 20165
+// echoed every ~5 s for the full 120 s download timeout). Three same-trim
+// empty ends in a row is the unambiguous signal — past that we bump the
+// BLE connection so the strap re-enters its historical-data state machine
+// from scratch on reconnect instead of burning the rest of the timeout.
+const STUCK_EMPTY_HISTORY_END_THRESHOLD = 3;
+
 /**
  * Called once per batch BEFORE the strap is ACK'd for that batch. Must
  * commit the records to durable storage (SQLite). If this throws, the
@@ -54,6 +62,11 @@ export class HistoryDownloader {
   private progressCallback: ((p: DownloadProgress) => void) | null = null;
   private hasReceivedAnyData = false;
   private persistBatch: PersistBatch | null = null;
+  // Stuck-strap detection: trim of the most recent HistoryEnd we ACK'd,
+  // and a counter for how many consecutive empty HistoryEnds have arrived
+  // at that same trim. Reset on any non-empty batch or when trim advances.
+  private lastAckedTrim: number = -1;
+  private consecutiveEmptyAtSameTrim = 0;
   // Single chain that every HistoryEnd's persist+ACK threads through so
   // batches commit in arrival order. Without this, two HistoryEnd events
   // arriving close together race their persist callbacks — the strap can
@@ -71,6 +84,8 @@ export class HistoryDownloader {
     this.totalBytes = 0;
     this.hasReceivedAnyData = false;
     this.persistChain = Promise.resolve();
+    this.lastAckedTrim = -1;
+    this.consecutiveEmptyAtSameTrim = 0;
     // Backwards-compat: caller can pass just a progress callback (old shape)
     // OR an options object. Both supported so existing call sites don't break.
     if (typeof optionsOrCallback === 'function') {
@@ -204,6 +219,31 @@ export class HistoryDownloader {
         } else if (packet.data.length >= 5) {
           trimValue = (packet.data[1]) | (packet.data[2] << 8) | (packet.data[3] << 16) | ((packet.data[4] << 24) >>> 0);
         }
+
+        // Stuck-strap detector: empty HistoryEnd at the same trim as the
+        // previous one means the strap is echoing instead of delivering
+        // new data. Track it; if we hit the threshold, bail out + bump
+        // the BLE link so the next syncNow can start fresh.
+        if (batchRecords.length === 0 && trimValue === this.lastAckedTrim && this.lastAckedTrim !== -1) {
+          this.consecutiveEmptyAtSameTrim++;
+          if (this.consecutiveEmptyAtSameTrim >= STUCK_EMPTY_HISTORY_END_THRESHOLD) {
+            console.log(
+              '[HistoryDownloader] Strap stuck — same trim',
+              trimValue, 'echoed', this.consecutiveEmptyAtSameTrim,
+              'times empty. Forcing reconnect.',
+            );
+            // Do NOT ACK this one — acking is what's feeding the echo.
+            // Trigger a connection bump and finish the current download
+            // with what we have. The syncLoop will pick up next interval
+            // and the reconnected link should let the strap progress.
+            bleManager.forceReconnect('history_downloader_stuck_empty_end').catch(() => undefined);
+            void this.persistAndFinish();
+            return;
+          }
+        } else if (batchRecords.length > 0) {
+          this.consecutiveEmptyAtSameTrim = 0;
+        }
+        this.lastAckedTrim = trimValue;
 
         // Durable-ACK ordering: if a persistBatch callback was supplied,
         // commit this batch to local storage BEFORE ACKing. If persistence

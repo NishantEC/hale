@@ -350,6 +350,23 @@ class WhoopBleManager {
     this.setState('disconnected');
   }
 
+  // Cancel the current device connection WITHOUT marking it manual, so the
+  // existing onDisconnected handler triggers scheduleReconnect(). Used when
+  // the strap is in a stuck state (e.g. echoing empty HistoryEnd metadata at
+  // the same trim) and needs a connection bump to recover. We deliberately
+  // reset reconnectAttempt so the first retry fires at the short end of the
+  // backoff (~1.5 s) instead of inheriting whatever exponent the previous
+  // disconnect ladder left behind.
+  async forceReconnect(reason: string): Promise<void> {
+    if (!this.device) return;
+    appendLog('warn', 'ble', 'force reconnect requested', { reason });
+    this.reconnectAttempt = 0;
+    try {
+      await this.manager.cancelDeviceConnection(this.device.id);
+    } catch { /* ignore */ }
+    // onDisconnected handler does the rest: cleanup + scheduleReconnect.
+  }
+
   private cleanup() {
     this.subscriptions.forEach(s => s.remove());
     this.subscriptions = [];
