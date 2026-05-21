@@ -285,7 +285,16 @@ export class PipelineService {
   async runPipeline(
     userId: string,
     timeZoneInput?: string,
-    opts: { from?: Date; to?: Date; force?: boolean } = {},
+    opts: {
+      from?: Date
+      to?: Date
+      force?: boolean
+      // When set, the existing `pipeline_runs` row with this id is
+      // updated in place at end-of-run instead of inserting a new
+      // history row. enqueuePipelineRun pre-creates the row so the
+      // controller can return 202 + runId immediately.
+      runId?: string
+    } = {},
   ) {
     const resolvedTzInput = timeZoneInput ?? (await this.userTimeZone(userId));
     const timeZone = resolveTimeZone(resolvedTzInput);
@@ -311,9 +320,26 @@ export class PipelineService {
       currentInputMax <= state.lastInputMaxUpdatedAt.getTime()
     ) {
       // Record the skipped run so the inspector shows steady cadence
-      // rather than gaps. Fire-and-forget: a failure here must not
-      // mask a successful pipeline short-circuit.
-      this.pipelineRunRepo
+      // rather than gaps. When invoked via the async path, update the
+      // pre-created queued row instead of inserting a new history row.
+      const skippedHistory = opts.runId
+        ? this.pipelineRunRepo.update(
+            { id: opts.runId },
+            {
+              durationMs: Date.now() - startedAt,
+              skipped: true,
+              stages: null,
+              detections: 0,
+              sleepStages: 0,
+              features: 0,
+              windowFrom: windowFromExplicit,
+              windowTo: windowToExplicit,
+              forced,
+              status: 'succeeded',
+              completedAt: new Date(),
+            },
+          )
+        : this.pipelineRunRepo
         .save({
           userId,
           startedAt: new Date(startedAt),
@@ -326,10 +352,14 @@ export class PipelineService {
           windowFrom: windowFromExplicit,
           windowTo: windowToExplicit,
           forced,
-        })
+          status: 'succeeded' as const,
+          completedAt: new Date(),
+        });
+      // Catch async errors from whichever path we took (insert or update).
+      void Promise.resolve(skippedHistory)
         .catch((err) =>
           this.logger.warn(
-            `pipeline_runs skipped-row insert failed: ${err?.message}`,
+            `pipeline_runs skipped-row write failed: ${err?.message}`,
           ),
         );
       return {
@@ -866,9 +896,29 @@ export class PipelineService {
 
     // Append-only history row for the inspector's regression watch.
     // Separate from pipeline_state so we can chart drift over time
-    // without committing every run inside the main transaction.
+    // without committing every run inside the main transaction. When
+    // invoked via the async path, update the pre-created queued row
+    // instead of inserting a new one (otherwise GET /pipeline/run/:id
+    // would never find a terminal status).
     const totalMs = Date.now() - startedAt;
-    this.pipelineRunRepo
+    const historyWrite = opts.runId
+      ? this.pipelineRunRepo.update(
+          { id: opts.runId },
+          {
+            durationMs: totalMs,
+            skipped: false,
+            stages: { ...stages },
+            detections: sleepDetections.length,
+            sleepStages: sleepStages.length,
+            features: effectiveFeatures.length,
+            windowFrom: windowFromExplicit,
+            windowTo: windowToExplicit,
+            forced,
+            status: 'succeeded',
+            completedAt: new Date(),
+          },
+        )
+      : this.pipelineRunRepo
       .save({
         userId,
         startedAt: new Date(startedAt),
@@ -881,12 +931,12 @@ export class PipelineService {
         windowFrom: windowFromExplicit,
         windowTo: windowToExplicit,
         forced,
-      })
-      .catch((err) =>
-        this.logger.warn(
-          `pipeline_runs history insert failed: ${err?.message}`,
-        ),
-      );
+        status: 'succeeded' as const,
+        completedAt: new Date(),
+      });
+    void Promise.resolve(historyWrite).catch((err) =>
+      this.logger.warn(`pipeline_runs history write failed: ${err?.message}`),
+    );
 
     // Structured stage breakdown + runtime budget check. The budget is
     // intentionally generous (45s) — exceeding it means a regression
@@ -932,6 +982,121 @@ export class PipelineService {
   }
 
   // -------------------------------------------------------------- getResults
+  // -------------------------------------------------------- async run API
+  // POST /pipeline/run handler: create a queued row and kick off the
+  // worker in the background. Concurrent POSTs that arrive while a run
+  // is already queued/running for this user return that runId so the
+  // client can poll the same job (codex adversarial review 2026-05-21,
+  // finding #3).
+  async enqueuePipelineRun(userId: string, timeZoneInput?: string) {
+    const existing = await this.pipelineRunRepo.findOne({
+      where: [
+        { userId, status: 'queued' as any },
+        { userId, status: 'running' as any },
+      ],
+      order: { startedAt: 'DESC' },
+    });
+    if (existing) {
+      return {
+        runId: existing.id,
+        status: existing.status,
+        startedAt: existing.startedAt.toISOString(),
+        deduped: true,
+      };
+    }
+
+    const row = await this.pipelineRunRepo.save({
+      userId,
+      startedAt: new Date(),
+      durationMs: 0,
+      skipped: false,
+      stages: null,
+      detections: 0,
+      sleepStages: 0,
+      features: 0,
+      windowFrom: null,
+      windowTo: null,
+      forced: false,
+      status: 'queued' as const,
+      completedAt: null,
+      error: null,
+    });
+
+    // Fire-and-forget. The async worker flips status, runs the
+    // pipeline, and finalises the row. Cloud Run keeps the instance
+    // warm while clients poll GET /pipeline/run/:id, so the post-
+    // response work has CPU even on default --cpu-throttling.
+    void this.runPipelineAsync(userId, timeZoneInput, row.id);
+
+    return {
+      runId: row.id,
+      status: row.status,
+      startedAt: row.startedAt.toISOString(),
+      deduped: false,
+    };
+  }
+
+  private async runPipelineAsync(
+    userId: string,
+    timeZoneInput: string | undefined,
+    runId: string,
+  ): Promise<void> {
+    try {
+      await this.pipelineRunRepo.update(
+        { id: runId },
+        { status: 'running' },
+      );
+      await this.runPipeline(userId, timeZoneInput, { runId });
+      // runPipeline updates the row with status='succeeded' on its
+      // normal terminal paths (skipped or completed). Nothing else to
+      // do here on success.
+    } catch (err: any) {
+      this.logger.error(
+        `runPipelineAsync(${runId}) failed: ${err?.message}`,
+        err?.stack,
+      );
+      await this.pipelineRunRepo
+        .update(
+          { id: runId },
+          {
+            status: 'failed',
+            completedAt: new Date(),
+            error: (err?.message ?? String(err)).slice(0, 500),
+          },
+        )
+        .catch((e) =>
+          this.logger.warn(
+            `pipeline_runs failure write failed: ${e?.message}`,
+          ),
+        );
+    }
+  }
+
+  // GET /pipeline/run/:id — used by the client polling loop. Returns a
+  // shaped status payload so the client can render progress without
+  // exposing every internal column.
+  async getPipelineRunStatus(userId: string, runId: string) {
+    const row = await this.pipelineRunRepo.findOne({ where: { id: runId } });
+    if (!row || row.userId !== userId) {
+      throw new (await import('@nestjs/common')).NotFoundException(
+        `pipeline run ${runId} not found`,
+      );
+    }
+    return {
+      runId: row.id,
+      status: row.status,
+      skipped: row.skipped,
+      startedAt: row.startedAt.toISOString(),
+      completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+      durationMs: row.durationMs,
+      detections: row.detections,
+      sleepStages: row.sleepStages,
+      features: row.features,
+      stages: row.stages,
+      error: row.error,
+    };
+  }
+
   async getResults(userId: string) {
     const cutoff = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
 

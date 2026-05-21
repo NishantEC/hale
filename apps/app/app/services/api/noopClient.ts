@@ -828,8 +828,89 @@ export async function ingestHistoricalRecords(records: HistoricalRecord[]): Prom
   return { signalSamples: totalSignal, sensorRecords: totalSensor };
 }
 
+export type PipelineRunStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface PipelineRunSnapshot {
+  runId: string;
+  status: PipelineRunStatus;
+  skipped?: boolean;
+  startedAt: string;
+  completedAt: string | null;
+  durationMs?: number;
+  detections?: number;
+  sleepStages?: number;
+  features?: number;
+  stages?: Record<string, number> | null;
+  error: string | null;
+}
+
+// Kick off a pipeline run. Backend returns 202 + runId immediately and
+// processes asynchronously (codex adversarial review 2026-05-21,
+// finding #3). Old behavior — synchronous HTTP request holding for up
+// to 25 min of compute — encouraged 503 storms and 300 s client
+// timeouts; this is the replacement contract.
+export async function enqueuePipelineRun(): Promise<{
+  runId: string;
+  status: PipelineRunStatus;
+  startedAt: string;
+  deduped: boolean;
+}> {
+  return apiPost(withDeviceTimeZone('/pipeline/run'), {}, REQUEST_TIMEOUT_MS);
+}
+
+export async function fetchPipelineRunStatus(
+  runId: string,
+): Promise<PipelineRunSnapshot> {
+  return apiGet(`/pipeline/run/${encodeURIComponent(runId)}`, REQUEST_TIMEOUT_MS);
+}
+
+// Polls the runId until it reaches a terminal status or the overall
+// deadline expires. PIPELINE_TIMEOUT_MS now bounds the whole poll
+// loop instead of one HTTP request, so a slow compute can't hang a
+// single Cloud Run request slot forever.
+export async function awaitPipelineRun(
+  runId: string,
+  opts: {
+    deadlineMs?: number;
+    intervalMs?: number;
+    onUpdate?: (snap: PipelineRunSnapshot) => void;
+  } = {},
+): Promise<PipelineRunSnapshot> {
+  const deadline = Date.now() + (opts.deadlineMs ?? PIPELINE_TIMEOUT_MS);
+  const interval = opts.intervalMs ?? 5_000;
+  let last: PipelineRunSnapshot | null = null;
+  for (;;) {
+    last = await fetchPipelineRunStatus(runId);
+    opts.onUpdate?.(last);
+    if (last.status === 'succeeded' || last.status === 'failed') return last;
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Pipeline run ${runId} did not finish within ${(opts.deadlineMs ?? PIPELINE_TIMEOUT_MS) / 1000}s (last status ${last.status})`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, interval));
+  }
+}
+
+// Backwards-compat shim for callers that still use the old single-call
+// shape. New callers should use enqueuePipelineRun + awaitPipelineRun
+// directly so they can show progress while the run is in flight.
 export async function runPipeline(): Promise<{ ok: boolean; computed: any }> {
-  return apiPost(withDeviceTimeZone('/pipeline/run'), {}, PIPELINE_TIMEOUT_MS);
+  const { runId } = await enqueuePipelineRun();
+  const snap = await awaitPipelineRun(runId);
+  if (snap.status === 'failed') {
+    throw new Error(snap.error ?? 'pipeline run failed');
+  }
+  return {
+    ok: true,
+    computed: {
+      detections: snap.detections ?? 0,
+      sleepStages: snap.sleepStages ?? 0,
+      features: snap.features ?? 0,
+      stages: snap.stages ?? null,
+      skipped: snap.skipped ?? false,
+    },
+  };
 }
 
 export async function fetchResults(): Promise<PipelineResults> {

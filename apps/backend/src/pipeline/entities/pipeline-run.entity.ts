@@ -1,14 +1,11 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
-// History row per `/pipeline/run` completion. The aggregate
-// `pipeline_state` table tracks only the latest run; this one captures
-// every run so we can chart stage-timing regressions over time and see
-// when a recent change made the pipeline slower.
-//
-// Inserted as the very last write in runPipeline (after the
-// transactional prune+upsert + state row). On a skipped run
-// (incremental short-circuit) we still insert a row with skipped=true
-// so the cadence is visible in the inspector.
+// History + job-state row per `/pipeline/run`. Inserted with
+// status='queued' at POST time, flipped to 'running' when the
+// async worker picks it up, and finalized to 'succeeded' / 'failed'
+// when runPipeline completes (codex adversarial review 2026-05-21,
+// finding #3). Lets the controller return 202 + runId without
+// holding the HTTP request open for the full compute.
 @Entity('pipeline_runs')
 @Index(['userId', 'startedAt'])
 export class PipelineRun {
@@ -56,4 +53,16 @@ export class PipelineRun {
   // genuine "had to recompute" run from a user-triggered re-run.
   @Column('boolean', { default: false })
   forced: boolean;
+
+  // Async-job state. Set to 'queued' at POST time, advanced by the
+  // async worker. Older rows backfilled to 'succeeded' by the
+  // PipelineRunAsyncStatus migration.
+  @Column('varchar', { length: 16, default: 'succeeded' })
+  status: 'queued' | 'running' | 'succeeded' | 'failed';
+
+  @Column('timestamptz', { nullable: true })
+  completedAt: Date | null;
+
+  @Column('text', { nullable: true })
+  error: string | null;
 }
