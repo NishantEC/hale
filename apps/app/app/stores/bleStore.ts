@@ -88,6 +88,18 @@ export const setBaselineRhr = (baselineRhr: number | null) => {
   useBleStore.setState({ baselineRhr })
 }
 
+// Programmatic toggles + bootstrap reads. Used by BleProvider for user-
+// initiated mode changes (toggleRealtimeHeartRate / toggleBroadcastHR /
+// toggleRawDataStreaming) and to hydrate the persisted preferences on
+// app launch. Event-driven mirror updates still come via the bridge.
+export const setIsRealtimeHeartRateEnabled = (v: boolean) =>
+  useBleStore.setState({ isRealtimeHeartRateEnabled: v })
+export const setIsBroadcastHeartRateEnabled = (v: boolean) =>
+  useBleStore.setState({ isBroadcastHeartRateEnabled: v })
+export const setIsRawDataStreamingEnabled = (v: boolean) =>
+  useBleStore.setState({ isRawDataStreamingEnabled: v })
+export const setLastSyncAt = (v: string | null) => useBleStore.setState({ lastSyncAt: v })
+
 export const useBleConnectionInfo = () =>
   useBleStore(
     useShallow((s) => ({

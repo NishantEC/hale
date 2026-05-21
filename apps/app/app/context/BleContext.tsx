@@ -7,9 +7,7 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react"
-import { AppState } from "react-native"
 
 import { storage } from "@/utils/storage"
 
@@ -37,7 +35,6 @@ import {
   uint8ArrayToBase64,
   WhoopPacket,
 } from "@/services/ble"
-import { runBackgroundDrain } from "@/services/sync/backgroundSync"
 import {
   startContinuousSyncDaemon,
   stopContinuousSyncDaemon,
@@ -60,7 +57,15 @@ import { runPipeline, fetchResults, SeriesPoint } from "@/services/api/noopClien
 import { openDatabase } from "@/services/db"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAuth } from "@/context/AuthContext"
-import { setBaselineRhr } from "@/stores/bleStore"
+import {
+  setBaselineRhr,
+  setIsBroadcastHeartRateEnabled,
+  setIsRawDataStreamingEnabled,
+  setIsRealtimeHeartRateEnabled,
+  setLastSyncAt as setBleLastSyncAt,
+  useBleStore,
+} from "@/stores/bleStore"
+import { useShallow } from "zustand/react/shallow"
 import {
   setIsSyncing as setStoreIsSyncing,
   setSyncStage as setStoreSyncStage,
@@ -75,14 +80,6 @@ import {
   setScannedDevices as setStoreScannedDevices,
   useSyncStore,
 } from "@/stores/syncStore"
-// Battery parsers live in a separate module so they can be unit-tested
-// without dragging in BleProvider's dependency graph.
-import {
-  parseBatteryLevel,
-  parseBatteryLevelEvent,
-  parseExtendedBatteryEvent,
-} from "@/services/ble/battery-parsers"
-
 const LAST_SYNC_KEY = "noop.lastSyncTimestamp"
 const REALTIME_HR_KEY = "noop.prefersRealtimeHeartRate"
 const BROADCAST_HR_KEY = "noop.prefersBroadcastHeartRate"
@@ -92,28 +89,6 @@ export type SyncSummary = {
   nights: number
   stages: number
   scores: number
-}
-
-type BleDeviceState = {
-  connectionState: ConnectionState
-  deviceName: string | null
-  batteryLevel: number | null
-  batteryVoltageMv: number | null
-  batteryTemperatureC: number | null
-  batteryIconLevel: number | null
-  isCharging: boolean
-  isBusy: boolean
-  isRealtimeHeartRateEnabled: boolean
-  isBroadcastHeartRateEnabled: boolean
-  isRawDataStreamingEnabled: boolean
-  realtimeHeartRate: number | null
-  realtimeSamples: SeriesPoint[]
-  strapAlarmAt: string | null
-  strapAlarmArmed: boolean
-  isWorn: boolean
-  lastSyncAt: string | null
-  firmwareVersion: string | null
-  deviceClock: Date | null
 }
 
 export type BleContextValue = {
@@ -211,84 +186,6 @@ const imuForwarder = createImuForwarder()
 const consoleLogForwarder = new ConsoleLogLineForwarder()
 const realtimeForwarder = new RealtimeSessionForwarder()
 
-const emptyDeviceState: BleDeviceState = {
-  connectionState: "disconnected",
-  deviceName: null,
-  batteryLevel: null,
-  batteryVoltageMv: null,
-  batteryTemperatureC: null,
-  batteryIconLevel: null,
-  isCharging: false,
-  isBusy: false,
-  isRealtimeHeartRateEnabled: true,
-  isBroadcastHeartRateEnabled: true,
-  isRawDataStreamingEnabled: true,
-  realtimeHeartRate: null,
-  realtimeSamples: [],
-  strapAlarmAt: null,
-  strapAlarmArmed: false,
-  isWorn: true,
-  lastSyncAt: null,
-  firmwareVersion: null,
-  deviceClock: null,
-}
-
-function parseUint32LE(data: Uint8Array, offset: number) {
-  if (offset + 3 >= data.length) return null
-  return (
-    data[offset] |
-    (data[offset + 1] << 8) |
-    (data[offset + 2] << 16) |
-    ((data[offset + 3] << 24) >>> 0)
-  )
-}
-
-function readUint16LE(data: Uint8Array, offset: number) {
-  if (offset + 1 >= data.length) return null
-  return data[offset] | (data[offset + 1] << 8)
-}
-
-
-function parseVersionInfo(packet: WhoopPacket): string | null {
-  if (packet.command !== CommandNumber.ReportVersionInfo) return null
-  if (packet.data.length < 3 + 8 * 4) return null
-  const values: number[] = []
-  for (let i = 0; i < 8; i++) {
-    const v = parseUint32LE(packet.data, 3 + i * 4)
-    if (v == null) return null
-    values.push(v)
-  }
-  const harvard = values.slice(0, 4).join(".")
-  const boylston = values.slice(4, 8).join(".")
-  return `${harvard} / ${boylston}`
-}
-
-function parseDeviceClock(packet: WhoopPacket): Date | null {
-  if (packet.command !== CommandNumber.GetClock || packet.data.length < 6) return null
-  const unix = parseUint32LE(packet.data, 2)
-  if (unix == null || unix === 0) return null
-  return new Date(unix * 1000)
-}
-
-function parseScheduledAlarm(packet: WhoopPacket, now = new Date()) {
-  if (packet.command !== CommandNumber.GetScheduledAlarm) return null
-
-  const nowUnix = Math.floor(now.getTime() / 1000)
-  const lowerBound = nowUnix - 365 * 24 * 60 * 60
-  const upperBound = nowUnix + 365 * 24 * 60 * 60
-
-  for (let offset = 0; offset <= Math.min(16, packet.data.length - 4); offset += 1) {
-    const value = parseUint32LE(packet.data, offset)
-    if (value == null) continue
-    if (value === 0) continue
-    if (value >= lowerBound && value <= upperBound) {
-      return new Date(value * 1000).toISOString()
-    }
-  }
-
-  return null
-}
-
 // 0..3 stress proxy from rolling-mean HR over the live sample window.
 // Baseline is sourced from BaselineProfile.restingHeartRate (per-user)
 // via dashboard's homeView.activities.baselineRhr; defaults to 60 only
@@ -333,7 +230,33 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const { refreshDashboard, sleepView, homeView } = useDashboard()
   const { isAuthenticated } = useAuth()
 
-  const [deviceState, setDeviceState] = useState<BleDeviceState>(emptyDeviceState)
+  // BLE device-state scalars now live in bleStore, mutated by bleStoreBridge
+  // from the BLE adapter's onConnectionStateChange / onPacket subscriptions.
+  // Read them here via a single useShallow selector so the value-object
+  // changes only when an actually-relevant scalar changes.
+  const deviceState = useBleStore(
+    useShallow((s) => ({
+      connectionState: s.connectionState,
+      deviceName: s.deviceName,
+      batteryLevel: s.batteryLevel,
+      batteryVoltageMv: s.batteryVoltageMv,
+      batteryTemperatureC: s.batteryTemperatureC,
+      batteryIconLevel: s.batteryIconLevel,
+      isCharging: s.isCharging,
+      isBusy: s.isBusy,
+      isRealtimeHeartRateEnabled: s.isRealtimeHeartRateEnabled,
+      isBroadcastHeartRateEnabled: s.isBroadcastHeartRateEnabled,
+      isRawDataStreamingEnabled: s.isRawDataStreamingEnabled,
+      realtimeHeartRate: s.realtimeHeartRate,
+      realtimeSamples: s.realtimeSamples,
+      strapAlarmAt: s.strapAlarmAt,
+      strapAlarmArmed: s.strapAlarmArmed,
+      isWorn: s.isWorn,
+      lastSyncAt: s.lastSyncAt,
+      firmwareVersion: s.firmwareVersion,
+      deviceClock: s.deviceClock,
+    })),
+  )
   const isSyncingRef = useRef(false)
   // Stable handle to the latest syncNow for the continuous-sync daemon.
   // syncNow is recreated on each render via useCallback so we can't capture
@@ -442,10 +365,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         // was unclean before the disconnect is gone now. Allow the next
         // syncNow to skip the preflight.
         lastSyncCleanRef.current = true
-        setDeviceState((current) => ({
-          ...current,
-          deviceName: bleManager.getDeviceName() || "WHOOP",
-        }))
+        useBleStore.setState({ deviceName: bleManager.getDeviceName() || "WHOOP" })
         await bootstrapStrapModes()
         await refreshDeviceState()
       } catch (nextError: any) {
@@ -705,7 +625,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
       const lastSyncAt = new Date().toISOString()
       storage.set(LAST_SYNC_KEY, lastSyncAt)
-      setDeviceState((current) => ({ ...current, lastSyncAt }))
+      setBleLastSyncAt(lastSyncAt)
 
       // Kick the backend pipeline off in the background. Sync UX is "done"
       // once records are persisted locally and queued for upload; the
@@ -768,18 +688,17 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const toggleRealtimeHeartRate = useCallback(
     async (enabled: boolean) => {
       if (bleManager.connectionState !== "ready") {
-        setDeviceState((current) => ({ ...current, isRealtimeHeartRateEnabled: enabled }))
+        setIsRealtimeHeartRateEnabled(enabled)
         await persistPreference(REALTIME_HR_KEY, enabled)
         return
       }
 
       try {
         await bleManager.writeCommand(commandService.buildToggleRealtimeHR(enabled))
-        setDeviceState((current) => ({
-          ...current,
+        useBleStore.setState((s) => ({
           isRealtimeHeartRateEnabled: enabled,
-          realtimeHeartRate: enabled ? current.realtimeHeartRate : null,
-          realtimeSamples: enabled ? current.realtimeSamples : [],
+          realtimeHeartRate: enabled ? s.realtimeHeartRate : null,
+          realtimeSamples: enabled ? s.realtimeSamples : [],
         }))
         await persistPreference(REALTIME_HR_KEY, enabled)
         if (enabled) {
@@ -797,14 +716,14 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const toggleBroadcastHeartRate = useCallback(
     async (enabled: boolean) => {
       if (bleManager.connectionState !== "ready") {
-        setDeviceState((current) => ({ ...current, isBroadcastHeartRateEnabled: enabled }))
+        setIsBroadcastHeartRateEnabled(enabled)
         await persistPreference(BROADCAST_HR_KEY, enabled)
         return
       }
 
       try {
         await bleManager.writeCommand(commandService.buildToggleGenericHRProfile(enabled))
-        setDeviceState((current) => ({ ...current, isBroadcastHeartRateEnabled: enabled }))
+        setIsBroadcastHeartRateEnabled(enabled)
         await persistPreference(BROADCAST_HR_KEY, enabled)
       } catch (nextError: any) {
         setError(nextError?.message ?? "Failed to toggle broadcast heart rate")
@@ -816,7 +735,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const toggleRawDataStreaming = useCallback(
     async (enabled: boolean) => {
       if (bleManager.connectionState !== "ready") {
-        setDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: enabled }))
+        setIsRawDataStreamingEnabled(enabled)
         await persistPreference(RAW_STREAM_KEY, enabled)
         return
       }
@@ -825,7 +744,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         await bleManager.writeCommand(
           enabled ? commandService.buildStartRawData() : commandService.buildStopRawData(),
         )
-        setDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: enabled }))
+        setIsRawDataStreamingEnabled(enabled)
         await persistPreference(RAW_STREAM_KEY, enabled)
         if (enabled) {
           realtimeForwarder.startSession(bleManager.getDeviceId() || "unknown")
@@ -875,11 +794,10 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     try {
       await bleManager.writeCommand(commandService.buildSetScheduledAlarm(alarmDate))
       await bleManager.writeCommand(commandService.buildGetScheduledAlarm())
-      setDeviceState((current) => ({
-        ...current,
+      useBleStore.setState({
         strapAlarmAt: alarmDate.toISOString(),
         strapAlarmArmed: true,
-      }))
+      })
 
       // Smart-wake monitor (v1, foreground-only on iOS).
       // In the 30-min window before the scheduled alarm, poll realtime
@@ -949,11 +867,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     try {
       await bleManager.writeCommand(commandService.buildClearScheduledAlarm())
       await bleManager.writeCommand(commandService.buildGetScheduledAlarm())
-      setDeviceState((current) => ({
-        ...current,
-        strapAlarmAt: null,
-        strapAlarmArmed: false,
-      }))
+      useBleStore.setState({ strapAlarmAt: null, strapAlarmArmed: false })
       await refreshDashboard()
     } catch (nextError: any) {
       setError(nextError?.message ?? "Failed to disarm strap alarm")
@@ -1592,7 +1506,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
   useEffect(() => {
     const lastSyncAt = storage.getString(LAST_SYNC_KEY) ?? null
-    setDeviceState((current) => ({ ...current, lastSyncAt }))
+    setBleLastSyncAt(lastSyncAt)
   }, [])
 
   // Mirror the per-user RHR baseline from the dashboard into bleStore so the
@@ -1608,18 +1522,13 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     const realtimeValue = storage.getString(REALTIME_HR_KEY)
     const broadcastValue = storage.getString(BROADCAST_HR_KEY)
     const rawStreamValue = storage.getString(RAW_STREAM_KEY)
-    setDeviceState((current) => ({
-      ...current,
+    useBleStore.setState((s) => ({
       isRealtimeHeartRateEnabled:
-        realtimeValue == null ? current.isRealtimeHeartRateEnabled : JSON.parse(realtimeValue),
+        realtimeValue == null ? s.isRealtimeHeartRateEnabled : JSON.parse(realtimeValue),
       isBroadcastHeartRateEnabled:
-        broadcastValue == null
-          ? current.isBroadcastHeartRateEnabled
-          : JSON.parse(broadcastValue),
+        broadcastValue == null ? s.isBroadcastHeartRateEnabled : JSON.parse(broadcastValue),
       isRawDataStreamingEnabled:
-        rawStreamValue == null
-          ? current.isRawDataStreamingEnabled
-          : JSON.parse(rawStreamValue),
+        rawStreamValue == null ? s.isRawDataStreamingEnabled : JSON.parse(rawStreamValue),
     }))
   }, [])
 
@@ -1638,24 +1547,9 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     }
 
     const unsubscribeState = bleManager.onConnectionStateChange((connectionState) => {
-      setDeviceState((current) => {
-        if (connectionState === "disconnected") {
-          return {
-            ...emptyDeviceState,
-            deviceName: current.deviceName,
-            isRealtimeHeartRateEnabled: current.isRealtimeHeartRateEnabled,
-            isBroadcastHeartRateEnabled: current.isBroadcastHeartRateEnabled,
-            isRawDataStreamingEnabled: current.isRawDataStreamingEnabled,
-            lastSyncAt: current.lastSyncAt,
-          }
-        }
-        return {
-          ...current,
-          connectionState,
-          isBusy: connectionState !== "ready",
-          deviceName: bleManager.getDeviceName() || current.deviceName,
-        }
-      })
+      // Connection-state mirroring into bleStore is owned by bleStoreBridge.
+      // BleContext only needs to drive lifecycle side effects (FGS, daemons,
+      // forwarders) on the transition.
 
       // FGS runs during ANY active BLE state (scanning / connecting /
       // discovering / ready) so the OS keeps the BLE stack hot during
@@ -1694,25 +1588,17 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
     })
 
+    // Forwarder fan-out — pushes every BLE packet into the queue / logs /
+    // realtime session uploaders. All scalar mirroring (battery, isCharging,
+    // alarm, firmware, clock, isWorn, realtime HR samples, event-driven mode
+    // toggles) is owned by bleStoreBridge — BleContext no longer subscribes
+    // to onPacket for state mirroring.
+    //
+    // TODO(phase3): hoist these forwarder pushes into bleStoreBridge so the
+    // bridge is the only `onPacket('*')` subscriber. The lifecycle (start /
+    // stop on connection-state change) and the device-id dependency make the
+    // move non-trivial; not blocking phase 2.
     const unsubscribePackets = bleManager.onPacket("*", (packet) => {
-      setDeviceState((current) => {
-        if (current.connectionState === "disconnected") {
-          return {
-            ...current,
-            connectionState: "ready" as ConnectionState,
-            isBusy: false,
-            deviceName: bleManager.getDeviceName() || current.deviceName,
-          }
-        }
-        return current
-      })
-
-      const parsedBattery =
-        packet.type === PacketType.CommandResponse ? parseBatteryLevel(packet) : null
-      if (parsedBattery != null) {
-        setDeviceState((current) => ({ ...current, batteryLevel: parsedBattery }))
-      }
-
       if (packet.type === PacketType.CommandResponse && CMD_RESP_INGEST_ENABLED) {
         const deviceId = bleManager.getDeviceId() || "unknown"
         commandResponseForwarder.push({
@@ -1725,85 +1611,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         })
       }
 
-      if (
-        packet.type === PacketType.CommandResponse &&
-        packet.command === CommandNumber.GetHelloHarvard &&
-        packet.data.length > 7
-      ) {
-        setDeviceState((current) => ({ ...current, isCharging: packet.data[7] !== 0 }))
-      }
-
-      if (
-        packet.type === PacketType.CommandResponse &&
-        packet.command === CommandNumber.GetScheduledAlarm
-      ) {
-        const scheduledAlarm = parseScheduledAlarm(packet)
-        setDeviceState((current) => ({
-          ...current,
-          strapAlarmAt: scheduledAlarm,
-          strapAlarmArmed: scheduledAlarm != null,
-        }))
-      }
-
-      if (packet.type === PacketType.CommandResponse) {
-        const version = parseVersionInfo(packet)
-        if (version != null) {
-          setDeviceState((current) => ({ ...current, firmwareVersion: version }))
-        }
-        const clock = parseDeviceClock(packet)
-        if (clock != null) {
-          setDeviceState((current) => ({ ...current, deviceClock: clock }))
-        }
-        if (packet.command === CommandNumber.GetHelloHarvard && packet.data.length > 116) {
-          setDeviceState((current) => ({ ...current, isWorn: packet.data[116] !== 0 }))
-        }
-      }
-
       if (packet.type === PacketType.Event) {
-        if (packet.command === EventNumber.BatteryLevel) {
-          const parsed = parseBatteryLevelEvent(packet)
-          if (parsed) {
-            setDeviceState((current) => ({
-              ...current,
-              batteryLevel: parsed.socPct ?? current.batteryLevel,
-              batteryVoltageMv: parsed.voltageMv ?? current.batteryVoltageMv,
-            }))
-          }
-        } else if (packet.command === EventNumber.ExtendedBatteryInformation) {
-          const parsed = parseExtendedBatteryEvent(packet)
-          if (parsed) {
-            setDeviceState((current) => ({
-              ...current,
-              batteryVoltageMv: parsed.voltageMv ?? current.batteryVoltageMv,
-              batteryTemperatureC: parsed.temperatureC ?? current.batteryTemperatureC,
-              batteryIconLevel: parsed.iconLevel ?? current.batteryIconLevel,
-            }))
-          }
-        } else if (packet.command === EventNumber.ChargingOn) {
-          setDeviceState((current) => ({ ...current, isCharging: true }))
-        } else if (packet.command === EventNumber.ChargingOff) {
-          setDeviceState((current) => ({ ...current, isCharging: false }))
-        } else if (packet.command === EventNumber.StrapDrivenAlarmSet) {
-          setDeviceState((current) => ({ ...current, strapAlarmArmed: true }))
-        } else if (packet.command === EventNumber.BleRealtimeHROn) {
-          setDeviceState((current) => ({ ...current, isRealtimeHeartRateEnabled: true }))
-        } else if (packet.command === EventNumber.BleRealtimeHROff) {
-          setDeviceState((current) => ({
-            ...current,
-            isRealtimeHeartRateEnabled: false,
-            realtimeHeartRate: null,
-            realtimeSamples: [],
-          }))
-        } else if (packet.command === EventNumber.RawDataCollectionOn) {
-          setDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: true }))
-        } else if (packet.command === EventNumber.RawDataCollectionOff) {
-          setDeviceState((current) => ({ ...current, isRawDataStreamingEnabled: false }))
-        } else if (packet.command === EventNumber.WristOn) {
-          setDeviceState((current) => ({ ...current, isWorn: true }))
-        } else if (packet.command === EventNumber.WristOff) {
-          setDeviceState((current) => ({ ...current, isWorn: false }))
-        }
-
         const deviceId = bleManager.getDeviceId() || "unknown"
         eventForwarder.push({
           deviceId,
@@ -1816,17 +1624,10 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
       const realtimeHeartRate = parseRealtimeHeartRate(packet)
       if (realtimeHeartRate != null) {
-        const sample = { timestamp: new Date().toISOString(), value: realtimeHeartRate }
-        setDeviceState((current) => ({
-          ...current,
-          realtimeHeartRate,
-          realtimeSamples: [...current.realtimeSamples.slice(-39), sample],
-        }))
-
         realtimeForwarder.pushHR(
           realtimeHeartRate,
           packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
-          sample.timestamp,
+          new Date().toISOString(),
         )
       }
 
@@ -1875,26 +1676,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
     })
 
-    // Single source of truth for foreground/background state is SyncContext's
-    // AppState listener, which also fires runBackgroundDrain on transition.
-    // We only need to track the flag locally so the packet-drain debounce
-    // knows whether to fire (only while backgrounded).
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null
-    let isBackground = AppState.currentState !== "active"
-    const appStateSub = AppState.addEventListener("change", (next) => {
-      isBackground = next !== "active"
-    })
-
-    const unsubscribePacketsForDrain = bleManager.onPacket("*", () => {
-      if (!isBackground) return
-      if (debounceTimer) clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        runBackgroundDrain(15_000).catch((err) =>
-          console.warn("[bg-packet-drain] failed", err),
-        )
-      }, 1500)
-    })
-
     // SOC changes slowly on a multi-day-life device. 30s polling was
     // pure BLE traffic for no benefit. 5 min is plenty for the UI.
     const batteryPollTimer = setInterval(() => {
@@ -1909,9 +1690,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     return () => {
       unsubscribeState()
       unsubscribePackets()
-      unsubscribePacketsForDrain()
       unsubscribeMemfault()
-      appStateSub.remove()
       clearInterval(batteryPollTimer)
       eventForwarder.stop()
       commandResponseForwarder.stop()
@@ -1919,7 +1698,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       realtimeForwarder.endSession()
       consoleLogForwarder.stop()
       stopContinuousSyncDaemon()
-      if (debounceTimer) clearTimeout(debounceTimer)
     }
   }, [maybeAutoSync, refreshDeviceState])
 
