@@ -9,6 +9,17 @@ export interface AwaitableResponse {
   abort: () => void
 }
 
+export interface AwaitCommandResponseOptions {
+  // When provided, only resolve on a CommandResponse whose payload[0]
+  // (originSeq — the sequence of the command being acked) matches.
+  // Required when multiple in-flight commands of the same cmd number
+  // could have overlapping response windows (e.g. concurrent
+  // HistoricalDataAcks); otherwise one waiter would steal another's
+  // response, producing the noisy 0/N reading Codex flagged.
+  originSeq?: number
+  uuid?: string
+}
+
 // Subscribe for a single CommandResponse to `cmd` and resolve with its
 // bytes. Times out after `timeoutMs` if nothing matching arrives.
 //
@@ -19,8 +30,19 @@ export interface AwaitableResponse {
 export function awaitCommandResponse(
   cmd: number,
   timeoutMs: number,
-  uuid: string = CMD_FROM_STRAP_UUID,
+  optionsOrUuid?: AwaitCommandResponseOptions | string,
 ): AwaitableResponse {
+  // Backwards-compat: the original signature accepted a UUID string as
+  // the third arg. Keep that shape working so legacy probe code paths
+  // (rewind diagnostics, GetDataRange) don't have to be edited in lock-
+  // step with this change.
+  const options: AwaitCommandResponseOptions =
+    typeof optionsOrUuid === "string"
+      ? { uuid: optionsOrUuid }
+      : (optionsOrUuid ?? {})
+  const uuid = options.uuid ?? CMD_FROM_STRAP_UUID
+  const expectedOriginSeq = options.originSeq
+
   let settled = false
   let unsubFn: (() => void) | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -43,6 +65,10 @@ export function awaitCommandResponse(
     unsubFn = bleManager.onPacket(uuid, (packet: WhoopPacket) => {
       if (settled) return
       if (packet.type !== PacketType.CommandResponse || packet.command !== cmd) return
+      if (expectedOriginSeq != null) {
+        const originSeq = packet.data.length > 0 ? packet.data[0] : null
+        if (originSeq !== expectedOriginSeq) return
+      }
       cleanup()
       const bytes = Array.from(packet.data)
       const hex = bytes.map((b) => b.toString(16).padStart(2, "0")).join(" ")

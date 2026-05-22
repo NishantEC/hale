@@ -76,19 +76,20 @@ export class CommandService {
    * docs/whoop-trim-ack-investigation.md, so HistoricalDataResult should
    * land the same way.
    */
-  buildHistoricalDataAckMaverick(trimValue: number): string {
+  buildHistoricalDataAckMaverick(trimValue: number): { frame: string; sequence: number } {
     const params = new Uint8Array(9);
     params[0] = 0x01;
     params[1] = trimValue & 0xff;
     params[2] = (trimValue >> 8) & 0xff;
     params[3] = (trimValue >> 16) & 0xff;
     params[4] = (trimValue >> 24) & 0xff;
+    const sequence = this.nextSequence();
     const frame = encodeFrameMaverick(
       CommandNumber.HistoricalDataResult,
-      this.nextSequence(),
+      sequence,
       params,
     );
-    return uint8ArrayToBase64(frame);
+    return { frame: uint8ArrayToBase64(frame), sequence };
   }
 
   buildSetClock(date: Date = new Date()): string {
@@ -314,6 +315,33 @@ export class CommandService {
     data[6] = (offset >> 16) & 0xff;
     data[7] = (offset >> 24) & 0xff;
     return this.buildCommand(CommandNumber.SetReadPointer, data);
+  }
+
+  // Maverick-framed twin of buildSetReadPointerSectorOffset. Same 8-byte
+  // payload, but wrapped in the Maverick framing the strap accepts for
+  // cursor primitives (per buildForceTrimMaverick, which is the proven
+  // reference). The legacy-framed variant is silently dropped on Gen4 —
+  // exposing this builder lets us probe cursor manipulation manually
+  // (Inspector expert action / debug flow) without wiring it into the
+  // auto-recovery path. Auto-invocation is gated on (a) a verified A/B
+  // confirming the strap honors it and (b) a response-correlated ACK
+  // signal — both still TODO at the time this was added.
+  buildSetReadPointerSectorOffsetMaverick(sector: number, offset: number): string {
+    const params = new Uint8Array(8);
+    params[0] = sector & 0xff;
+    params[1] = (sector >> 8) & 0xff;
+    params[2] = (sector >> 16) & 0xff;
+    params[3] = (sector >> 24) & 0xff;
+    params[4] = offset & 0xff;
+    params[5] = (offset >> 8) & 0xff;
+    params[6] = (offset >> 16) & 0xff;
+    params[7] = (offset >> 24) & 0xff;
+    const frame = encodeFrameMaverick(
+      CommandNumber.SetReadPointer,
+      this.nextSequence(),
+      params,
+    );
+    return uint8ArrayToBase64(frame);
   }
 
   buildExitHighFreqSync(): string {

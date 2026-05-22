@@ -19,11 +19,33 @@ const IDLE_TIMEOUT_MS = 10000;
 
 // When the strap gets wedged it sends HistoryEnd with an empty buffer at
 // the same trim value over and over (observed 2026-05-21: trim 20165
-// echoed every ~5 s for the full 120 s download timeout). Three same-trim
-// empty ends in a row is the unambiguous signal — past that we bump the
-// BLE connection so the strap re-enters its historical-data state machine
-// from scratch on reconnect instead of burning the rest of the timeout.
+// echoed every ~5 s). Three same-trim empty ends in a row catches the
+// rapid-echo flavor.
 const STUCK_EMPTY_HISTORY_END_THRESHOLD = 3;
+
+// Slow-stuck flavor (observed 2026-05-22: trim 58952 with HistoryEnds
+// arriving ~40 s apart for 6 m 40 s). A count-only detector races the
+// 120 s hard timeout and the cadence can be slow enough that 3-5 same-
+// trim repeats just don't fit. Carry the same-trim FIRST-SEEN timestamp
+// across HistoryDownloader instances (module-level singleton below) so
+// a stuck trim that spans multiple syncNow passes still triggers
+// forceReconnect once it's been the lastAckedTrim for STUCK_TIME_MS.
+const STUCK_TIME_MS = 60_000;
+
+// Module-level cross-pass tracker. Resets when trim advances.
+let crossPassStuck: { trim: number; firstSeenAt: number } | null = null;
+function noteAckedTrim(trim: number): boolean {
+  const now = Date.now();
+  if (crossPassStuck && crossPassStuck.trim === trim) {
+    return now - crossPassStuck.firstSeenAt >= STUCK_TIME_MS;
+  }
+  crossPassStuck = { trim, firstSeenAt: now };
+  return false;
+}
+// Exposed for tests / forced reset (e.g. on disconnect).
+export function resetCrossPassStuckTracker(): void {
+  crossPassStuck = null;
+}
 
 /**
  * Called once per batch BEFORE the strap is ACK'd for that batch. Must
@@ -219,28 +241,42 @@ export class HistoryDownloader {
           trimValue = (packet.data[1]) | (packet.data[2] << 8) | (packet.data[3] << 16) | ((packet.data[4] << 24) >>> 0);
         }
 
-        // Stuck-strap detector: empty HistoryEnd at the same trim as the
-        // previous one means the strap is echoing instead of delivering
-        // new data. Track it; if we hit the threshold, bail out + bump
-        // the BLE link so the next syncNow can start fresh.
-        if (batchRecords.length === 0 && trimValue === this.lastAckedTrim && this.lastAckedTrim !== -1) {
+        // Stuck-strap detectors (two flavors, either can trigger
+        // forceReconnect):
+        //   1. In-pass rapid-echo: ≥3 consecutive EMPTY HistoryEnds at
+        //      the same trim within one HistoryDownloader instance.
+        //   2. Cross-pass slow-stuck: same trim has been the lastAckedTrim
+        //      for ≥STUCK_TIME_MS, tracked at the module level so the
+        //      timer doesn't reset every time a new pass spins up a fresh
+        //      downloader (the 40 s HistoryEnd cadence in the 2026-05-22
+        //      stuck-at-58952 trace evaded the count-only detector).
+        const stuckEmpty =
+          batchRecords.length === 0 && trimValue === this.lastAckedTrim && this.lastAckedTrim !== -1;
+        if (stuckEmpty) {
           this.consecutiveEmptyAtSameTrim++;
-          if (this.consecutiveEmptyAtSameTrim >= STUCK_EMPTY_HISTORY_END_THRESHOLD) {
-            console.log(
-              '[HistoryDownloader] Strap stuck — same trim',
-              trimValue, 'echoed', this.consecutiveEmptyAtSameTrim,
-              'times empty. Forcing reconnect.',
-            );
-            // Do NOT ACK this one — acking is what's feeding the echo.
-            // Trigger a connection bump and finish the current download
-            // with what we have. The syncLoop will pick up next interval
-            // and the reconnected link should let the strap progress.
-            bleManager.forceReconnect('history_downloader_stuck_empty_end').catch(() => undefined);
-            void this.persistAndFinish();
-            return;
-          }
         } else if (batchRecords.length > 0) {
           this.consecutiveEmptyAtSameTrim = 0;
+        }
+        const stuckCountThreshold =
+          this.consecutiveEmptyAtSameTrim >= STUCK_EMPTY_HISTORY_END_THRESHOLD;
+        const stuckTimeThreshold = noteAckedTrim(trimValue);
+        if (stuckCountThreshold || stuckTimeThreshold) {
+          const reason = stuckCountThreshold
+            ? `empty-echo×${this.consecutiveEmptyAtSameTrim}`
+            : `same-trim>${STUCK_TIME_MS}ms`;
+          console.log(
+            '[HistoryDownloader] Strap stuck — trim', trimValue,
+            'reason:', reason, '. Forcing reconnect.',
+          );
+          // Do NOT ACK this one — acking is what's feeding the echo.
+          // Reset the cross-pass timer so a strap that stays stuck after
+          // reconnect gets a fresh STUCK_TIME_MS window before we fire
+          // forceReconnect again. Without this, the very next HistoryEnd
+          // at the same trim would re-trigger immediately and we'd loop.
+          resetCrossPassStuckTracker();
+          bleManager.forceReconnect(`history_downloader_stuck_${reason}`).catch(() => undefined);
+          void this.persistAndFinish();
+          return;
         }
         this.lastAckedTrim = trimValue;
 
@@ -373,9 +409,16 @@ export class HistoryDownloader {
   // whatever response arrives within the timeout asynchronously.
   private async sendAckWithResponse(trimValue: number): Promise<void> {
     const startedAt = Date.now();
+    // Build the frame first so we know the sequence number we're using;
+    // the waiter is then keyed on that sequence so a response that
+    // arrives for a DIFFERENT outstanding ack (concurrent waiters from
+    // close-together HistoryEnds) can't be misattributed to this trim.
+    const { frame, sequence: ackSeq } =
+      this.commandService.buildHistoricalDataAckMaverick(trimValue);
     const waiter = awaitCommandResponse(
       CommandNumber.HistoricalDataResult,
       ACK_RESPONSE_TIMEOUT_MS,
+      { originSeq: ackSeq },
     );
     // Fire-and-forget observer. recordAckResponse runs whenever the
     // response arrives (or never, on timeout) without gating the chain.
@@ -404,9 +447,7 @@ export class HistoryDownloader {
     // resolves once the GATT write is acknowledged at the link layer —
     // typically <50 ms — so the chain advances to the next batch as
     // soon as the strap has our ack on the wire.
-    await bleManager
-      .writeCommand(this.commandService.buildHistoricalDataAckMaverick(trimValue))
-      .catch(() => undefined);
+    await bleManager.writeCommand(frame).catch(() => undefined);
   }
 
   private emitProgress(state: DownloadProgress['state']) {

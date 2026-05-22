@@ -599,10 +599,12 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
 
       setSyncLastStopReason(lastStopReason)
       sessionStopReason = lastStopReason as SyncSession["stopReason"]
-      // Loop reached a terminal signal (caught_up / no_records /
-      // stuck_cursor / iter_cap) without throwing — strap session is
-      // wound down cleanly. Next tap can skip the preflight.
-      lastSyncCleanRef.current = true
+      // Clean exit only when the loop ended via a natural terminal
+      // (caught_up / no_records). stuck_cursor fired forceReconnect
+      // above and we have NOT verified the strap actually advanced —
+      // mark unclean so the next syncNow runs the AbortHistoricalTransmits
+      // preflight instead of skipping it on a false "all good" signal.
+      lastSyncCleanRef.current = lastStopReason !== "stuck_cursor"
 
       // Scan the last 6h of local records for time-jumps ≥ 5 min. Each
       // detected gap goes into the telemetry ring so the Inspector
