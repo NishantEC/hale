@@ -55,7 +55,7 @@ export class CommandService {
     return this.buildCommand(CommandNumber.SendHistoricalData, new Uint8Array([0x00]));
   }
 
-  buildHistoricalDataAck(trimValue: number): string {
+  buildHistoricalDataAck(trimValue: number): { frame: string; sequence: number } {
     const data = new Uint8Array(9);
     data[0] = 0x01;
     // trimValue as LE uint32 at offset 1
@@ -64,7 +64,14 @@ export class CommandService {
     data[3] = (trimValue >> 16) & 0xff;
     data[4] = (trimValue >> 24) & 0xff;
     // zeros at offset 5-8 (already zero)
-    return this.buildCommand(CommandNumber.HistoricalDataResult, data);
+    const sequence = this.nextSequence();
+    const packet = {
+      type: PacketType.Command,
+      sequence,
+      command: CommandNumber.HistoricalDataResult,
+      data,
+    };
+    return { frame: uint8ArrayToBase64(encodeFrame(packet)), sequence };
   }
 
   /**
