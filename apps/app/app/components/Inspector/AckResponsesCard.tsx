@@ -5,7 +5,7 @@ import { Text } from "@/components/Text"
 import {
   getSyncTelemetry,
   subscribeSyncTelemetry,
-  type AckResponse,
+  type AckWrite,
 } from "@/services/sync/syncTelemetry"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
@@ -28,50 +28,37 @@ export const AckResponsesCard: FC = () => {
     return unsub
   }, [])
 
-  const counters = telemetry.ackCounters
-  const responses: AckResponse[] = telemetry.ackResponses
+  const writes: AckWrite[] = telemetry.ackWrites
+  const count = telemetry.ackWriteCount
+  const lastWrite = writes[0] ?? null
 
-  // Post c33cc6e4 the strap *not* responding to acks is the steady state —
-  // we made ack-response observation fire-and-forget so the persistChain
-  // advances on the BLE link-layer ack instead. So "0/N responded" is
-  // normal and shouldn't paint the pill red. Only firmware-rejected acks
-  // (status != 0 in a real response) are an actual problem.
-  const pillTone =
-    counters.rejected > 0
-      ? "warn"
-      : counters.sent > 0
-        ? counters.responded > 0
-          ? "ok"
-          : "dim"
-        : "dim"
-
-  const pillText =
-    counters.sent === 0
-      ? "idle"
-      : counters.responded > 0
-        ? `${counters.responded}/${counters.sent} resp`
-        : `${counters.sent} sent`
+  // The strap is silent by design for cmd 23 (see commit log on this
+  // file). We stopped subscribing for responses 2026-05-23, so all we
+  // can report is "how many acks we wrote" and "what trim came out of
+  // the last one." Both growing is the success signal.
+  const pillTone = count > 0 ? "ok" : "dim"
+  const pillText = count === 0 ? "idle" : `${count} written`
 
   return (
     <InspectorCard
-      title="Ack responses"
+      title="Ack writes"
       pill={<StatusPill tone={pillTone} text={pillText} />}
       defaultExpanded
     >
       <Text
-        text="Strap's reply to each HistoricalDataAck. The strap processes legacy-framed acks silently — it advances its cursor but doesn't send a CommandResponse. Empty responses (timeouts here) are the steady state and the correlation fix in b1d0d2b2 means this reading is real, not noise."
+        text="HistoricalDataAck (cmd 23) writes to the strap. The strap processes these silently — it advances its read cursor but never sends a CommandResponse, so we don't subscribe for one anymore (was wasted listener + noisy WARN log). A growing count + advancing trim is what sync working looks like."
         size="xxs"
         style={{ color: colors.textDim, paddingBottom: 8 }}
       />
 
-      <View style={$counterRow}>
-        <Counter label="sent" value={counters.sent} />
-        <Counter label="responded" value={counters.responded} color="#86efac" />
-        <Counter label="timed out" value={counters.timedOut} color="#fca5a5" />
-        <Counter label="rejected" value={counters.rejected} color="#fcd34d" />
-      </View>
+      {lastWrite ? (
+        <View style={$summaryRow}>
+          <SummaryItem label="last trim" value={String(lastWrite.trimValue)} />
+          <SummaryItem label="last write" value={formatIstHms(lastWrite.at)} />
+        </View>
+      ) : null}
 
-      {responses.length === 0 ? (
+      {writes.length === 0 ? (
         <Text
           text="No acks recorded yet — kick off a Sync to populate."
           size="xxs"
@@ -81,34 +68,15 @@ export const AckResponsesCard: FC = () => {
         <View style={{ marginTop: 8 }}>
           <View style={[$headerRow, { borderTopColor: colors.divider }]}>
             <Cell text="time" flex={1.6} dim />
-            <Cell text="trim" flex={1.8} dim />
-            <Cell text="dur" flex={0.9} dim align="right" />
-            <Cell text="resp" flex={2.5} dim align="right" />
+            <Cell text="trim" flex={2.2} dim align="right" />
           </View>
-          {responses.slice(0, 12).map((r) => (
+          {writes.slice(0, 12).map((r) => (
             <View
               key={`${r.at}-${r.trimValue}`}
               style={[$row, { borderTopColor: colors.divider }]}
             >
               <Cell text={formatIstHms(r.at)} flex={1.6} />
-              <Cell text={String(r.trimValue)} flex={1.8} />
-              <Cell text={`${r.durationMs}ms`} flex={0.9} align="right" />
-              <Cell
-                text={
-                  r.responseHex == null
-                    ? "—"
-                    : `${r.responseHex.split(" ").slice(0, 2).join(" ")}…`
-                }
-                flex={2.5}
-                align="right"
-                color={
-                  r.responseHex == null
-                    ? "#fca5a5"
-                    : r.status != null && r.status !== 0
-                      ? "#fcd34d"
-                      : "#86efac"
-                }
-              />
+              <Cell text={String(r.trimValue)} flex={2.2} align="right" />
             </View>
           ))}
         </View>
@@ -117,20 +85,16 @@ export const AckResponsesCard: FC = () => {
   )
 }
 
-const Counter: FC<{ label: string; value: number; color?: string }> = ({
-  label,
-  value,
-  color,
-}) => {
+const SummaryItem: FC<{ label: string; value: string }> = ({ label, value }) => {
   const { colors } = LOCAL_THEME
   return (
     <View style={{ flex: 1 }}>
       <Text text={label} size="xxs" style={{ color: colors.textDim }} />
       <Text
-        text={String(value)}
+        text={value}
         size="sm"
         weight="semiBold"
-        style={{ color: color ?? colors.text, fontVariant: ["tabular-nums"] }}
+        style={{ color: colors.text, fontVariant: ["tabular-nums"] }}
       />
     </View>
   )
@@ -158,7 +122,7 @@ const Cell: FC<{
   )
 }
 
-const $counterRow: ViewStyle = { flexDirection: "row", gap: 6 }
+const $summaryRow: ViewStyle = { flexDirection: "row", gap: 6 }
 const $headerRow: ViewStyle = {
   flexDirection: "row",
   paddingVertical: 6,

@@ -2,13 +2,7 @@ import { PacketType, MetadataType, CommandNumber, WhoopPacket, HistoricalRecord,
 import { parseHistoricalPacketBatch } from './history-parser';
 import { bleManager } from './ble-manager';
 import { CommandService } from './command-service';
-import { awaitCommandResponse } from './awaitable-response';
-import { recordAckResponse, recordPersistFailure } from '../sync/syncTelemetry';
-
-// How long to wait for the strap's CommandResponse to our HistoricalDataAck
-// before recording a "timed out" entry. The legitimate response (per the
-// whoopsi reference) arrives within ~50ms; 1.5s leaves plenty of margin.
-const ACK_RESPONSE_TIMEOUT_MS = 1500;
+import { recordAckWrite, recordPersistFailure } from '../sync/syncTelemetry';
 
 const DOWNLOAD_TIMEOUT_MS = 120000;
 // Idle-window before we declare the strap's historical stream done.
@@ -408,50 +402,17 @@ export class HistoryDownloader {
   // Now: write the ack, return immediately, let the listener record
   // whatever response arrives within the timeout asynchronously.
   private async sendAckWithResponse(trimValue: number): Promise<void> {
-    const startedAt = Date.now();
-    // Build the frame first so we know the sequence number we're using;
-    // the waiter is then keyed on that sequence so a response that
-    // arrives for a DIFFERENT outstanding ack (concurrent waiters from
-    // close-together HistoryEnds) can't be misattributed to this trim.
-    //
-    // Legacy framing for cmd 23 is the empirically-verified working path
-    // (see comment on buildHistoricalDataAck): the strap never sends a
-    // CommandResponse, but does silently advance its cursor — so the
-    // 1500 ms waiter timeout here is the expected steady state.
-    const { frame, sequence: ackSeq } =
-      this.commandService.buildHistoricalDataAck(trimValue);
-    const waiter = awaitCommandResponse(
-      CommandNumber.HistoricalDataResult,
-      ACK_RESPONSE_TIMEOUT_MS,
-      { originSeq: ackSeq },
-    );
-    // Fire-and-forget observer. recordAckResponse runs whenever the
-    // response arrives (or never, on timeout) without gating the chain.
-    waiter.promise
-      .then(({ bytes, hex }) => {
-        recordAckResponse({
-          at: Date.now(),
-          trimValue,
-          durationMs: Date.now() - startedAt,
-          responseHex: hex,
-          originSeq: bytes.length > 0 ? bytes[0] : null,
-          status: bytes.length > 1 ? bytes[1] : null,
-        });
-      })
-      .catch(() => {
-        recordAckResponse({
-          at: Date.now(),
-          trimValue,
-          durationMs: Date.now() - startedAt,
-          responseHex: null,
-          originSeq: null,
-          status: null,
-        });
-      });
-    // Await only the BLE write itself, not the response. writeCommand
-    // resolves once the GATT write is acknowledged at the link layer —
-    // typically <50 ms — so the chain advances to the next batch as
-    // soon as the strap has our ack on the wire.
+    // 2026-05-23: response observation removed. We verified empirically
+    // that the strap never sends a CommandResponse for cmd 23 (legacy
+    // framing). Spinning up an awaitCommandResponse subscription per
+    // ack just to record the inevitable timeout was pure overhead —
+    // every 30 s ack created a packet listener that lived for 1500 ms
+    // before resolving as a timeout entry, and the resulting "0/N
+    // responded" Inspector reading + WARN log line looked like a
+    // failure to anyone reading the dashboard. Now: build the frame,
+    // write it, record the write count for the Inspector, return.
+    const { frame } = this.commandService.buildHistoricalDataAck(trimValue);
+    recordAckWrite({ at: Date.now(), trimValue });
     await bleManager.writeCommand(frame).catch(() => undefined);
   }
 
