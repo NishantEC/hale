@@ -3,6 +3,8 @@ import { Eye, EyeSlash, WarningCircle } from "phosphor-react-native"
 // eslint-disable-next-line no-restricted-imports
 import {
   ActivityIndicator,
+  Image,
+  ImageStyle,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,6 +15,12 @@ import {
   View,
   ViewStyle,
 } from "react-native"
+
+// Light/dark twin of the brand mark, picked from app.json's icon.{light,dark}
+// pair — same source files iOS uses for the app icon so the login screen
+// matches whatever the user sees on their home screen.
+const brandMarkLight = require("@assets/logo/noop-icon-light.png")
+const brandMarkDark = require("@assets/logo/noop-icon-dark.png")
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import { Text } from "@/components/Text"
@@ -130,9 +138,12 @@ export const LoginScreen: FC = () => {
         >
           <ScrollView contentContainerStyle={$scroll} keyboardShouldPersistTaps="handled">
             <View style={$brand}>
-              <View style={[$logoChip, { backgroundColor: colors.surfaceCard }]}>
-                <View style={[$logoDot, { backgroundColor: colors.tint }]} />
-              </View>
+              <Image
+                source={isDark ? brandMarkDark : brandMarkLight}
+                style={$brandMark}
+                resizeMode="contain"
+                accessibilityIgnoresInvertColors
+              />
               <Text text="NOOP" style={{ ...$brandText, color: colors.text }} />
             </View>
 
@@ -368,17 +379,9 @@ const $brand: ViewStyle = {
   gap: 10,
   marginBottom: 56,
 }
-const $logoChip: ViewStyle = {
-  alignItems: "center",
-  borderRadius: 9999,
-  height: 28,
-  justifyContent: "center",
-  width: 28,
-}
-const $logoDot: ViewStyle = {
-  borderRadius: 4,
-  height: 8,
-  width: 8,
+const $brandMark: ImageStyle = {
+  height: 36,
+  width: 36,
 }
 const $brandText: TextStyle = {
   fontSize: 13,
