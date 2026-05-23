@@ -74,30 +74,12 @@ export class CommandService {
     return { frame: uint8ArrayToBase64(encodeFrame(packet)), sequence };
   }
 
-  /**
-   * Same payload as buildHistoricalDataAck, framed in Maverick / official-app
-   * style. Task #90 evidence (logs 2026-05-20 22:02-22:03) showed legacy-
-   * framed acks getting either silent-dropped or returned status=1
-   * ("00 01 00 00 00") — the strap never advanced its cursor. FORCE_TRIM
-   * and SetReadPointerSectorOffset already work in Maverick framing per
-   * docs/whoop-trim-ack-investigation.md, so HistoricalDataResult should
-   * land the same way.
-   */
-  buildHistoricalDataAckMaverick(trimValue: number): { frame: string; sequence: number } {
-    const params = new Uint8Array(9);
-    params[0] = 0x01;
-    params[1] = trimValue & 0xff;
-    params[2] = (trimValue >> 8) & 0xff;
-    params[3] = (trimValue >> 16) & 0xff;
-    params[4] = (trimValue >> 24) & 0xff;
-    const sequence = this.nextSequence();
-    const frame = encodeFrameMaverick(
-      CommandNumber.HistoricalDataResult,
-      sequence,
-      params,
-    );
-    return { frame: uint8ArrayToBase64(frame), sequence };
-  }
+  // Maverick-framed HistoricalDataAck variant lived here briefly (commit
+  // e15d2208 → 361648f2). 2026-05-23 production logs proved Maverick is the
+  // WRONG framing for cmd 23 — legacy framing makes the strap silently
+  // advance its cursor (verified by trim 116418→116464 across 7 caught_up
+  // sessions in 3.5 min). FORCE_TRIM and SetReadPointer need Maverick, but
+  // cmd 23 does not. Don't re-add a Maverick variant for this command.
 
   buildSetClock(date: Date = new Date()): string {
     const unix = Math.floor(date.getTime() / 1000);

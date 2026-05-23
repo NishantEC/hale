@@ -75,6 +75,29 @@ resumes from a later point than before.
    move — uses a proven command. Risk: we don't have a public formula for
    `(timestamp → sector, offset)`; would need empirical probing.
 
+## 2026-05-23 update — H1 resolved empirically
+
+Verified via the b1d0d2b2 → 361648f2 A/B (correlation-fixed ack telemetry
++ framing toggle):
+
+- **Maverick framing is wrong for cmd 23.** Switching to Maverick (e15d2208)
+  broke cursor advancement and produced the stuck-at-same-trim looping seen
+  in 2026-05-21/22 logs. The May 20 22:02 status=1 evidence that motivated
+  e15d2208 was a transient — not a steady-state framing problem.
+- **Legacy framing works** even though the strap never sends a
+  CommandResponse for cmd 23. The strap silently processes legacy-framed
+  acks and advances its read pointer. Verified by trim 116418→116464 across
+  7 caught_up sessions in 3.5 min (2026-05-23T00:05:33Z onward).
+- H1 was therefore half-right: legacy framing was being silently dropped
+  *some of the time* on May 20, but it's the only framing the strap accepts
+  for cmd 23 — and most of the time it works fine. Switching framings
+  doesn't fix the transient drops; the empty-CommandResponse telemetry
+  (post-b1d0d2b2 correlation) is misleading because the strap never
+  responds to cmd 23 even when it processes the ack.
+
+H2 (cursor in RAM, resets on reconnect) and H3 (cmd 20 rewind risk) are
+still untested and remain open.
+
 ## What does NOT need investigating
 
 - `FORCE_TRIM(0,0)` is **not** a generic "advance to position X" — per

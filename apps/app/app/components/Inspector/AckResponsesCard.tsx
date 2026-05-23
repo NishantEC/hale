@@ -59,7 +59,7 @@ export const AckResponsesCard: FC = () => {
       defaultExpanded
     >
       <Text
-        text="Strap's reply to each HistoricalDataAck. The strap normally doesn't respond — we observe it fire-and-forget so the persist chain advances on the BLE link-layer ack. Timeouts here are expected and harmless."
+        text="Strap's reply to each HistoricalDataAck. The strap processes legacy-framed acks silently — it advances its cursor but doesn't send a CommandResponse. Empty responses (timeouts here) are the steady state and the correlation fix in b1d0d2b2 means this reading is real, not noise."
         size="xxs"
         style={{ color: colors.textDim, paddingBottom: 8 }}
       />

@@ -498,15 +498,58 @@ export function setSessionToken(token?: string | null) {
   sessionToken = token ?? null;
 }
 
+// Backoff schedule for retrying network-class failures (TypeError from
+// fetch — the request never reached the server, so the body is safe to
+// resend). Two retries cover the common transient WiFi-handoff and
+// cell-reauth windows without blowing past the per-call timeout budget
+// (300+900=1.2 s on top of one normal attempt is below most upstream
+// timeouts). Server timeouts and 5xx are NOT retried here — they may
+// have side-effected.
+const NETWORK_RETRY_DELAYS_MS = [300, 900];
+
 async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
   // Wait for a slot before consuming any timeout budget — counting the
   // semaphore wait against `timeoutMs` would turn local queueing into
   // spurious "Request timed out" failures.
   await acquireRequestSlot();
-  return requestJsonImpl(path, init, timeoutMs).finally(releaseRequestSlot);
+  try {
+    let lastNetworkError: unknown;
+    for (let attempt = 0; attempt <= NETWORK_RETRY_DELAYS_MS.length; attempt++) {
+      const isFinalAttempt = attempt === NETWORK_RETRY_DELAYS_MS.length;
+      try {
+        // Suppress network-failure telemetry on non-final attempts so a
+        // recoverable blip doesn't litter the Inspector with N entries.
+        return await requestJsonImpl(path, init, timeoutMs, isFinalAttempt);
+      } catch (err) {
+        // Only retry the "fetch never reached the server" failure mode.
+        // ApiError (HTTP non-2xx, timeout) means the request did reach
+        // the server / time was actually spent talking to it — retrying
+        // could duplicate side effects or burn additional slot time on
+        // a known-bad endpoint. NetworkRequestFailed surfaces as a
+        // TypeError on RN with that exact message.
+        const isNetworkRetryable =
+          err instanceof TypeError ||
+          (err instanceof Error && /Network request failed/i.test(err.message));
+        if (!isNetworkRetryable || isFinalAttempt) {
+          throw err;
+        }
+        lastNetworkError = err;
+        await new Promise((r) => setTimeout(r, NETWORK_RETRY_DELAYS_MS[attempt]));
+      }
+    }
+    // Unreachable — the loop either returns or throws — but TS doesn't know.
+    throw lastNetworkError;
+  } finally {
+    releaseRequestSlot();
+  }
 }
 
-async function requestJsonImpl(path: string, init: RequestInit, timeoutMs: number) {
+async function requestJsonImpl(
+  path: string,
+  init: RequestInit,
+  timeoutMs: number,
+  recordNetworkFailure: boolean = true,
+) {
   const controller = new AbortController();
   // Include path so the user (and we) know which endpoint stalled — the
   // CFNetwork `<private>` URL redaction in iOS logs makes this impossible to
@@ -607,13 +650,17 @@ async function requestJsonImpl(path: string, init: RequestInit, timeoutMs: numbe
     // Re-thrown ApiError from the !res.ok branch above — already recorded.
     if (error instanceof ApiError) throw error;
     // Network / DNS / TLS failure: TypeError from fetch in RN, or anything
-    // else that didn't make it to a response.
-    recordFailureSafe({
-      method: init.method ?? 'GET',
-      path,
-      kind: 'network',
-      message: error?.message ?? String(error),
-    });
+    // else that didn't make it to a response. Skip telemetry on
+    // intermediate retry attempts so a transient blip that recovers
+    // doesn't litter the Inspector's API failure list.
+    if (recordNetworkFailure) {
+      recordFailureSafe({
+        method: init.method ?? 'GET',
+        path,
+        kind: 'network',
+        message: error?.message ?? String(error),
+      });
+    }
     throw error;
   } finally {
     clearTimeout(timeout!);

@@ -414,13 +414,10 @@ export class HistoryDownloader {
     // arrives for a DIFFERENT outstanding ack (concurrent waiters from
     // close-together HistoryEnds) can't be misattributed to this trim.
     //
-    // A/B vs e15d2208: that commit switched from legacy framing to
-    // Maverick framing based on one log capture showing status=1
-    // rejections. User reports sync was working pre-May 21 with legacy
-    // framing — going back to verify which framing the strap actually
-    // honors for cmd 23. Toggle between buildHistoricalDataAck (legacy)
-    // and buildHistoricalDataAckMaverick (Maverick) here while we
-    // observe the Inspector's now-correlated 0/N reading.
+    // Legacy framing for cmd 23 is the empirically-verified working path
+    // (see comment on buildHistoricalDataAck): the strap never sends a
+    // CommandResponse, but does silently advance its cursor — so the
+    // 1500 ms waiter timeout here is the expected steady state.
     const { frame, sequence: ackSeq } =
       this.commandService.buildHistoricalDataAck(trimValue);
     const waiter = awaitCommandResponse(
