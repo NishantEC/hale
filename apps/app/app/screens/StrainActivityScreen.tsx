@@ -4,7 +4,13 @@ import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
 
-import { BoutCard, DayTimeline, GapRule, type DayTimelineBout } from "@/components/activity"
+import {
+  BoutCard,
+  DayTimeline,
+  GapRule,
+  RestDayEmpty,
+  type DayTimelineBout,
+} from "@/components/activity"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
 import { InlineLineChart } from "@/components/InlineLineChart"
 import { LabsAccordion } from "@/components/LabsAccordion"
@@ -91,6 +97,13 @@ export const StrainActivityScreen: FC = () => {
 
   const feed = homeView?.activities.activityFeed ?? []
   const candidates = homeView?.pendingActivityCards ?? []
+  const isToday = (() => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, "0")
+    const d = String(now.getDate()).padStart(2, "0")
+    return selectedDate === `${y}-${m}-${d}`
+  })()
 
   const dayBounds = useMemo(() => {
     const [y, m, d] = selectedDate.split("-").map(Number)
@@ -175,10 +188,7 @@ export const StrainActivityScreen: FC = () => {
           }}
         />
         {feed.length === 0 ? (
-          <Text
-            text="No confirmed activities yet."
-            style={{ color: colors.textMuted, fontSize: 13, marginHorizontal: 16, marginTop: 6 }}
-          />
+          <RestDayEmpty variant="strain" isToday={isToday} />
         ) : (
           feed.map((a, i) => {
             const startIso = a.startTime

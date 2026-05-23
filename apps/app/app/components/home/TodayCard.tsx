@@ -1,7 +1,7 @@
 import { FC } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 
-import { BoutCard, GapRule } from "@/components/activity"
+import { BoutCard, GapRule, RestDayEmpty } from "@/components/activity"
 import { Text } from "@/components/Text"
 import type { TapeEvent } from "@/utils/buildTodayTape"
 import { LOCAL_THEME } from "@/utils/localTheme"
@@ -9,9 +9,10 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 type Props = {
   events: TapeEvent[]
   onEventPress?: (event: TapeEvent) => void
+  isToday?: boolean
 }
 
-export const TodayCard: FC<Props> = ({ events, onEventPress }) => {
+export const TodayCard: FC<Props> = ({ events, onEventPress, isToday = true }) => {
   const { colors } = LOCAL_THEME
 
   return (
@@ -33,16 +34,7 @@ export const TodayCard: FC<Props> = ({ events, onEventPress }) => {
         ]}
       >
         {events.length === 0 ? (
-          <View style={{ paddingVertical: 14 }}>
-            <Text
-              text="No events yet."
-              style={{ color: colors.textDim, fontSize: 13 }}
-            />
-            <Text
-              text="Sleep, recovery and activity events will appear here as your day progresses."
-              style={{ color: colors.textMuted, fontSize: 12, marginTop: 4 }}
-            />
-          </View>
+          <RestDayEmpty variant="tape" isToday={isToday} />
         ) : (
           events.map((event, i) => (
             <View key={event.id}>

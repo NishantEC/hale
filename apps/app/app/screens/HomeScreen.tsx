@@ -526,7 +526,11 @@ export const HomeScreen: FC = () => {
                   onResolved={refreshDashboard}
                 />
 
-                <TodayCard events={tapeEvents} onEventPress={handleTapePress} />
+                <TodayCard
+                  events={tapeEvents}
+                  onEventPress={handleTapePress}
+                  isToday={selectedDate === todayKey()}
+                />
               </Animated.View>
             )}
           </Animated.View>
