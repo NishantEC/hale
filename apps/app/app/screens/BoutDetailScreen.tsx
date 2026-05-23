@@ -56,12 +56,7 @@ export const BoutDetailScreen: FC = () => {
       .catch(() => setBout(null))
   }, [id])
 
-  // CRITICAL: compute peakIdx BEFORE the null-guard return below. Putting
-  // the useMemo after `if (!bout) return …` violates the Rules of Hooks —
-  // when the fetch resolves and `bout` flips from null to non-null, the
-  // hook count changes on the next render and React throws "Rendered more
-  // hooks than during the previous render." Hooks must always run on every
-  // render in the same order.
+  // Must run before any conditional return — Rules of Hooks.
   const peakIdx = useMemo(() => {
     if (!bout || bout.hrCurve.length === 0) return 0
     let best = 0

@@ -80,11 +80,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
       setIsSyncing(true)
       let outcome: DrainLoopOutcome | null = null
       try {
-        // openDatabase() can throw on a corrupted SQLite handle. If it
-        // throws BEFORE the try, drainPromiseRef.current stays pinned to
-        // the rejected promise forever — every subsequent drainFn caller
-        // returns the same poisoned promise and the sync subsystem is
-        // permanently jammed until the app restarts.
+        // openDatabase inside try so a throw doesn't pin drainPromiseRef.
         const db = openDatabase()
         outcome = await drainLoop(db, {
           post: (tableName, payloads) =>
