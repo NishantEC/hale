@@ -56,6 +56,21 @@ export const BoutDetailScreen: FC = () => {
       .catch(() => setBout(null))
   }, [id])
 
+  // CRITICAL: compute peakIdx BEFORE the null-guard return below. Putting
+  // the useMemo after `if (!bout) return …` violates the Rules of Hooks —
+  // when the fetch resolves and `bout` flips from null to non-null, the
+  // hook count changes on the next render and React throws "Rendered more
+  // hooks than during the previous render." Hooks must always run on every
+  // render in the same order.
+  const peakIdx = useMemo(() => {
+    if (!bout || bout.hrCurve.length === 0) return 0
+    let best = 0
+    for (let i = 1; i < bout.hrCurve.length; i++) {
+      if (bout.hrCurve[i].hr > bout.hrCurve[best].hr) best = i
+    }
+    return best
+  }, [bout])
+
   if (!bout) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.screenBackground }}>
@@ -71,13 +86,6 @@ export const BoutDetailScreen: FC = () => {
   const isCandidate = bout.source === "candidate"
   const startD = new Date(bout.startTime)
   const endD = new Date(bout.endTime)
-  const peakIdx = useMemo(() => {
-    let best = 0
-    for (let i = 1; i < bout.hrCurve.length; i++) {
-      if (bout.hrCurve[i].hr > bout.hrCurve[best].hr) best = i
-    }
-    return best
-  }, [bout])
   const peakSample = bout.hrCurve[peakIdx]
 
   const dayStrainNum = parseFloat(homeView?.rings.strain.value ?? "")

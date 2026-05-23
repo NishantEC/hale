@@ -77,10 +77,15 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
     if (isLowPowerRef.current) return null
 
     const p = (async (): Promise<DrainLoopOutcome | null> => {
-      const db = openDatabase()
       setIsSyncing(true)
       let outcome: DrainLoopOutcome | null = null
       try {
+        // openDatabase() can throw on a corrupted SQLite handle. If it
+        // throws BEFORE the try, drainPromiseRef.current stays pinned to
+        // the rejected promise forever — every subsequent drainFn caller
+        // returns the same poisoned promise and the sync subsystem is
+        // permanently jammed until the app restarts.
+        const db = openDatabase()
         outcome = await drainLoop(db, {
           post: (tableName, payloads) =>
             apiPost("/pipeline/ingest-table", { tableName, rows: payloads }, 60_000),
