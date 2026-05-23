@@ -1,5 +1,7 @@
 export interface SyncServiceOptions {
-  drainFn: () => Promise<void>
+  // drainFn may resolve to an outcome object — we don't care here; SyncService
+  // is fire-and-forget. SyncContext owns the outcome inspection.
+  drainFn: () => Promise<unknown>
   pullFn: () => Promise<void>
   intervalMs: number
 }

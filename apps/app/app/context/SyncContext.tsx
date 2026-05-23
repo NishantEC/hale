@@ -29,7 +29,12 @@ import { pullDownlink } from "@/services/sync/downlinkPuller"
 import { refreshAllViews } from "@/services/sync/refreshAllViews"
 import { sweepRetention } from "@/services/sync/retentionSweeper"
 import { SyncService } from "@/services/sync/SyncService"
-import { drainLoop } from "@/services/sync/uplinkDrainer"
+import { drainLoop, type DrainLoopOutcome } from "@/services/sync/uplinkDrainer"
+
+// Cap a single foreground drain at 60s so it can't outlive the 90s drain-lock
+// TTL. A genuinely-stuck drain would otherwise hold the lock while the
+// background catchup tries to enter, racing the claim.
+const FOREGROUND_DRAIN_MAX_MS = 60_000
 
 type SyncContextValue = {
   isOnline: boolean
@@ -38,6 +43,8 @@ type SyncContextValue = {
   pendingCount: number
   deadCount: number
   syncError: string | null
+  /** Last completed drain's outcome — null until the first drain settles. */
+  lastDrainOutcome: DrainLoopOutcome | null
   refresh: () => Promise<void>
 }
 
@@ -53,42 +60,73 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
   const [pendingCount, setPendingCount] = useState(0)
   const [deadCount, setDeadCount] = useState(0)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [lastDrainOutcome, setLastDrainOutcome] =
+    useState<DrainLoopOutcome | null>(null)
 
   const isOnlineRef = useRef(false)
   const isLowPowerRef = useRef(false)
-  const isDrainingRef = useRef(false)
+  // Single-flight: when a drain is in flight, callers receive the same
+  // promise instead of being silently dropped. Foreground resume can then
+  // safely await the drain before triggering downlink pull.
+  const drainPromiseRef = useRef<Promise<DrainLoopOutcome | null> | null>(null)
 
-  const drainFn = useCallback(async () => {
-    if (isDrainingRef.current) return
-    if (!peekActiveUserId()) return
-    if (!isOnlineRef.current) return
-    if (isLowPowerRef.current) return
+  const drainFn = useCallback(async (): Promise<DrainLoopOutcome | null> => {
+    if (drainPromiseRef.current) return drainPromiseRef.current
+    if (!peekActiveUserId()) return null
+    if (!isOnlineRef.current) return null
+    if (isLowPowerRef.current) return null
 
-    isDrainingRef.current = true
+    const p = (async (): Promise<DrainLoopOutcome | null> => {
+      const db = openDatabase()
+      setIsSyncing(true)
+      let outcome: DrainLoopOutcome | null = null
+      try {
+        outcome = await drainLoop(db, {
+          post: (tableName, payloads) =>
+            apiPost("/pipeline/ingest-table", { tableName, rows: payloads }, 60_000),
+          batchSize: 200,
+          maxMs: FOREGROUND_DRAIN_MAX_MS,
+          holder: "foreground",
+        })
 
-    const db = openDatabase()
-    setIsSyncing(true)
-    setSyncError(null)
-    try {
-      await drainLoop(db, {
-        post: (tableName, payloads) =>
-          apiPost("/pipeline/ingest-table", { tableName, rows: payloads }, 60_000),
-        batchSize: 200,
-      })
-      setLastDrainAt(Date.now())
+        // Surface outcome to UI honestly. Three cases:
+        //   - skipped: another drain held the lock; leave existing error
+        //     state untouched and don't claim success.
+        //   - failed > 0 || error: at least some rows didn't upload; show
+        //     the error string so the activity strip flips to sync_error.
+        //   - clean success: clear any stale error from a previous run.
+        if (outcome.skipped !== "locked") {
+          setLastDrainAt(Date.now())
+          if (outcome.failed > 0 || outcome.error != null) {
+            setSyncError(
+              outcome.error ??
+                `${outcome.failed} record${outcome.failed === 1 ? "" : "s"} didn't upload`,
+            )
+          } else {
+            setSyncError(null)
+          }
+        }
 
-      const [pending, dead] = await Promise.all([
-        queueDepth(db),
-        listDeadLetters(db).then((rows) => rows.length),
-      ])
-      setPendingCount(pending)
-      setDeadCount(dead)
-    } catch (err: any) {
-      setSyncError(err?.message ?? "Sync failed")
-    } finally {
-      setIsSyncing(false)
-      isDrainingRef.current = false
-    }
+        const [pending, dead] = await Promise.all([
+          queueDepth(db),
+          listDeadLetters(db).then((rows) => rows.length),
+        ])
+        setPendingCount(pending)
+        setDeadCount(dead)
+      } catch (err: any) {
+        // drainLoop itself threw (e.g. SQLite open failure). Independent of
+        // per-row failures captured in outcome.error.
+        setSyncError(err?.message ?? "Sync failed")
+      } finally {
+        setIsSyncing(false)
+        setLastDrainOutcome(outcome)
+        drainPromiseRef.current = null
+      }
+      return outcome
+    })()
+
+    drainPromiseRef.current = p
+    return p
   }, [])
 
   const pullFn = useCallback(async () => {
@@ -112,8 +150,13 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
     await refreshAllViews(db)
   }, [])
 
+  // Sequential: drain THEN pull. A concurrent (Promise.all) pull on top of an
+  // in-flight drain pulls stale server data before our uploads land. The
+  // single-flight drainFn means concurrent callers share the same promise,
+  // so sequential here doesn't cost an extra round-trip.
   const refresh = useCallback(async () => {
-    await Promise.all([drainFn(), pullFn()])
+    await drainFn()
+    await pullFn()
   }, [drainFn, pullFn])
 
   useEffect(() => {
@@ -191,9 +234,19 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
       pendingCount,
       deadCount,
       syncError,
+      lastDrainOutcome,
       refresh,
     }),
-    [isOnline, isSyncing, lastDrainAt, pendingCount, deadCount, syncError, refresh],
+    [
+      isOnline,
+      isSyncing,
+      lastDrainAt,
+      pendingCount,
+      deadCount,
+      syncError,
+      lastDrainOutcome,
+      refresh,
+    ],
   )
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>
