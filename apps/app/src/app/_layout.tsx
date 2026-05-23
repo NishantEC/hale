@@ -62,12 +62,17 @@ export default function RootLayout() {
 
   useEffect(() => {
     let cancelled = false
+    // Hold the bridge teardowns so Fast Refresh / unmount of the root
+    // doesn't leak BLE / packet listeners (each remount otherwise piles a
+    // fresh subscription on top of the previous one).
+    let bleBridgeTeardown: (() => void) | null = null
+    let syncBridgeTeardown: (() => void) | null = null
     const attempt = () => {
       runMigrations()
         .then(() => {
           if (!cancelled) {
-            initBleStoreBridge()
-            initSyncStoreBridge()
+            bleBridgeTeardown = initBleStoreBridge()
+            syncBridgeTeardown = initSyncStoreBridge()
             setIsDbReady(true)
           }
         })
@@ -99,6 +104,8 @@ export default function RootLayout() {
     attempt()
     return () => {
       cancelled = true
+      bleBridgeTeardown?.()
+      syncBridgeTeardown?.()
     }
   }, [])
 

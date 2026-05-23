@@ -39,7 +39,12 @@ import {
   startContinuousSyncDaemon,
   stopContinuousSyncDaemon,
 } from "@/services/sync/continuousSyncDaemon"
-import { recordDetectedGap, recordSyncSession, type SyncSession } from "@/services/sync/syncTelemetry"
+import {
+  recordDetectedGap,
+  recordPipelineRun,
+  recordSyncSession,
+  type SyncSession,
+} from "@/services/sync/syncTelemetry"
 import { detectGaps } from "@/services/sync/gapDetector"
 import { listRawSensorRecordsByDateRange } from "@/services/db/repositories/rawSensorRecord"
 import {
@@ -404,7 +409,8 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         return
       }
       isPipelineRunningRef.current = true
-      lastPipelineAtRef.current = Date.now()
+      const pipelineStartedAt = Date.now()
+      lastPipelineAtRef.current = pipelineStartedAt
       setPipelineState("running")
       void (async () => {
         try {
@@ -425,6 +431,10 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
           )
           setPipelineState("failed")
         } finally {
+          // Surface the run to the telemetry ring whether success or failure
+          // so Inspector can answer "did the pipeline run, how long did it
+          // take?" without scraping the JS console.
+          recordPipelineRun(pipelineStartedAt, Date.now() - pipelineStartedAt)
           isPipelineRunningRef.current = false
         }
       })()
