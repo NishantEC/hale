@@ -199,6 +199,18 @@ export async function drainLoop(
   let failed = 0
   let firstError: string | null = null
   try {
+    // Run backfill ONCE up front, before the queueDepth short-circuit.
+    // drainOnce ALSO runs a backfill on every iteration, but if the queue
+    // is empty AND there are unsynced raw rows, the iteration short-
+    // circuits at line `if (before === 0) break` and drainOnce never gets
+    // a chance to backfill them — they're stranded until Force Upload.
+    // Pre-loop backfill ensures regular drains can ship recovery rows.
+    try {
+      await backfillUnsyncedRawSensorRecords(db, backfillLimit)
+    } catch (err) {
+      console.warn("[drainLoop] pre-loop backfill failed", err)
+    }
+
     while (Date.now() < deadline) {
       const before = await queueDepth(db)
       if (before === 0) break

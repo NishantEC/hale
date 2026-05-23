@@ -13,12 +13,20 @@ function makeDeps(overrides: Partial<Parameters<typeof runForceUpload>[1]["deps"
   return {
     backfillUnsyncedRawSensorRecords: jest.fn().mockResolvedValue(0),
     claimOutboundBatch: jest.fn().mockResolvedValue([]),
+    clearOutboundClaim: jest.fn().mockResolvedValue(undefined),
     listDeadLetters: jest.fn().mockResolvedValue([]),
     markOutboundSynced: jest.fn().mockResolvedValue(undefined),
     markRawSensorRecordsSynced: jest.fn().mockResolvedValue(undefined),
     queueDepth: jest.fn().mockResolvedValue(0),
     recordOutboundFailure: jest.fn().mockResolvedValue(undefined),
     recordOutboundFailureBatch: jest.fn().mockResolvedValue(undefined),
+    // Batch 2: force-upload now coordinates with the regular drain via the
+    // shared drain lock. Mock the lock as freely acquirable for the tests
+    // that don't specifically exercise contention.
+    acquireDrainLock: jest
+      .fn()
+      .mockResolvedValue({ holder: "force-upload", expiresAt: Number.MAX_SAFE_INTEGER }),
+    releaseDrainLock: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   } as any
 }

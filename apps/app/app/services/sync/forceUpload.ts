@@ -1,6 +1,10 @@
 import type { NoopDatabase } from "../db"
 import { isTransientApiError } from "../api/noopClient"
 import {
+  acquireDrainLock,
+  releaseDrainLock,
+} from "../db/repositories/drainLock"
+import {
   claimOutboundBatch,
   clearOutboundClaim,
   listDeadLetters,
@@ -43,6 +47,8 @@ export interface ForceUploadDependencies {
   queueDepth: typeof queueDepth
   recordOutboundFailure: typeof recordOutboundFailure
   recordOutboundFailureBatch: typeof recordOutboundFailureBatch
+  acquireDrainLock: typeof acquireDrainLock
+  releaseDrainLock: typeof releaseDrainLock
 }
 
 export const defaultForceUploadDependencies: ForceUploadDependencies = {
@@ -55,6 +61,8 @@ export const defaultForceUploadDependencies: ForceUploadDependencies = {
   queueDepth,
   recordOutboundFailure,
   recordOutboundFailureBatch,
+  acquireDrainLock,
+  releaseDrainLock,
 }
 
 export async function runForceUpload(
@@ -73,6 +81,28 @@ export async function runForceUpload(
   const backfillLimit = opts.backfillLimit ?? FORCE_UPLOAD_BACKFILL_LIMIT
   const now = opts.now ?? Date.now
 
+  // Coordinate with the regular drainer via the shared SQLite drain lock.
+  // Without this, runForceUpload's claimOutboundBatch could SELECT the same
+  // eligible rows as an in-flight drainLoop before either lease became
+  // visible — both paths would then POST the same payloads. Backend
+  // idempotency on (tableName, rowId) absorbs most of it but pollutes
+  // dead-letter / attempt-count telemetry. TTL bumped to 5 min because
+  // Force Upload can ship MUCH larger batches than the regular drain.
+  const lock = await deps.acquireDrainLock(db, "force-upload", { ttlMs: 300_000 })
+  if (!lock) {
+    const [depthAfter, deadCount] = await Promise.all([
+      deps.queueDepth(db),
+      deps.listDeadLetters(db).then((rows) => rows.length),
+    ])
+    return {
+      uploaded: 0,
+      depthAfter,
+      deadCount,
+      error: "another sync is in progress — try again in a moment",
+    }
+  }
+
+  try {
   await deps.backfillUnsyncedRawSensorRecords(db, backfillLimit).catch(() => undefined)
 
   const total = await deps.queueDepth(db)
@@ -165,5 +195,8 @@ export async function runForceUpload(
     depthAfter,
     deadCount,
     error: firstError,
+  }
+  } finally {
+    await deps.releaseDrainLock(db, "force-upload").catch(() => undefined)
   }
 }
