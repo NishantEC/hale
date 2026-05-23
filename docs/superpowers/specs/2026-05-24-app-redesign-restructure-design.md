@@ -1,154 +1,119 @@
-# noop — app redesign & restructure (2026-05-24)
+# noop — visual redesign (2026-05-24)
 
-## Problem
+## Scope
 
-Today noop has 4 bottom tabs (Home, Health, Inspector, Settings) and 13 stack routes. Three issues:
+Pure visual redesign. **No information architecture changes.** Tabs stay (Home, Health, Inspector, Settings). Routes stay. Drill-ins stay where they are. What changes is the visual grammar across all existing screens.
 
-1. **Inspector occupies a primary tab.** BLE diagnostics is a power/dev tool. A first-class tab is too expensive for it.
-2. **Health/HRV/Stress/Healthspan are siloed.** They live across `(tabs)/health`, `hrv-detail`, `stress-monitor`, `health-monitor`. Users have to bounce between routes to read related signals.
-3. **No coaching surface.** Journal, sleep planner, alarm, and recommendations are scattered as drill-ins. Nothing answers "what should I do today?" — which is the question a recovery-based wearable should answer first.
+## Why
 
-The existing Spotify-inspired design system (`apps/app/DESIGN.md`) is solid and stays. The change is to information architecture and per-metric colour, not to type, surface scale, or pill geometry.
+The four tabs and 13 routes work. They mirror what the user already knows. But the visual execution is somewhere between "boilerplate dashboard" and "Spotify clone," and it doesn't sit confidently in the Whoop / Oura / Ultrahuman family that noop is implicitly part of. The redesign closes that gap: one tight visual vocabulary, applied uniformly across every existing screen.
 
-## Goals
+## Reference family
 
-- Collapse 13 routes → 8.
-- Replace Health + Inspector + Settings tabs with **Sleep**, **Body**, **Coach**.
-- Move Inspector + Device + account settings under a single Profile sheet reachable from any tab.
-- Introduce one daily "prescription" surface (Coach) that wraps journal, sleep planner, and recommendations.
-- Re-assign the existing single-brand-accent slot in `DESIGN.md` to a per-metric semantic palette.
+Whoop, Oura, Ultrahuman. Shared DNA: pure black ground, score-forward hierarchy, big light-weight numbers, glow cards that radiate from the score, contributor lists with status badges, verdict word before raw number.
 
-## Non-goals
+## Design system (the only real delta)
 
-- No rewrite of the BLE stack, sync engine, or persistence layer.
-- No new metrics. Only restructure of what's already collected.
-- No light theme work in this pass.
-- No backend API changes.
+### Surface
+- Background: `#000`
+- Card: `#0E1013` (raised) · `#0B0C0F` (glow-card base)
+- Border: `#1A1C20` (cards) · `#14161A` (hairlines inside cards)
+- One charcoal step. No layered surface stack.
 
-## Information architecture
+### Type
+- Display numbers: SF Pro Display **200** weight, `letter-spacing: -0.05em`, `font-variant-numeric: tabular-nums`
+- Verdict word: 13px / 700
+- Labels & pills: 9–11px / 700, `letter-spacing: 0.16em`, uppercase
+- Body: 12–13px / 400–600
+- Big/light/tabular for numbers; bold/wide-tracked/uppercase for labels. Strong contrast between the two.
 
-### Current
+### Metric colour palette (semantic)
+| Token | Hex | Used on |
+| --- | --- | --- |
+| Recovery · high | `#2BE07A` | green recovery score |
+| Recovery · mid | `#FFD449` | yellow recovery score |
+| Recovery · low | `#FF5E5E` | red recovery score, also live HR |
+| Strain | `#5DA8FF` | strain score, activity icons |
+| Sleep | `#7CCFE5` | sleep score, hypnogram |
+| HRV | `#8AE0C2` | HRV score, body trends |
+| Stress | `#FF9F6B` | stress score |
+| BLE / device | `#B084EB` | inspector device card |
 
-```
-Tabs:    Home    Health    Inspector    Settings
-Routes:  home, home-metric, home-details
-         sleep-detail, sleep-planner
-         hrv-detail, stress-monitor, health-monitor
-         strain-activity, bout-detail
-         journal-entry, journal-history
-         device-settings, dev-activity-strip
-```
+Rule: a card displays one metric, in one colour. The colour appears as a soft radial glow inside the card and on the score number itself.
 
-### Proposed
+### The glow score card (primary pattern)
 
-```
-Tabs:    Today    Sleep    Body    Coach
-Profile sheet (modal from any tab): Account, Device, Inspector, Developer
-```
+The recurring hero pattern across screens. Structure:
 
-Route mapping:
+1. Eyebrow pill: metric name + delta (`RECOVERY +8 vs 7d`)
+2. Score row: large number (left) + verdict word + one-line explanation (right)
+3. Mini histogram of last 7 entries (or hypnogram, or sparkline as appropriate)
+4. Axis labels (W T F S S M T)
 
-| Today route        | Source                                          |
-| ------------------ | ----------------------------------------------- |
-| `/today`           | current `home`                                  |
-| `/today/activity/:id` | current `strain-activity` + `bout-detail`    |
-| `/today/metric/:id` | current `home-metric` + `home-details`         |
+The glow itself is a radial gradient from the top centre of the card in the metric colour at 32% opacity, faded to transparent at 45%.
 
-| Sleep route        | Source                                          |
-| ------------------ | ----------------------------------------------- |
-| `/sleep`           | current `sleep-detail` (default = last night)   |
-| `/sleep/planner`   | current `sleep-planner`                         |
+### The contributor list (secondary pattern)
 
-| Body route         | Source                                          |
-| ------------------ | ----------------------------------------------- |
-| `/body`            | new — overview of HRV, RHR, stress, healthspan  |
-| `/body/hrv`        | current `hrv-detail`                            |
-| `/body/stress`     | current `stress-monitor`                        |
-| `/body/healthspan` | current `health-monitor`                        |
+Below the glow card on most screens. A card with a heading row + 3–5 contributor rows. Each row: label, value, status badge (`Within range`, `Reduced · good`, `Below typical`, `Optimal`). Pulled directly from the existing data the app already shows but presented uniformly.
 
-| Coach route        | Source                                          |
-| ------------------ | ----------------------------------------------- |
-| `/coach`           | new — daily prescription + plan + journal entry |
-| `/coach/journal`   | current `journal-history` + `journal-entry`     |
+### Tile (compact glow card)
 
-| Profile sheet      | Source                                          |
-| ------------------ | ----------------------------------------------- |
-| `/profile`         | current `settings`                              |
-| `/profile/device`  | current `device-settings`                       |
-| `/profile/inspector` | current `inspector` tab                       |
-| `/profile/dev-strip` | current `dev-activity-strip`                  |
+For 2-up cards under the hero (Strain + Sleep on Home). Same glow pattern, smaller. 28px score, 110px tall.
 
-## Design system delta
+## What gets redrawn (no routes change)
 
-Existing `DESIGN.md` keeps:
+| Route | What it becomes |
+| --- | --- |
+| `(tabs)/index.tsx` (Home) | Recovery glow card + Strain/Sleep tiles + today feed |
+| `(tabs)/health.tsx` (Health) | noop Age glow block + Pace of Aging trend + system contributors |
+| `(tabs)/inspector.tsx` (Inspector) | Device glow card (BLE-purple) + live HR + toggle rows + console log |
+| `(tabs)/settings.tsx` (Settings) | Profile head + device card + grouped menus |
+| `sleep-detail.tsx` | Sleep score glow card with hypnogram + stage contributors + why-panel |
+| `hrv-detail.tsx` | HRV glow card + D/W/M/6M/Y segmented + distribution + last-night sparkline |
+| `strain-activity.tsx` | Day strain glow card + bouts feed + zone contributors |
+| `home-metric.tsx` / `home-details.tsx` | Generic metric glow card + contributors + trend |
+| `journal-entry.tsx` | Glow-less compose surface; uses BLE-purple accent for save |
+| `journal-history.tsx` | Feed rows (purple icon) with date headers |
+| `sleep-planner.tsx` | Form rows reusing menu grammar; glow-card preview of next-night target |
+| `stress-monitor.tsx`, `health-monitor.tsx`, `bout-detail.tsx`, `device-settings.tsx`, `dev-activity-strip.tsx` | Re-skinned with same vocabulary; structure unchanged |
 
-- Dark charcoal surface scale (`#0A0A0B` → `#26272C` — five stops, narrow).
-- Bold/regular binary type with `-0.03em` letter-tightening on display sizes.
-- Pill controls (radius 999) for primary actions; 14–20 radius for cards.
+## What does NOT change
 
-Changes:
+- Tab names, order, count.
+- Routes, file paths, navigation flow.
+- Inspector as a top-level tab.
+- Health as a separate tab from Home.
+- Sleep detail and sleep planner as separate routes.
+- Journal entry / history split.
+- Any backend, BLE, sync, persistence, or business logic.
+- The existing Tamagui setup (the redesign lands as new theme tokens + redrawn components inside the same `apps/app/app/components/` tree).
 
-- **Drop singular brand accent.** Replace Spotify Green slot with a metric palette:
-  - Recovery: `#FFD449` (yellow), with `#FF6B6B` for low / `#4CD964` for high
-  - Strain: `#3FA9F5` (blue)
-  - Sleep: `#B084EB` (purple)
-  - HRV: `#5DD5C4` (teal)
-  - Stress: `#F37272` (red)
-- **Rule:** each card uses exactly one metric colour, drawn from the metric being measured. Cards do not mix accents.
-- **Numbers are the brand.** 22–64 px display weights with `-0.03em`, no decoration.
+## Components to introduce
 
-## Screen-by-screen
+Small, focused set — all replacing visual chrome only, not data flow:
 
-### Today
-Hero recovery gauge ring (Whoop pattern, 110 px). Below the ring: HRV / RHR / SpO₂ row with delta vs 7-day average. Two-up sparkline cards for Day Strain and Sleep. Activity list (replaces `strain-activity` tab). Floating `+` for new activity / journal.
+- **`GlowScoreCard`** — props: `metric`, `score`, `delta`, `verdict`, `verdictBody`, `histogram[]`. Used on Home (recovery), Sleep Detail, HRV, Strain, Stress, Health Monitor.
+- **`GlowTile`** — compact two-up version of above. Used under hero on Home and in any 2-up grid.
+- **`NumBlock`** — large centred number block (200 weight, no histogram). Used on Health for noop Age, and any "verdict word" splash.
+- **`ContributorList`** — heading row + contributor rows + status badges. Used everywhere data needs to be itemised.
+- **`StatusBadge`** — `ok | warn | mid | neutral` variants. The colour mapping mirrors metric palette.
+- **`TrendCard`** — card with `<small>` label + value + delta pill + inline sparkline. Used on Health, HRV, Body monitors.
 
-### Sleep
-Last night by default. Hypnogram (large) → score breakdown ("why you scored 82" with positive/negative attribution rows) → smart-wake config row. Planner accessible via clock icon (top-right). Replaces the current 2 routes (`sleep-detail` + `sleep-planner`).
+Components that survive without visual changes: `DateSwitcher`, `BlurHeader`, `Shimmer`, `Toast`, `HomeDateCalendar`. They're already aligned with the new system or are functionally invisible.
 
-### Body
-Long-term trends home. Two large trend cards on top (HRV, RHR) with selectable D/W/M/6M/Y range (Apple Health pattern). Two-up small cards for Stress and Healthspan (noop Age). Below: timeline of notable events (HRV trending up, RHR plateau, etc.). Tapping a trend opens the existing detail screen.
+Components that get retired: the older single-purpose `MonitorCard`, `MetricRingsRow`, `TodayCard`, `PendingActivityCards` — replaced by the smaller, composable set above used directly from each screen.
 
-### Coach
-Prescription hero (purple) — single recommendation for today. Time-bucketed plan list (mobility, walk, wind-down). Journal CTA + recent journal entries. Replaces the journal flows as a daily surface, not a settings-y archive.
+## Migration
 
-### Profile (sheet)
-Modal sheet from avatar in top-right of any tab. Sections: identity, device card (live strap status), account settings, developer (Inspector + dev-activity-strip).
+Three slices, each shippable on its own:
 
-## Components to introduce / merge
-
-- **`MetricGauge`** — replaces hand-rolled recovery ring on Home and the gauge in HRV detail.
-- **`TrendCard`** — Apple Health–style chart card with range selector. Used in Body and Sleep.
-- **`PrescriptionCard`** — purple coach hero, used only on Coach.
-- **`PlanRow`** — time + activity + icon row.
-- **`AttributionRow`** — `↑/↓` + label + delta. Used on Sleep ("why you scored X") and later on Today.
-
-Removed/merged:
-
-- `MonitorCard` (currently used for Stress/Health monitors on Home) — folded into Body two-up cards.
-- `MetricRingsRow` — superseded by single `MetricGauge` (recovery only) + sparkline two-up.
-
-## Migration strategy
-
-Three slices that can ship independently:
-
-1. **IA slice.** Add new `(tabs)` layout with Today / Sleep / Body / Coach; keep old routes as redirects. Inspector moves to Profile sheet. ~2 days.
-2. **Body merge.** Build `/body` overview + retire `health-monitor` + `stress-monitor` + `hrv-detail` as standalone tabs (still reachable as detail screens). ~3 days.
-3. **Coach surface.** Build prescription + plan + journal hub. ~3 days.
-
-## Risks
-
-- **Habit shock.** Users who navigate by muscle memory will reach for Health and find Body. Mitigation: keep route aliases for one release and show a one-time "we moved things" sheet.
-- **Inspector regression.** Power users rely on Inspector being one tap away. Mitigation: avatar-tap → sheet → Inspector is 2 taps (was 1). Add a long-press shortcut on the avatar to jump straight to Inspector.
-- **Per-metric colour drift.** Without discipline the palette will leak into decoration. Mitigation: add a lint rule (or PR-review checklist) for accent colours used outside their metric module.
-
-## Open questions
-
-(None — moving forward with the calls above. Adjust at review.)
+1. **Tokens + primitives.** Add the new colour tokens to `tamagui.config.ts` and the existing `LOCAL_THEME`. Ship the 6 components above with no consumer changes. ~1 day.
+2. **Home + Health tabs.** Highest-traffic screens. Swap `HomeScreen` body to the new components. Same for `HealthScreen`. ~2 days.
+3. **Drill-ins + Inspector + Settings.** Redraw the rest screen-by-screen, in any order. ~3 days, can be parallelised.
 
 ## Acceptance
 
-- Tabs render in this order: Today, Sleep, Body, Coach.
-- `/inspector` no longer in `(tabs)`; reachable only through Profile sheet.
-- `MetricGauge`, `TrendCard`, `PrescriptionCard`, `PlanRow`, `AttributionRow` exist in `apps/app/app/components/`.
-- Old route paths return 301-equivalent redirects through `expo-router` for one release cycle.
-- Mockups in `.superpowers/brainstorm/34457-1779567910/content/redesign-showcase.html` reflect the shipped layouts within reasonable fidelity.
+- New tokens exist alongside old ones; old ones removed once consumers are migrated.
+- `GlowScoreCard`, `GlowTile`, `NumBlock`, `ContributorList`, `StatusBadge`, `TrendCard` exist under `apps/app/app/components/`.
+- Every screen listed above renders with the new vocabulary; no route change required to navigate.
+- Mockups in `.superpowers/brainstorm/34457-1779567910/content/redesign-same-screens.html` are the visual contract.
