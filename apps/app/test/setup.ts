@@ -60,6 +60,17 @@ jest.mock("react-native-reanimated", () => {
 // via test/db/helpers.ts.
 jest.mock("@op-engineering/op-sqlite")
 
+jest.mock("react-native-gesture-handler", () => {
+  const actual = jest.requireActual("react-native-gesture-handler")
+  const React = require("react")
+  const chainable: any = new Proxy(() => chainable, { get: () => () => chainable })
+  return {
+    ...actual,
+    GestureDetector: ({ children }: { children: React.ReactNode }) => children,
+    Gesture: new Proxy({}, { get: () => () => chainable }),
+  }
+})
+
 jest.mock("i18next", () => ({
   currentLocale: "en",
   t: (key: string, params: Record<string, string>) => {

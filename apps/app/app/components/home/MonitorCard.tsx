@@ -1,10 +1,11 @@
 import { FC } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
-
+import { LinearGradient } from "expo-linear-gradient"
 import {
   CaretRight,
   Icon as PhosphorIcon,
 } from "phosphor-react-native"
+
 import { Text } from "@/components/Text"
 import { hexWithAlpha } from "@/utils/hexWithAlpha"
 import { LOCAL_THEME } from "@/utils/localTheme"
@@ -15,11 +16,10 @@ type Props = {
   icon: PhosphorIcon
   title: string
   state: MonitorCardState
-  /** Either tileIcon or tileText is rendered inside the tile. */
-  tileIcon?: PhosphorIcon
-  tileText?: string
+  score: string
+  scoreSubscript?: string
   verdict: string
-  subline: string
+  tint?: string
   onPress: () => void
 }
 
@@ -27,67 +27,83 @@ export const MonitorCard: FC<Props> = ({
   icon: Icon,
   title,
   state,
-  tileIcon: TileIcon,
-  tileText,
+  score,
+  scoreSubscript,
   verdict,
-  subline,
+  tint,
   onPress,
 }) => {
   const { colors } = LOCAL_THEME
-  const tone = toneFor(state, colors)
+  const glowColor = tint ?? toneFor(state, colors)
 
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`${title} monitor, ${verdict}, ${subline}`}
+      accessibilityLabel={`${title}, ${verdict}`}
       style={({ pressed }) => [
         styles.card,
         { backgroundColor: colors.surfaceCard },
         pressed && { opacity: 0.85 },
       ]}
     >
-      <View style={styles.head}>
-        <View style={styles.titleRow}>
-          <Icon size={14} color={colors.textDim} />
+      <LinearGradient
+        colors={[hexWithAlpha(glowColor, 0.28), "transparent"]}
+        locations={[0, 0.7]}
+        style={styles.glow}
+        pointerEvents="none"
+      />
+      <View style={styles.content}>
+        <View style={styles.head}>
+          <Icon size={13} color={colors.textMuted} />
           <Text
             text={title.toUpperCase()}
             style={{
-              color: colors.text,
+              color: colors.textDim,
               fontSize: 11,
               fontWeight: "700",
-              letterSpacing: 1.4,
+              letterSpacing: 1.3,
             }}
           />
+          <View style={{ flex: 1 }} />
+          <CaretRight size={13} color={colors.textMuted} />
         </View>
-        <CaretRight size={14} color={colors.textMuted} />
-      </View>
-      <View style={styles.body}>
-        <View style={[styles.tile, { backgroundColor: tone.tileBg }]}>
-          {TileIcon ? (
-            <TileIcon size={16} color={tone.fg} weight="fill" />
-          ) : tileText ? (
+        <View style={styles.scoreRow}>
+          <Text
+            text={score}
+            style={{
+              color: glowColor,
+              fontSize: 30,
+              fontWeight: "300",
+              letterSpacing: -1.5,
+              fontVariant: ["tabular-nums"],
+              lineHeight: 32,
+            }}
+          />
+          {scoreSubscript ? (
             <Text
-              text={tileText}
+              text={scoreSubscript}
               style={{
-                color: tone.fg,
-                fontSize: 13,
-                fontWeight: "800",
+                color: glowColor,
+                fontSize: 12,
+                fontWeight: "500",
+                opacity: 0.6,
+                marginLeft: 1,
+                marginTop: 14,
                 fontVariant: ["tabular-nums"],
               }}
             />
           ) : null}
         </View>
-        <View style={styles.text}>
-          <Text
-            text={verdict}
-            style={{ color: tone.fg, fontSize: 13, fontWeight: "700" }}
-          />
-          <Text
-            text={subline}
-            style={{ color: colors.textMuted, fontSize: 11, marginTop: 1 }}
-          />
-        </View>
+        <Text
+          text={verdict}
+          style={{
+            color: colors.text,
+            fontSize: 12,
+            fontWeight: "700",
+            marginTop: 2,
+          }}
+        />
       </View>
     </Pressable>
   )
@@ -96,42 +112,42 @@ export const MonitorCard: FC<Props> = ({
 function toneFor(
   state: MonitorCardState,
   colors: typeof LOCAL_THEME.colors,
-): { fg: string; tileBg: string } {
-  if (state === "ok") return { fg: colors.statusGreen, tileBg: hexWithAlpha(colors.statusGreen, 0.18) }
-  if (state === "warn") return { fg: colors.statusAmber, tileBg: hexWithAlpha(colors.statusAmber, 0.18) }
-  if (state === "alert") return { fg: colors.statusRed, tileBg: hexWithAlpha(colors.statusRed, 0.18) }
-  return { fg: colors.statusStale, tileBg: hexWithAlpha(colors.statusStale, 0.18) }
+): string {
+  if (state === "ok") return colors.statusGreen
+  if (state === "warn") return colors.statusAmber
+  if (state === "alert") return colors.statusRed
+  return colors.statusStale
 }
 
 const styles = StyleSheet.create({
   card: {
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
+    flex: 1,
+    minHeight: 100,
+    overflow: "hidden",
+    position: "relative",
+  } as ViewStyle,
+  glow: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: "75%",
+  } as ViewStyle,
+  content: {
+    position: "relative",
+    zIndex: 1,
     flex: 1,
   } as ViewStyle,
   head: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  } as ViewStyle,
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
     gap: 6,
   } as ViewStyle,
-  body: {
+  scoreRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    alignItems: "flex-start",
+    marginTop: 10,
   } as ViewStyle,
-  tile: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-  } as ViewStyle,
-  text: { flex: 1, minWidth: 0 } as ViewStyle,
 })

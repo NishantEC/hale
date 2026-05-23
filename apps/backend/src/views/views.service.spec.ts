@@ -1,9 +1,20 @@
 import { ViewsService } from './views.service';
 
 function repo(rows: any[] = [], one: any = null) {
+  const qbChain: any = {
+    select: jest.fn().mockReturnThis(),
+    addSelect: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    groupBy: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    setParameters: jest.fn().mockReturnThis(),
+    getRawMany: jest.fn().mockResolvedValue([]),
+  };
   return {
     find: jest.fn().mockResolvedValue(rows),
     findOne: jest.fn().mockResolvedValue(one),
+    createQueryBuilder: jest.fn(() => qbChain),
   } as any;
 }
 

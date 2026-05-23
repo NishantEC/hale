@@ -6,7 +6,13 @@ const BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   process.env.EXPO_PUBLIC_BACKEND_URL ||
   DEFAULT_BASE_URL;
-const REQUEST_TIMEOUT_MS = 20000;
+// 30 s default. Cloud Run can take 3-8 s to wake a cold instance even
+// with min-instances=1 (e.g. after a deploy, or when scaling from 1→2
+// under load); a 20 s default left no margin and surfaced as a spurious
+// "Request timed out" on the first call after idle. Most well-behaved
+// endpoints respond in <500 ms — this just widens the cold-start safety
+// net. View and bulk-upload endpoints still use their own larger budgets.
+const REQUEST_TIMEOUT_MS = 30000;
 
 // Cap concurrent in-flight HTTP requests from the app. Without this, the
 // daemon, sync, view, telemetry, and downlink modules can collectively
@@ -215,11 +221,22 @@ export interface HomeViewModel {
   stressTrend: SeriesPoint[];
   strainTrend: SeriesPoint[];
   noDataReasons: Record<string, string>;
+  dayRibbon?: DayRibbon;
   pendingActivityCards: PendingActivityCard[];
   monitors?: {
     health: HealthMonitorSummary
     stress: StressMonitorSummary
   }
+}
+
+export interface DayRibbon {
+  sleepWindow: { bedtime: string; wakeTime: string } | null;
+  activities: Array<{
+    startTime: string;
+    endTime: string;
+    type: string;
+  }>;
+  hrSeries: SeriesPoint[];
 }
 
 export interface PendingActivityCard {
@@ -498,50 +515,90 @@ export function setSessionToken(token?: string | null) {
   sessionToken = token ?? null;
 }
 
-// Backoff schedule for retrying network-class failures (TypeError from
-// fetch — the request never reached the server, so the body is safe to
-// resend). Two retries cover the common transient WiFi-handoff and
-// cell-reauth windows without blowing past the per-call timeout budget
-// (300+900=1.2 s on top of one normal attempt is below most upstream
-// timeouts). Server timeouts and 5xx are NOT retried here — they may
-// have side-effected.
+// Backoff schedule for retrying network-class failures. Two retries
+// cover the common transient WiFi-handoff and cell-reauth windows
+// without blowing past the per-call timeout budget (300+900=1.2 s on
+// top of one normal attempt is below most upstream timeouts).
 const NETWORK_RETRY_DELAYS_MS = [300, 900];
 
-async function requestJson(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
-  // Wait for a slot before consuming any timeout budget — counting the
-  // semaphore wait against `timeoutMs` would turn local queueing into
-  // spurious "Request timed out" failures.
-  await acquireRequestSlot();
-  try {
-    let lastNetworkError: unknown;
-    for (let attempt = 0; attempt <= NETWORK_RETRY_DELAYS_MS.length; attempt++) {
-      const isFinalAttempt = attempt === NETWORK_RETRY_DELAYS_MS.length;
-      try {
-        // Suppress network-failure telemetry on non-final attempts so a
-        // recoverable blip doesn't litter the Inspector with N entries.
-        return await requestJsonImpl(path, init, timeoutMs, isFinalAttempt);
-      } catch (err) {
-        // Only retry the "fetch never reached the server" failure mode.
-        // ApiError (HTTP non-2xx, timeout) means the request did reach
-        // the server / time was actually spent talking to it — retrying
-        // could duplicate side effects or burn additional slot time on
-        // a known-bad endpoint. NetworkRequestFailed surfaces as a
-        // TypeError on RN with that exact message.
-        const isNetworkRetryable =
-          err instanceof TypeError ||
-          (err instanceof Error && /Network request failed/i.test(err.message));
-        if (!isNetworkRetryable || isFinalAttempt) {
-          throw err;
-        }
-        lastNetworkError = err;
-        await new Promise((r) => setTimeout(r, NETWORK_RETRY_DELAYS_MS[attempt]));
+// Methods we'll retry on network blip at the HTTP layer.
+// - GET/HEAD/OPTIONS: idempotent by HTTP spec; resending is always safe.
+// - POST/PUT/DELETE: NOT retried here. If the request reached the server
+//   and was processed before the response was lost, a retry duplicates
+//   the side effect. Mutating callers either: (a) live behind the
+//   outbound queue (uplinkDrainer + outboundQueue.ts), which has its
+//   own claim/lease/backoff aware of partial success; or (b) are user-
+//   initiated UI actions that should surface the error rather than
+//   silently re-submit. To opt a POST back into HTTP-level retry once
+//   server-side idempotency is verified, set `retryOnNetwork: true` in
+//   the call's RequestInitExt (see apiPost). Don't enable this without
+//   confirming the route is idempotent under repeat.
+type RequestInitExt = RequestInit & { retryOnNetwork?: boolean };
+function shouldRetryOnNetwork(init: RequestInitExt): boolean {
+  if (init.retryOnNetwork === true) return true;
+  if (init.retryOnNetwork === false) return false;
+  const m = (init.method ?? 'GET').toUpperCase();
+  return m === 'GET' || m === 'HEAD' || m === 'OPTIONS';
+}
+
+async function requestJson(path: string, init: RequestInitExt = {}, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const canRetry = shouldRetryOnNetwork(init);
+  const maxAttempts = canRetry ? NETWORK_RETRY_DELAYS_MS.length : 0;
+  // Each ATTEMPT acquires/releases its own slot. Holding a slot during
+  // the retry backoff was a real bug — with 3 retries × 60 s timeout
+  // + 1.2 s backoff, one stuck request could pin a slot for ~3 min;
+  // under sustained bad connectivity all 6 slots cascade into sleeping
+  // retries and the whole app's API queue stalls. Better to release
+  // during the sleep and re-queue for the next attempt; the server
+  // never sees more than MAX_IN_FLIGHT_REQUESTS at once anyway.
+  let lastNetworkError: unknown;
+  for (let attempt = 0; attempt <= maxAttempts; attempt++) {
+    const isFinalAttempt = attempt === maxAttempts;
+    await acquireRequestSlot();
+    try {
+      // Suppress network-failure telemetry on non-final attempts so a
+      // recoverable blip doesn't litter the Inspector with N entries.
+      return await requestJsonImpl(path, init, timeoutMs, isFinalAttempt);
+    } catch (err) {
+      // Only retry network failures that happened BEFORE fetch resolved.
+      // requestJsonImpl tags the error with `__preFetch` when it knows
+      // the request body never reached the server — that's the only
+      // safe case to resend automatically. Post-fetch failures (body
+      // reader threw, malformed JSON, HTTP non-2xx) all indicate the
+      // request DID reach the server and may have side-effected.
+      const isNetworkClass =
+        err instanceof TypeError ||
+        (err instanceof Error && /Network request failed/i.test(err.message));
+      const wasPreFetch = isPreFetchError(err);
+      const shouldRetry = canRetry && isNetworkClass && wasPreFetch;
+      if (!shouldRetry || isFinalAttempt) {
+        throw err;
       }
+      lastNetworkError = err;
+    } finally {
+      releaseRequestSlot();
     }
-    // Unreachable — the loop either returns or throws — but TS doesn't know.
-    throw lastNetworkError;
-  } finally {
-    releaseRequestSlot();
+    // Backoff happens AFTER releasing the slot so other requests can
+    // make progress while we wait. The next iteration will re-acquire.
+    await new Promise((r) => setTimeout(r, NETWORK_RETRY_DELAYS_MS[attempt]));
   }
+  // Unreachable — the loop either returns or throws — but TS doesn't know.
+  throw lastNetworkError;
+}
+
+function tagPreFetch(err: unknown): unknown {
+  if (err && typeof err === 'object') {
+    try {
+      (err as any).__preFetch = true;
+    } catch {
+      // Some error objects are sealed (rare); fall through.
+    }
+  }
+  return err;
+}
+
+function isPreFetchError(err: unknown): boolean {
+  return !!(err && typeof err === 'object' && (err as any).__preFetch === true);
 }
 
 async function requestJsonImpl(
@@ -575,14 +632,23 @@ async function requestJsonImpl(
   timeoutPromise.catch(() => {});
 
   try {
-    const res = await Promise.race([
-      fetch(`${BASE_URL}${path}`, {
-        ...init,
-        headers: withBaseHeaders(init.headers),
-        signal: controller.signal,
-      }),
-      timeoutPromise,
-    ]);
+    let res: Response;
+    try {
+      res = await Promise.race([
+        fetch(`${BASE_URL}${path}`, {
+          ...init,
+          headers: withBaseHeaders(init.headers),
+          signal: controller.signal,
+        }),
+        timeoutPromise,
+      ]);
+    } catch (fetchErr) {
+      // Failure here means fetch never produced a Response — safe to
+      // retry. Tag the error so the retry layer can distinguish this
+      // from a post-fetch failure (where the server may have side-
+      // effected and we must not auto-retry mutating requests).
+      throw tagPreFetch(fetchErr);
+    }
 
     if (res.status === 401) {
       clearSession()
@@ -915,6 +981,12 @@ export async function fetchPipelineRunStatus(
 // deadline expires. PIPELINE_TIMEOUT_MS now bounds the whole poll
 // loop instead of one HTTP request, so a slow compute can't hang a
 // single Cloud Run request slot forever.
+//
+// Individual poll failures (network blip, single GET timeout) are
+// swallowed — the loop continues against the overall deadline. Only
+// the deadline itself produces a thrown error. Without this, the
+// 30 s per-GET timeout would abort the whole 300 s budget after the
+// very first transient poll failure.
 export async function awaitPipelineRun(
   runId: string,
   opts: {
@@ -923,16 +995,28 @@ export async function awaitPipelineRun(
     onUpdate?: (snap: PipelineRunSnapshot) => void;
   } = {},
 ): Promise<PipelineRunSnapshot> {
-  const deadline = Date.now() + (opts.deadlineMs ?? PIPELINE_TIMEOUT_MS);
+  const deadlineBudget = opts.deadlineMs ?? PIPELINE_TIMEOUT_MS;
+  const deadline = Date.now() + deadlineBudget;
   const interval = opts.intervalMs ?? 5_000;
   let last: PipelineRunSnapshot | null = null;
+  let lastErr: unknown = null;
   for (;;) {
-    last = await fetchPipelineRunStatus(runId);
-    opts.onUpdate?.(last);
-    if (last.status === 'succeeded' || last.status === 'failed') return last;
+    try {
+      last = await fetchPipelineRunStatus(runId);
+      lastErr = null;
+      opts.onUpdate?.(last);
+      if (last.status === 'succeeded' || last.status === 'failed') return last;
+    } catch (err) {
+      // Don't abort the budget for one bad poll. We'll either get a
+      // good snapshot on the next iteration or hit the deadline.
+      lastErr = err;
+    }
     if (Date.now() >= deadline) {
+      const lastDescription = last
+        ? `last status ${last.status}`
+        : `no successful poll yet (last error: ${lastErr instanceof Error ? lastErr.message : String(lastErr ?? "unknown")})`;
       throw new Error(
-        `Pipeline run ${runId} did not finish within ${(opts.deadlineMs ?? PIPELINE_TIMEOUT_MS) / 1000}s (last status ${last.status})`,
+        `Pipeline run ${runId} did not finish within ${deadlineBudget / 1000}s (${lastDescription})`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, interval));

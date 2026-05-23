@@ -8,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from "react-native"
-import { Brain, Check, ClockCountdown, Heartbeat, Lightning, NotePencil, Watch, Warning, WarningOctagon } from "phosphor-react-native"
+import { Brain, Heartbeat, Lightning, NotePencil, Watch } from "phosphor-react-native"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, {
@@ -30,7 +30,7 @@ import { HomeDateCalendar } from "@/components/home/HomeDateCalendar"
 import { MetricRingsRow } from "@/components/home/MetricRingsRow"
 import { MonitorCard } from "@/components/home/MonitorCard"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
-import { TodayCard } from "@/components/home/TodayCard"
+import { DayArcRibbon } from "@/components/home/DayArcRibbon"
 import { fetchCoverage, type CoverageKind } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import { getViewCache, setViewCache } from "@/services/db/repositories/viewCache"
@@ -493,30 +493,19 @@ export const HomeScreen: FC = () => {
                     icon={Heartbeat}
                     title="Health"
                     state={healthMonitor?.state ?? "stale"}
-                    tileIcon={
-                      healthMonitor?.state === "warn"
-                        ? Warning
-                        : healthMonitor?.state === "alert"
-                          ? WarningOctagon
-                          : healthMonitor?.state === "stale"
-                            ? ClockCountdown
-                            : Check
-                    }
+                    score={String(healthMonitor?.inRangeCount ?? 0)}
+                    scoreSubscript={`/${healthMonitor?.totalMetrics ?? 4}`}
                     verdict={healthMonitor?.verdict ?? "No recent data"}
-                    subline={`${healthMonitor?.inRangeCount ?? 0}/${healthMonitor?.totalMetrics ?? 4} metrics`}
+                    tint={colors.ringRecovery}
                     onPress={() => navigateTo("HealthMonitor", "health-monitor")}
                   />
                   <MonitorCard
                     icon={Brain}
                     title="Stress"
                     state={stressMonitor?.state ?? "stale"}
-                    tileText={stressMonitor?.score == null ? "--" : stressMonitor.score.toFixed(1)}
+                    score={stressMonitor?.score == null ? "--" : stressMonitor.score.toFixed(1)}
                     verdict={stressMonitor?.zone ?? "No reading"}
-                    subline={
-                      stressMonitor?.lastReadingAt
-                        ? new Date(stressMonitor.lastReadingAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-                        : "—"
-                    }
+                    tint={colors.ringHrv}
                     onPress={() => navigateTo("StressMonitor", "stress-monitor")}
                   />
                 </View>
@@ -526,10 +515,12 @@ export const HomeScreen: FC = () => {
                   onResolved={refreshDashboard}
                 />
 
-                <TodayCard
+                <DayArcRibbon
                   events={tapeEvents}
+                  dayRibbon={homeView?.dayRibbon}
+                  selectedDate={selectedDate}
+                  now={Date.now()}
                   onEventPress={handleTapePress}
-                  isToday={selectedDate === todayKey()}
                 />
               </Animated.View>
             )}

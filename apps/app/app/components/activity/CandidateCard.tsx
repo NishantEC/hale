@@ -1,9 +1,21 @@
 import { FC, useState } from "react"
 import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
+import { LinearGradient } from "expo-linear-gradient"
 import { SymbolView } from "expo-symbols"
 import Svg, { Path } from "react-native-svg"
+import { Gesture, GestureDetector } from "react-native-gesture-handler"
+import Animated, {
+  Extrapolation,
+  interpolate,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated"
 
 import { Text } from "@/components/Text"
+import { hexWithAlpha } from "@/utils/hexWithAlpha"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { visualForType } from "./bout-icons"
 import { ClassPickerSheet } from "./ClassPickerSheet"
@@ -17,7 +29,6 @@ export type CandidatePayload = {
   heartRateMax: number
   confidence: number
   suggestedType: string
-  /** Normalised HR series [0..1] sampled at ~24 points for the mini sparkline. */
   hrSparkline?: number[]
 }
 
@@ -27,13 +38,18 @@ type Props = {
   onDismiss: (id: string) => Promise<unknown> | void
 }
 
+const SWIPE_THRESHOLD = 90
+const SWIPE_OUT_DISTANCE = 500
+
 function fmt(d: Date): string {
   const h = d.getHours()
   const m = d.getMinutes()
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+  const ampm = h >= 12 ? "PM" : "AM"
+  const h12 = ((h + 11) % 12) + 1
+  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`
 }
 
-function sparkPath(samples: number[], width = 280, height = 44): string {
+function sparkPath(samples: number[], width = 280, height = 32): string {
   if (samples.length === 0) return ""
   const step = width / Math.max(1, samples.length - 1)
   return samples
@@ -45,12 +61,6 @@ function sparkPath(samples: number[], width = 280, height = 44): string {
     .join(" ")
 }
 
-/**
- * Map legacy backend class names that have been dropped from the Rich-10
- * taxonomy to their nearest current equivalent. The backend may still emit
- * "General Exercise" for older candidates; we present them as "Mixed" so
- * the UI stays consistent with the new visual system.
- */
 function normalizeClass(t: string): string {
   if (t === "General Exercise") return "Mixed"
   return t
@@ -65,121 +75,227 @@ export const CandidateCard: FC<Props> = ({ card, onConfirm, onDismiss }) => {
   const v = visualForType(chosenType)
   const conf = Math.round(card.confidence * 100)
   const confLow = card.confidence < 0.5
-
-  const run = async (fn: () => Promise<unknown> | void) => {
-    if (busy) return
-    setBusy(true)
-    try {
-      await fn()
-    } finally {
-      setBusy(false)
-    }
-  }
+  const confColor = confLow ? colors.statusAmber : "#9492F5"
 
   const samples = card.hrSparkline ?? []
   const sparkD = sparkPath(samples)
-  const sparkArea = sparkD ? `${sparkD} L 280 44 L 0 44 Z` : ""
+  const sparkArea = sparkD ? `${sparkD} L 280 32 L 0 32 Z` : ""
+
+  const translateX = useSharedValue(0)
+  const rotation = useSharedValue(0)
+
+  const runConfirm = (id: string, type: string) => {
+    if (busy) return
+    setBusy(true)
+    Promise.resolve(onConfirm(id, type)).finally(() => setBusy(false))
+  }
+
+  const runDismiss = (id: string) => {
+    if (busy) return
+    setBusy(true)
+    Promise.resolve(onDismiss(id)).finally(() => setBusy(false))
+  }
+
+  const pan = Gesture.Pan()
+    .enabled(!sheetOpen && !busy)
+    .activeOffsetX([-12, 12])
+    .failOffsetY([-20, 20])
+    .onUpdate((e) => {
+      translateX.value = e.translationX
+      rotation.value = e.translationX / 18
+    })
+    .onEnd(() => {
+      if (translateX.value > SWIPE_THRESHOLD) {
+        translateX.value = withTiming(SWIPE_OUT_DISTANCE, { duration: 280 }, () => {
+          runOnJS(runConfirm)(card.id, chosenType)
+        })
+        rotation.value = withTiming(20, { duration: 280 })
+      } else if (translateX.value < -SWIPE_THRESHOLD) {
+        translateX.value = withTiming(-SWIPE_OUT_DISTANCE, { duration: 280 }, () => {
+          runOnJS(runDismiss)(card.id)
+        })
+        rotation.value = withTiming(-20, { duration: 280 })
+      } else {
+        translateX.value = withSpring(0, { damping: 14, stiffness: 180 })
+        rotation.value = withSpring(0, { damping: 14, stiffness: 180 })
+      }
+    })
+
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { rotate: `${rotation.value}deg` },
+    ],
+  }))
+
+  const confirmOverlay = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [0, SWIPE_THRESHOLD], [0, 1], Extrapolation.CLAMP),
+  }))
+
+  const dismissOverlay = useAnimatedStyle(() => ({
+    opacity: interpolate(translateX.value, [-SWIPE_THRESHOLD, 0], [1, 0], Extrapolation.CLAMP),
+  }))
 
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.surfaceCard,
-          borderColor: visualForType("Candidate").tintHex,
-        },
-      ]}
-    >
-      <View style={styles.metaRow}>
-        <Text
-          text={`${fmt(card.startTime)} → ${fmt(card.endTime)}`}
-          style={{ color: colors.text, fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+    <GestureDetector gesture={pan}>
+      <Animated.View
+        style={[
+          styles.card,
+          { backgroundColor: "#0E0D0A", borderColor: hexWithAlpha(colors.statusAmber, 0.3) },
+          cardStyle,
+        ]}
+      >
+        <LinearGradient
+          colors={[hexWithAlpha(colors.statusAmber, 0.22), "transparent"]}
+          locations={[0, 0.55]}
+          style={styles.glow}
+          pointerEvents="none"
         />
-        <View style={[styles.metaDot, { backgroundColor: colors.divider }]} />
-        <Text
-          text={`${Math.round(card.durationMinutes)} min`}
-          style={{ color: colors.textDim, fontSize: 11, fontWeight: "600" }}
-        />
-        <View style={[styles.metaDot, { backgroundColor: colors.divider }]} />
-        <Text
-          text={`HR ${Math.round(card.heartRateAvg)} avg · ${Math.round(card.heartRateMax)} max`}
-          style={{ color: colors.textDim, fontSize: 11, fontWeight: "600" }}
-        />
-        <View style={{ flex: 1 }} />
-        <View
-          style={[
-            styles.confChip,
-            { backgroundColor: confLow ? "rgba(255, 164, 43, 0.18)" : "rgba(94, 92, 230, 0.18)" },
-          ]}
-        >
-          <Text
-            text={`${conf}%`}
-            style={{
-              color: confLow ? "#FFA42B" : "#9492F5",
-              fontSize: 10,
-              fontWeight: "800",
-              letterSpacing: 0.4,
-            }}
-          />
-        </View>
-      </View>
 
-      {samples.length >= 2 ? (
-        <View style={styles.sparkWrap}>
-          <Svg width="100%" height="44" viewBox="0 0 280 44" preserveAspectRatio="none">
-            <Path d={sparkArea} fill={v.tintHex} fillOpacity={0.18} />
-            <Path d={sparkD} stroke={v.tintHex} strokeWidth={1.6} fill="none" />
-          </Svg>
-        </View>
-      ) : null}
-
-      <View style={styles.verdictRow}>
-        <Text text={confLow ? "This might be" : "This was"} style={{ color: colors.textDim, fontSize: 12 }} />
-        <Pressable
-          onPress={() => setSheetOpen(true)}
-          style={[styles.chip, { backgroundColor: v.backgroundHex }]}
+        <Animated.View
+          style={[styles.swipeOverlay, { backgroundColor: hexWithAlpha(colors.statusGreen, 0.18) }, confirmOverlay]}
+          pointerEvents="none"
         >
-          <View style={[styles.chipIcon, { backgroundColor: v.tintHex + "44" }]}>
-            <SymbolView name={v.sfSymbol as never} size={11} tintColor={v.tintHex} resizeMode="scaleAspectFit" />
+          <View style={[styles.swipeBadge, { borderColor: colors.statusGreen, alignSelf: "flex-end", marginRight: 18 }]}>
+            <Text text="✓" style={{ color: colors.statusGreen, fontSize: 22, fontWeight: "800" }} />
           </View>
-          <Text text={chosenType} style={{ color: v.tintHex, fontSize: 12, fontWeight: "700" }} />
-          <Text text="▾" style={{ color: v.tintHex, fontSize: 9, opacity: 0.7 }} />
-        </Pressable>
-      </View>
+        </Animated.View>
 
-      <View style={styles.actions}>
-        <Pressable
-          onPress={() => run(() => onConfirm(card.id, chosenType))}
-          disabled={busy}
-          style={({ pressed }) => [
-            styles.primary,
-            { backgroundColor: colors.text, opacity: busy || pressed ? 0.65 : 1 },
-          ]}
+        <Animated.View
+          style={[styles.swipeOverlay, { backgroundColor: hexWithAlpha(colors.error, 0.22) }, dismissOverlay]}
+          pointerEvents="none"
         >
-          <Text text="Confirm" style={{ color: colors.background, fontSize: 13, fontWeight: "800" }} />
-        </Pressable>
-        <Pressable
-          onPress={() => run(() => onDismiss(card.id))}
-          disabled={busy}
-          style={{ paddingVertical: 6, paddingHorizontal: 4 }}
-        >
-          <Text
-            text="Not an activity"
-            style={{ color: colors.textDim, fontSize: 12, textDecorationLine: "underline" }}
-          />
-        </Pressable>
-      </View>
+          <View style={[styles.swipeBadge, { borderColor: colors.error, marginLeft: 18 }]}>
+            <Text text="✕" style={{ color: colors.error, fontSize: 22, fontWeight: "800" }} />
+          </View>
+        </Animated.View>
 
-      <ClassPickerSheet
-        visible={sheetOpen}
-        currentType={chosenType}
-        onCancel={() => setSheetOpen(false)}
-        onPick={(t) => {
-          setChosenType(t)
-          setSheetOpen(false)
-        }}
-      />
-    </View>
+        <View style={styles.content}>
+          <View style={styles.topRow}>
+            <View style={[styles.pill, { backgroundColor: hexWithAlpha(colors.statusAmber, 0.15), borderColor: hexWithAlpha(colors.statusAmber, 0.3) }]}>
+              <View style={[styles.pillDot, { backgroundColor: colors.statusAmber }]} />
+              <Text
+                text="NEW ACTIVITY"
+                style={{ color: colors.statusAmber, fontSize: 9, fontWeight: "800", letterSpacing: 1.3 }}
+              />
+            </View>
+            <View style={{ flex: 1 }} />
+            <Text
+              text="conf "
+              style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700", letterSpacing: 0.3 }}
+            />
+            <Text
+              text={`${conf}%`}
+              style={{ color: confColor, fontSize: 10, fontWeight: "800", fontVariant: ["tabular-nums"] }}
+            />
+          </View>
+
+          <View style={styles.sentence}>
+            <Text
+              text="This was a "
+              style={{ color: colors.text, fontSize: 15, fontWeight: "700", letterSpacing: -0.2 }}
+            />
+            <Pressable
+              onPress={() => setSheetOpen(true)}
+              style={[styles.chip, { backgroundColor: v.backgroundHex }]}
+            >
+              <SymbolView name={v.sfSymbol as never} size={11} tintColor={v.tintHex} resizeMode="scaleAspectFit" />
+              <Text
+                text={chosenType}
+                style={{ color: v.tintHex, fontSize: 12, fontWeight: "700" }}
+              />
+              <Text
+                text="▾"
+                style={{ color: v.tintHex, fontSize: 9, opacity: 0.7 }}
+              />
+            </Pressable>
+          </View>
+
+          <View style={[styles.meta, { borderTopColor: colors.divider }]}>
+            <Text
+              text={`${fmt(card.startTime)} → ${fmt(card.endTime)} · `}
+              style={{ color: colors.textDim, fontSize: 10, fontWeight: "600", fontVariant: ["tabular-nums"] }}
+            />
+            <Text
+              text={`${Math.round(card.durationMinutes)} min`}
+              style={{ color: colors.text, fontSize: 10, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+            />
+            <View style={{ width: 12 }} />
+            <Text
+              text="HR "
+              style={{ color: colors.textDim, fontSize: 10, fontWeight: "600" }}
+            />
+            <Text
+              text={`${Math.round(card.heartRateAvg)}`}
+              style={{ color: colors.text, fontSize: 10, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+            />
+            <Text
+              text=" avg · "
+              style={{ color: colors.textDim, fontSize: 10, fontWeight: "600" }}
+            />
+            <Text
+              text={`${Math.round(card.heartRateMax)}`}
+              style={{ color: colors.text, fontSize: 10, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+            />
+            <Text
+              text=" max"
+              style={{ color: colors.textDim, fontSize: 10, fontWeight: "600" }}
+            />
+          </View>
+
+          {samples.length >= 2 ? (
+            <View style={styles.sparkWrap}>
+              <Svg width="100%" height="32" viewBox="0 0 280 32" preserveAspectRatio="none">
+                <Path d={sparkArea} fill={v.tintHex} fillOpacity={0.22} />
+                <Path d={sparkD} stroke={v.tintHex} strokeWidth={1.5} fill="none" />
+              </Svg>
+            </View>
+          ) : null}
+
+          <View style={styles.actions}>
+            <Pressable
+              onPress={() => runDismiss(card.id)}
+              disabled={busy}
+              style={({ pressed }) => [
+                styles.btn,
+                styles.btnDismiss,
+                { borderColor: hexWithAlpha("#FFFFFF", 0.08) },
+                pressed && { opacity: 0.6 },
+              ]}
+            >
+              <Text
+                text="Dismiss"
+                style={{ color: colors.textDim, fontSize: 13, fontWeight: "700" }}
+              />
+            </Pressable>
+            <Pressable
+              onPress={() => runConfirm(card.id, chosenType)}
+              disabled={busy}
+              style={({ pressed }) => [
+                styles.btn,
+                { backgroundColor: colors.text },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text
+                text="Confirm"
+                style={{ color: colors.background, fontSize: 13, fontWeight: "800" }}
+              />
+            </Pressable>
+          </View>
+        </View>
+
+        <ClassPickerSheet
+          visible={sheetOpen}
+          currentType={chosenType}
+          onCancel={() => setSheetOpen(false)}
+          onPick={(t) => {
+            setChosenType(t)
+            setSheetOpen(false)
+          }}
+        />
+      </Animated.View>
+    </GestureDetector>
   )
 }
 
@@ -187,37 +303,100 @@ const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
     marginBottom: 12,
-    padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
-    borderStyle: "dashed",
+    overflow: "hidden",
+    position: "relative",
   } as ViewStyle,
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-  metaDot: { width: 3, height: 3, borderRadius: 1.5 } as ViewStyle,
-  confChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 } as ViewStyle,
-  sparkWrap: { marginTop: 12, height: 44 } as ViewStyle,
-  verdictRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 12 },
-  chip: {
+  glow: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: "60%",
+  } as ViewStyle,
+  content: {
+    padding: 14,
+    position: "relative",
+    zIndex: 1,
+  } as ViewStyle,
+  topRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 5,
+    marginBottom: 10,
+  } as ViewStyle,
+  pill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 3,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+  } as ViewStyle,
+  pillDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  } as ViewStyle,
+  sentence: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 4,
+  } as ViewStyle,
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 3,
     paddingHorizontal: 9,
     borderRadius: 999,
   } as ViewStyle,
-  chipIcon: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+  meta: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    marginTop: 10,
+    paddingTop: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexWrap: "wrap",
   } as ViewStyle,
-  actions: { marginTop: 14, flexDirection: "row", alignItems: "center", gap: 10 },
-  primary: {
+  sparkWrap: { marginTop: 8, height: 32 } as ViewStyle,
+  actions: {
+    marginTop: 12,
+    flexDirection: "row",
+    gap: 8,
+  } as ViewStyle,
+  btn: {
     flex: 1,
-    paddingVertical: 11,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
+  } as ViewStyle,
+  btnDismiss: {
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderWidth: 1,
+  } as ViewStyle,
+  swipeOverlay: {
+    position: "absolute",
+    inset: 0,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2,
+    justifyContent: "center",
+  } as ViewStyle,
+  swipeBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.2)",
   } as ViewStyle,
 })

@@ -120,6 +120,59 @@ export class ViewsService {
     return { days };
   }
 
+  private async buildDayRibbon(
+    userId: string,
+    dayStart: Date,
+    dayEnd: Date,
+    selectedDetection: SleepDetection | null,
+    dayActivities: ActivityDetection[],
+  ) {
+    const sleepWindow =
+      selectedDetection?.bedtime && selectedDetection?.wakeTime
+        ? {
+            bedtime: selectedDetection.bedtime.toISOString(),
+            wakeTime: selectedDetection.wakeTime.toISOString(),
+          }
+        : null;
+
+    const activities = dayActivities
+      .filter(
+        (a) =>
+          a.activityType !== 'Sedentary' &&
+          a.activityType !== 'Rest' &&
+          a.activityType !== 'Off-Wrist' &&
+          a.activityType !== 'No Data',
+      )
+      .map((a) => ({
+        startTime: a.startTime.toISOString(),
+        endTime: a.endTime.toISOString(),
+        type: a.activityType,
+      }));
+
+    const rows: Array<{ bucket: Date; value: string }> = await this.signalSampleRepo
+      .createQueryBuilder('s')
+      .select(
+        `to_timestamp(floor(extract(epoch from s."timestamp") / 900) * 900)`,
+        'bucket',
+      )
+      .addSelect('AVG(s."heartRate")', 'value')
+      .where('s."userId" = :userId')
+      .andWhere('s."timestamp" >= :start AND s."timestamp" < :end')
+      .andWhere('s."heartRate" IS NOT NULL')
+      .andWhere('s."heartRate" BETWEEN 30 AND 220')
+      .groupBy('bucket')
+      .orderBy('bucket', 'ASC')
+      .setParameters({ userId, start: dayStart, end: dayEnd })
+      .getRawMany();
+
+    const hrSeries = rows.map((row) => ({
+      timestamp: new Date(row.bucket).toISOString(),
+      value: Math.round(Number(row.value)),
+    }));
+
+    return { sleepWindow, activities, hrSeries };
+  }
+
   async getHomeView(userId: string, selectedDateInput?: string, timeZoneInput?: string) {
     const data = await this.loadDashboardData(userId, selectedDateInput, timeZoneInput);
 
@@ -331,6 +384,7 @@ export class ViewsService {
         activityCount: dayActivities
           .filter((a) => a.activityType !== 'Sedentary' && a.activityType !== 'Rest' && a.activityType !== 'Off-Wrist' && a.activityType !== 'No Data').length,
       },
+      dayRibbon: await this.buildDayRibbon(userId, dayStart, dayEnd, selectedDetection, dayActivities),
       pendingActivityCards: this.buildPendingActivityCards(dayActivities),
       confidence: {
         confidence: selectedScore?.confidence ?? 'Low',
