@@ -1,4 +1,3 @@
-import { AppState } from 'react-native'
 import {
   bleManager,
   CommandNumber,
@@ -132,13 +131,13 @@ export function initBleStoreBridge(): () => void {
   const unsubPackets = bleManager.onPacket('*', (packet) => {
     const current = useBleStore.getState()
 
-    if (current.connectionState === 'disconnected') {
-      useBleStore.setState({
-        connectionState: 'ready' as ConnectionState,
-        isBusy: false,
-        deviceName: bleManager.getDeviceName() || current.deviceName,
-      })
-    }
+    // Deliberately do NOT auto-recover connectionState from a stray packet
+    // arriving after onConnectionStateChange already reported 'disconnected'.
+    // Stray late packets (end-of-session ACK arriving a few ms after the
+    // disconnect callback) were briefly flipping the store back to 'ready',
+    // producing a re-disconnect flicker on the activity strip. The
+    // bleManager.onConnectionStateChange handler is the single source of
+    // truth for connectionState.
 
     const parsedBattery =
       packet.type === PacketType.CommandResponse ? parseBatteryLevel(packet) : null
@@ -241,32 +240,19 @@ export function initBleStoreBridge(): () => void {
     }
   })
 
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null
-  let isBackground = AppState.currentState !== 'active'
-  const appStateSub = AppState.addEventListener('change', (next) => {
-    isBackground = next !== 'active'
-  })
-
-  const unsubDrain = bleManager.onPacket('*', () => {
-    if (!isBackground) return
-    if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(() => {
-      import('@/services/sync/backgroundSync')
-        .then(({ runBackgroundDrain }) => {
-          runBackgroundDrain(15_000).catch((err: unknown) => {
-            console.warn('[bleStoreBridge bg-drain] failed', err)
-          })
-        })
-        .catch(() => {})
-    }, 1500)
-  })
+  // The previous per-packet background-drain trigger fired roughly every
+  // 1.5s (debounced) while the strap streamed in the background — once
+  // realtime HR was on, every quiet window kicked runBackgroundDrain. The
+  // SQLite drain lock serialised the work but telemetry filled with
+  // skipped:"locked" rows and battery took the hit. The continuous-sync
+  // daemon (services/sync/continuousSyncDaemon.ts, 30s) already pumps the
+  // strap on connect, and SyncContext's foreground interval (15s) + the
+  // AppState foreground→background single-shot drain cover the queue. No
+  // need for a third per-packet starter.
 
   const teardown = () => {
     unsubState()
     unsubPackets()
-    unsubDrain()
-    appStateSub.remove()
-    if (debounceTimer) clearTimeout(debounceTimer)
     initialized = false
   }
 

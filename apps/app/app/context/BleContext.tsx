@@ -449,12 +449,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     }
 
     isSyncingRef.current = true
-    setIsSyncing(true)
-    setSyncStage("Downloading from strap…")
-    setSyncSummary(null)
-    setSyncIteration(0)
-    setSyncLastStopReason(null)
-    setError(null)
     // Captured for syncTelemetry.recordSyncSession in the finally block —
     // covers the throw path too so a crashed sync still leaves a record.
     const sessionStartedAt = Date.now()
@@ -466,6 +460,17 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
     let sessionError: string | null = null
 
     try {
+      // EVERYTHING that can throw — including the dynamic import — runs
+      // inside this try so the finally block always clears isSyncing.
+      // Previously the setIsSyncing(true) + dynamic import were OUTSIDE
+      // the try; a Metro miss / network blip on the import path would
+      // pin the strip to "Syncing…" until app restart.
+      setIsSyncing(true)
+      setSyncStage("Downloading from strap…")
+      setSyncSummary(null)
+      setSyncIteration(0)
+      setSyncLastStopReason(null)
+      setError(null)
       const commandService = new (
         await import("@/services/ble/command-service")
       ).CommandService()
