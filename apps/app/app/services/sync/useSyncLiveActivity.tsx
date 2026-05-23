@@ -35,7 +35,11 @@ function progressFraction(
   pendingCount: number,
   pendingAtStart: number,
 ): number | undefined {
-  if (bleIsSyncing && syncIterationCap > 0) {
+  // syncIterationCap defaults to Infinity (DEFAULT_MAX_ITERATIONS) — no
+  // hard cap is enforced, so a fractional "iteration / cap" makes no sense
+  // and would render as "Pass N of Infinity" with progress=0. Skip the
+  // bar entirely in that case.
+  if (bleIsSyncing && Number.isFinite(syncIterationCap) && syncIterationCap > 0) {
     return Math.min(1, syncIteration / syncIterationCap)
   }
   if (queueIsSyncing && pendingAtStart > 0) {
@@ -53,8 +57,11 @@ function subtitleFor(
   pendingCount: number,
 ): string | undefined {
   if (bleIsSyncing) {
-    if (syncIteration > 0 && syncIterationCap > 0) {
+    if (syncIteration > 0 && Number.isFinite(syncIterationCap) && syncIterationCap > 0) {
       return `Pass ${syncIteration} of ${syncIterationCap}${syncStage ? ` · ${syncStage}` : ""}`
+    }
+    if (syncIteration > 0) {
+      return `Pass ${syncIteration}${syncStage ? ` · ${syncStage}` : ""}`
     }
     return syncStage || undefined
   }
@@ -77,11 +84,38 @@ export const SyncLiveActivityBridge: FC = () => {
   // drain phase. Reset on each new run.
   const pendingAtStartRef = useRef(0)
   const wasSyncingRef = useRef(false)
+  // Snapshot of the BLE error AT START of the current run. The terminal
+  // payload checks whether the error is NEW since this run, not whether
+  // ble.error happens to be set at the moment of stop — a stale error from
+  // a previous BLE session was previously flagging successful queue-only
+  // drains as "Sync failed".
+  const bleErrorAtStartRef = useRef<string | null>(null)
 
   // Foreground-aware: the in-app ActivityStrip already shows this info while
   // the app is active. Live Activities only earn screen real estate when the
   // user has navigated away or locked the phone.
   const isBackgroundRef = useRef<boolean>(AppState.currentState !== "active")
+
+  // Latest snapshot of the values the AppState listener needs. The listener
+  // has empty deps (we don't want it rebinding on every signal tick), so
+  // without this ref it would read stale values from the mount closure when
+  // foreground→background fires mid-sync.
+  const liveStateRef = useRef({
+    bleIsSyncing,
+    syncStage,
+    syncIteration,
+    syncIterationCap,
+    queueIsSyncing: sync.isSyncing,
+    pendingCount: sync.pendingCount,
+  })
+  liveStateRef.current = {
+    bleIsSyncing,
+    syncStage,
+    syncIteration,
+    syncIterationCap,
+    queueIsSyncing: sync.isSyncing,
+    pendingCount: sync.pendingCount,
+  }
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
@@ -91,25 +125,27 @@ export const SyncLiveActivityBridge: FC = () => {
 
       if (!wasSyncingRef.current) return
 
+      const live = liveStateRef.current
+
       if (!wasBackground && nowBackground) {
         // Foreground -> background mid-sync: spin up the activity now so the
         // user sees it on Lock Screen / Dynamic Island for the rest of the run.
         syncLiveActivity.start({
-          title: bleIsSyncing ? "Syncing strap" : "Uploading",
+          title: live.bleIsSyncing ? "Syncing strap" : "Uploading",
           subtitle: subtitleFor(
-            bleIsSyncing,
-            syncStage,
-            syncIteration,
-            syncIterationCap,
-            sync.isSyncing,
-            sync.pendingCount,
+            live.bleIsSyncing,
+            live.syncStage,
+            live.syncIteration,
+            live.syncIterationCap,
+            live.queueIsSyncing,
+            live.pendingCount,
           ),
           progress: progressFraction(
-            bleIsSyncing,
-            syncIteration,
-            syncIterationCap,
-            sync.isSyncing,
-            sync.pendingCount,
+            live.bleIsSyncing,
+            live.syncIteration,
+            live.syncIterationCap,
+            live.queueIsSyncing,
+            live.pendingCount,
             pendingAtStartRef.current,
           ),
         })
@@ -117,21 +153,21 @@ export const SyncLiveActivityBridge: FC = () => {
         // Background -> foreground mid-sync: tear the activity down. The
         // in-app strip takes over visibility from here.
         syncLiveActivity.stop({
-          title: bleIsSyncing ? "Syncing strap" : "Uploading",
+          title: live.bleIsSyncing ? "Syncing strap" : "Uploading",
           progress: progressFraction(
-            bleIsSyncing,
-            syncIteration,
-            syncIterationCap,
-            sync.isSyncing,
-            sync.pendingCount,
+            live.bleIsSyncing,
+            live.syncIteration,
+            live.syncIterationCap,
+            live.queueIsSyncing,
+            live.pendingCount,
             pendingAtStartRef.current,
           ),
         })
       }
     })
     return () => sub.remove()
-    // Intentionally empty deps — the listener reads live refs / context. We
-    // don't want this effect to tear down and rebuild on every signal tick.
+    // Intentionally empty deps — the listener reads live refs. We don't want
+    // this effect to tear down and rebuild on every signal tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -143,6 +179,9 @@ export const SyncLiveActivityBridge: FC = () => {
       // if we're already in the background (otherwise the AppState listener
       // will start it on the next foreground→background transition).
       pendingAtStartRef.current = sync.pendingCount
+      // Snapshot whatever stale BLE error already exists so the terminal
+      // payload can detect a NEW error vs. carrying one in from before.
+      bleErrorAtStartRef.current = bleError ?? null
       wasSyncingRef.current = true
       if (isBackgroundRef.current) {
         syncLiveActivity.start({
@@ -188,11 +227,18 @@ export const SyncLiveActivityBridge: FC = () => {
       })
     } else if (!anySyncing && wasSyncingRef.current) {
       // Edge: syncing → idle. Terminal payload.
-      const failed = sync.syncError != null || bleError != null
+      // syncError comes from the queue drain and is reset per drain, so it's
+      // run-scoped. bleError is sticky on BleContext until cleared, so a
+      // stale error from the previous BLE session would otherwise flag this
+      // run as failed. Only count a NEW bleError that appeared during this
+      // run as a current failure.
+      const newBleError =
+        bleError != null && bleError !== bleErrorAtStartRef.current ? bleError : null
+      const failed = sync.syncError != null || newBleError != null
       if (failed) {
         syncLiveActivity.stop({
           title: "Sync failed",
-          subtitle: sync.syncError ?? bleError ?? "Try again from Inspector",
+          subtitle: sync.syncError ?? newBleError ?? "Try again from Inspector",
           progress: 1,
         })
       } else {
@@ -210,6 +256,7 @@ export const SyncLiveActivityBridge: FC = () => {
       }
       wasSyncingRef.current = false
       pendingAtStartRef.current = 0
+      bleErrorAtStartRef.current = null
     }
   }, [
     anySyncing,
