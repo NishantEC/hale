@@ -106,6 +106,9 @@ export async function runForceUpload(
   }
 
   try {
+  // Anchor the deadline before backfill so a slow catch-up (up to backfillLimit
+  // rows) can't eat into the 1 min cushion under the 5 min lock TTL.
+  const deadline = now() + FORCE_UPLOAD_MAX_MS
   await deps.backfillUnsyncedRawSensorRecords(db, backfillLimit).catch(() => undefined)
 
   const total = await deps.queueDepth(db)
@@ -115,7 +118,6 @@ export async function runForceUpload(
 
   let uploaded = 0
   let firstError: string | null = null
-  const deadline = now() + FORCE_UPLOAD_MAX_MS
 
   while (!firstError) {
     if (now() >= deadline) {
