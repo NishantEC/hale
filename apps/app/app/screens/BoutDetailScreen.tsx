@@ -83,8 +83,14 @@ export const BoutDetailScreen: FC = () => {
   const endD = new Date(bout.endTime)
   const peakSample = bout.hrCurve[peakIdx]
 
+  // Only trust day-strain when the dashboard's selected date matches the bout's
+  // local date. If the user navigates to an older bout while the dashboard
+  // shows today, "share of today's strain" would be nonsense.
+  const boutDateKey = `${startD.getFullYear()}-${String(startD.getMonth() + 1).padStart(2, "0")}-${String(startD.getDate()).padStart(2, "0")}`
+  const dashboardDate = homeView?.selectedDate ?? null
   const dayStrainNum = parseFloat(homeView?.rings.strain.value ?? "")
-  const dayStrainValid = Number.isFinite(dayStrainNum) && dayStrainNum > 0
+  const sameDay = dashboardDate === boutDateKey
+  const dayStrainValid = sameDay && Number.isFinite(dayStrainNum) && dayStrainNum > 0
   const shareOfDay = dayStrainValid
     ? Math.min(100, Math.round((bout.strainScore / dayStrainNum) * 100))
     : null

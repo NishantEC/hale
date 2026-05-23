@@ -5,7 +5,13 @@ import { outboundQueue } from "../schema"
 
 // Dead-letter threshold: rows with attempts >= this value are skipped
 // by the drainer and surfaced via listDeadLetters() for debug visibility.
+// Only PERMANENT failures (recordOutboundFailure with kind:"permanent")
+// jump to this value. Transient failures (network down, 5xx) are capped
+// at MAX_ATTEMPTS_BEFORE_DEAD_LETTER - 1 so a long bad-connectivity
+// stretch never silently exiles critical sensor data — backoff still
+// grows up to BACKOFF_MAX_MS = 1h, but the row stays claimable forever.
 export const MAX_ATTEMPTS_BEFORE_DEAD_LETTER = 10
+const MAX_TRANSIENT_ATTEMPTS = MAX_ATTEMPTS_BEFORE_DEAD_LETTER - 1
 
 // Backoff schedule for failed uploads. The drainer skips a row until
 // wall-clock time reaches `next_attempt_at`. Exponential 1s → 1h with
@@ -25,6 +31,9 @@ export interface EnqueueInput {
   tableName: string
   rowId: string
   payload: unknown
+  /** When true, do nothing if (tableName, rowId) is already queued. Use for
+   *  backfill paths where overwriting would reset attempts/backoff/lastError. */
+  preserveRetryState?: boolean
 }
 
 function newId(): string {
@@ -35,20 +44,25 @@ function newId(): string {
 // callback; it composes with other tx writes into one COMMIT.
 export async function enqueueOutboundTx(tx: WriteTx, input: EnqueueInput): Promise<void> {
   const payloadStr = JSON.stringify(input.payload)
-  await tx
-    .insert(outboundQueue)
-    .values({
-      id: newId(),
-      tableName: input.tableName,
-      rowId: input.rowId,
-      payload: payloadStr,
-      attempts: 0,
-      lastAttemptAt: null,
-      lastError: null,
-      createdAt: Date.now(),
-      nextAttemptAt: 0,
+  const insert = tx.insert(outboundQueue).values({
+    id: newId(),
+    tableName: input.tableName,
+    rowId: input.rowId,
+    payload: payloadStr,
+    attempts: 0,
+    lastAttemptAt: null,
+    lastError: null,
+    createdAt: Date.now(),
+    nextAttemptAt: 0,
+  })
+  if (input.preserveRetryState) {
+    // Backfill path: keep existing attempts/backoff so a permanently-failing
+    // row doesn't reset its retry counter every pre-loop backfill tick.
+    await insert.onConflictDoNothing({
+      target: [outboundQueue.tableName, outboundQueue.rowId],
     })
-    .onConflictDoUpdate({
+  } else {
+    await insert.onConflictDoUpdate({
       target: [outboundQueue.tableName, outboundQueue.rowId],
       set: {
         payload: payloadStr,
@@ -58,6 +72,7 @@ export async function enqueueOutboundTx(tx: WriteTx, input: EnqueueInput): Promi
         nextAttemptAt: 0,
       },
     })
+  }
 }
 
 // Standalone async wrapper. Convenience for callers that aren't already
@@ -194,14 +209,19 @@ export async function recordOutboundFailure(
       .select({ attempts: outboundQueue.attempts })
       .from(outboundQueue)
       .where(eq(outboundQueue.id, id))
-    const nextAttempts = (current?.attempts ?? 0) + 1
+    // Cap at MAX_TRANSIENT_ATTEMPTS so a row that's been failing for a
+    // long time still gets full-backoff retries forever instead of being
+    // silently dead-lettered. Backoff is computed from the unclamped
+    // attempt count so the wait keeps growing toward BACKOFF_MAX_MS.
+    const rawAttempts = (current?.attempts ?? 0) + 1
+    const nextAttempts = Math.min(rawAttempts, MAX_TRANSIENT_ATTEMPTS)
     await tx
       .update(outboundQueue)
       .set({
         attempts: nextAttempts,
         lastAttemptAt: now,
         lastError: errorMessage,
-        nextAttemptAt: now + backoffDelayMs(nextAttempts),
+        nextAttemptAt: now + backoffDelayMs(rawAttempts),
         // Release the lease so the row can be re-claimed once its
         // backoff window opens, without waiting for CLAIM_TTL_MS to
         // elapse.
@@ -246,16 +266,20 @@ export async function recordOutboundFailureBatch(
       return
     }
     // Transient: bump attempts in-place via SQL expression so we don't
-    // need a read-modify-write loop. Backoff schedule lives in SQL too
-    // (jitter omitted in batch path — close enough; per-row callsite
-    // still has jittered backoff). Release the lease so the row can
-    // be re-claimed when its backoff window opens.
+    // need a read-modify-write loop. Cap `attempts` at MAX_TRANSIENT_ATTEMPTS
+    // so transient failures never cross the dead-letter threshold —
+    // backoff still grows (computed off the raw attempt count via
+    // MIN(20, attempts) below) but the row stays claimable forever.
+    // Backoff schedule lives in SQL too (jitter omitted in batch path —
+    // close enough; per-row callsite still has jittered backoff).
+    // Release the lease so the row can be re-claimed when its backoff
+    // window opens.
     for (let i = 0; i < ids.length; i += CHUNK) {
       const slice = ids.slice(i, i + CHUNK)
       await tx
         .update(outboundQueue)
         .set({
-          attempts: sql`${outboundQueue.attempts} + 1`,
+          attempts: sql`MIN(${MAX_TRANSIENT_ATTEMPTS}, ${outboundQueue.attempts} + 1)`,
           lastAttemptAt: now,
           lastError: errorMessage,
           nextAttemptAt: sql`${now} + MIN(

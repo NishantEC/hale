@@ -150,6 +150,7 @@ export async function backfillUnsyncedRawSensorRecords(
         tableName: "raw_sensor_records",
         rowId: row.id,
         payload: row,
+        preserveRetryState: true,
       })
     }
   })

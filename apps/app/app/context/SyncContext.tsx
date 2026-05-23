@@ -29,6 +29,10 @@ import { pullDownlink } from "@/services/sync/downlinkPuller"
 import { refreshAllViews } from "@/services/sync/refreshAllViews"
 import { sweepRetention } from "@/services/sync/retentionSweeper"
 import { SyncService } from "@/services/sync/SyncService"
+import {
+  setLastDrainAt as setStoreLastDrainAt,
+  setLastDrainOutcome as setStoreLastDrainOutcome,
+} from "@/stores/drainTelemetryStore"
 import { drainLoop, type DrainLoopOutcome } from "@/services/sync/uplinkDrainer"
 
 // Cap a single foreground drain at 60s so it can't outlive the 90s drain-lock
@@ -39,12 +43,9 @@ const FOREGROUND_DRAIN_MAX_MS = 60_000
 type SyncContextValue = {
   isOnline: boolean
   isSyncing: boolean
-  lastDrainAt: number | null
   pendingCount: number
   deadCount: number
   syncError: string | null
-  /** Last completed drain's outcome — null until the first drain settles. */
-  lastDrainOutcome: DrainLoopOutcome | null
   refresh: () => Promise<void>
 }
 
@@ -56,12 +57,13 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
 }) => {
   const [isOnline, setIsOnline] = useState(true)
   const [isSyncing, setIsSyncing] = useState(false)
-  const [lastDrainAt, setLastDrainAt] = useState<number | null>(null)
   const [pendingCount, setPendingCount] = useState(0)
   const [deadCount, setDeadCount] = useState(0)
   const [syncError, setSyncError] = useState<string | null>(null)
-  const [lastDrainOutcome, setLastDrainOutcome] =
-    useState<DrainLoopOutcome | null>(null)
+  // lastDrainOutcome + lastDrainAt live in the drainTelemetry zustand store so
+  // they don't churn every useSyncContext() consumer on each drain settle.
+  const setLastDrainAt = setStoreLastDrainAt
+  const setLastDrainOutcome = setStoreLastDrainOutcome
 
   const isOnlineRef = useRef(false)
   const isLowPowerRef = useRef(false)
@@ -231,23 +233,12 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
     () => ({
       isOnline,
       isSyncing,
-      lastDrainAt,
       pendingCount,
       deadCount,
       syncError,
-      lastDrainOutcome,
       refresh,
     }),
-    [
-      isOnline,
-      isSyncing,
-      lastDrainAt,
-      pendingCount,
-      deadCount,
-      syncError,
-      lastDrainOutcome,
-      refresh,
-    ],
+    [isOnline, isSyncing, pendingCount, deadCount, syncError, refresh],
   )
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>

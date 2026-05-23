@@ -2,8 +2,11 @@ import { FC, useEffect, useMemo, useState } from "react"
 import { View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
-import { useSyncContext } from "@/context/SyncContext"
 import { useOutboundQueueStats } from "@/hooks/useOutboundQueueStats"
+import {
+  useLastDrainAt,
+  useLastDrainOutcome,
+} from "@/stores/drainTelemetryStore"
 import {
   useLastBatchWindow,
   useLastPipelineAt,
@@ -48,10 +51,8 @@ export const SyncProgressCard: FC = () => {
   const lastPipelineAt = useLastPipelineAt()
   const lastBatchWindow = useLastBatchWindow()
   const queueStats = useOutboundQueueStats()
-  // lastDrainOutcome lets the Inspector surface the per-drain "188 ✓ / 12 ✗
-  // (3.4s · skipped if locked)" breakdown so partial failures aren't hidden
-  // behind the single sync_error chip on the activity strip.
-  const { lastDrainOutcome, lastDrainAt } = useSyncContext()
+  const lastDrainOutcome = useLastDrainOutcome()
+  const lastDrainAt = useLastDrainAt()
 
   // Damp the iteration counter ~500ms so users don't see flicker as the
   // strap finishes one pass and starts the next.

@@ -20,6 +20,9 @@ import {
 
 export const FORCE_UPLOAD_BATCH_SIZE = 25
 export const FORCE_UPLOAD_BACKFILL_LIMIT = 5000
+// 4 min — leaves a 1 min cushion under the 5 min drain-lock TTL so the loop
+// aborts before the lock can expire under another holder.
+export const FORCE_UPLOAD_MAX_MS = 4 * 60 * 1_000
 
 type OutboundBatchRow = Awaited<ReturnType<typeof claimOutboundBatch>>[number]
 
@@ -112,8 +115,13 @@ export async function runForceUpload(
 
   let uploaded = 0
   let firstError: string | null = null
+  const deadline = now() + FORCE_UPLOAD_MAX_MS
 
   while (!firstError) {
+    if (now() >= deadline) {
+      firstError = "force upload timed out — try again to continue"
+      break
+    }
     const batch = await deps.claimOutboundBatch(db, batchSize, now(), "force-upload")
     if (batch.length === 0) break
 

@@ -30,7 +30,12 @@ export class SyncService {
   }
 
   async refresh(): Promise<void> {
-    await this.opts.drainFn().catch((err) => console.warn("[sync] drain failed", err))
+    try {
+      await this.opts.drainFn()
+    } catch (err) {
+      console.warn("[sync] drain failed", err)
+      return
+    }
     await this.opts.pullFn().catch((err) => console.warn("[sync] pull failed", err))
   }
 }
