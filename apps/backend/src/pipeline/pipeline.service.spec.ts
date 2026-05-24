@@ -96,6 +96,156 @@ describe('PipelineService raw_sensor_records ingest', () => {
   });
 });
 
+describe('PipelineService ingestTable idempotency contract', () => {
+  // The mobile drainer ships every uplink table through /pipeline/ingest-table
+  // and assumes the backend dedupes on (tableName, rowId). For
+  // raw_sensor_records, "rowId" is satisfied by the (userId, timestamp)
+  // UNIQUE constraint — the mobile schema also keys raw rows on timestamp
+  // so retrying the same payload produces the same bucket. These tests
+  // pin that contract so a future refactor can't quietly break it.
+
+  function svc(rawSensorRepo: any) {
+    return new PipelineService(
+      {} as any, {} as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any, {} as any, {} as any,
+      rawSensorRepo,
+      {} as any, {} as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any,
+      { isEnabled: () => false } as any,
+    );
+  }
+
+  it('routes raw_sensor_records to the (userId, timestamp) upsert', async () => {
+    const { repo, captured } = rawSensorRepoSpy();
+    const service = svc(repo);
+
+    const res = await service.ingestTable('user-1', {
+      tableName: 'raw_sensor_records',
+      rows: [
+        { timestamp: 1716552000000, heartRate: 65, gravityX: 0.1 } as any,
+      ],
+    } as any);
+
+    expect(res).toEqual({ table: 'raw_sensor_records', stored: 1 });
+    expect(captured.onConflictArg).toMatch(/"userId", timestamp/);
+  });
+
+  it('is idempotent: posting the same row twice yields the same ON CONFLICT clause', async () => {
+    const { repo, captured } = rawSensorRepoSpy();
+    const service = svc(repo);
+
+    const row = {
+      tableName: 'raw_sensor_records',
+      rows: [{ timestamp: 1716552000000, heartRate: 65 } as any],
+    };
+    await service.ingestTable('user-1', row as any);
+    const firstConflict = captured.onConflictArg;
+    const firstValues = JSON.stringify(captured.values);
+
+    await service.ingestTable('user-1', row as any);
+    expect(captured.onConflictArg).toBe(firstConflict);
+    expect(JSON.stringify(captured.values)).toBe(firstValues);
+  });
+
+  it('rejects unknown table names with 400 so the mobile drainer retains the row', async () => {
+    const { repo } = rawSensorRepoSpy();
+    const service = svc(repo);
+
+    await expect(
+      service.ingestTable('user-1', {
+        tableName: 'made_up_table',
+        rows: [{ id: 'r1' } as any],
+      } as any),
+    ).rejects.toThrow(/no handler registered for table "made_up_table"/);
+  });
+
+  it('returns zero stored when rows is empty without touching the DB', async () => {
+    const { repo, spies } = rawSensorRepoSpy();
+    const service = svc(repo);
+
+    const res = await service.ingestTable('user-1', {
+      tableName: 'raw_sensor_records',
+      rows: [],
+    } as any);
+
+    expect(res).toEqual({ table: 'raw_sensor_records', stored: 0 });
+    expect(spies.createQueryBuilder).not.toHaveBeenCalled();
+  });
+
+  it('filters rows with non-finite timestamps before upserting', async () => {
+    const { repo, captured } = rawSensorRepoSpy();
+    const service = svc(repo);
+
+    await service.ingestTable('user-1', {
+      tableName: 'raw_sensor_records',
+      rows: [
+        { timestamp: 1716552000000, heartRate: 65 } as any,
+        { timestamp: 'not-a-number', heartRate: 70 } as any,
+        { timestamp: NaN, heartRate: 75 } as any,
+      ],
+    } as any);
+
+    expect(captured.values).toHaveLength(1);
+    expect((captured.values as any[])[0].heartRate).toBe(65);
+  });
+});
+
+describe('PipelineService sweepStalePipelineRuns', () => {
+  function pipelineRunRepoSpy(affected: number) {
+    const execute = jest.fn().mockResolvedValue({ affected });
+    const andWhere = jest.fn().mockReturnThis();
+    const where = jest.fn().mockReturnThis();
+    const setMock = jest.fn().mockReturnThis();
+    const update = jest.fn().mockReturnThis();
+    const qb = { update, set: setMock, where, andWhere, execute };
+    const captured = { setCalledWith: undefined as any };
+    setMock.mockImplementation((arg: any) => {
+      captured.setCalledWith = arg;
+      return qb;
+    });
+    return {
+      repo: { createQueryBuilder: jest.fn(() => qb) } as any,
+      captured,
+      spies: { update, set: setMock, where, andWhere, execute },
+    };
+  }
+
+  it('flips rows past heartbeat cutoff from running → failed', async () => {
+    const { repo, spies, captured } = pipelineRunRepoSpy(3);
+    const service = new PipelineService(
+      {} as any, {} as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any, {} as any, {} as any,
+      repo,
+      {} as any, {} as any,
+      { isEnabled: () => false } as any,
+    );
+
+    const recovered = await service.sweepStalePipelineRuns(60_000);
+
+    expect(recovered).toBe(3);
+    expect(spies.where).toHaveBeenCalledWith('status = :status', { status: 'running' });
+    expect(spies.andWhere).toHaveBeenCalledWith('"heartbeatAt" IS NOT NULL');
+    expect(captured.setCalledWith).toMatchObject({ status: 'failed' });
+    expect(captured.setCalledWith.error).toMatch(/heartbeat timeout/);
+  });
+
+  it('returns 0 when no rows are stale', async () => {
+    const { repo } = pipelineRunRepoSpy(0);
+    const service = new PipelineService(
+      {} as any, {} as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any, {} as any, {} as any, {} as any,
+      {} as any, {} as any, {} as any, {} as any,
+      repo,
+      {} as any, {} as any,
+      { isEnabled: () => false } as any,
+    );
+
+    const recovered = await service.sweepStalePipelineRuns();
+    expect(recovered).toBe(0);
+  });
+});
+
 describe('PipelineService derived cleanup', () => {
   it('deletes stale sleep-derived rows for observed days that are no longer computed', async () => {
     const repo = repoWithDeleteSpy();

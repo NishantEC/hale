@@ -1022,6 +1022,41 @@ export class PipelineService {
       error: null,
     });
 
+    // Phase A.3: when PIPELINE_WORKER_URL is set, hand off to the Rust
+    // worker. Falls back to the in-process path on any failure so a
+    // misconfigured worker URL never strands a user.
+    const workerUrl = process.env.PIPELINE_WORKER_URL?.trim();
+    if (workerUrl) {
+      const delegated = await this.delegateToWorker(
+        workerUrl,
+        userId,
+        timeZoneInput,
+        row.id,
+      );
+      if (delegated) {
+        await this.pipelineRunRepo.update(
+          { id: row.id },
+          { workerSource: 'rust-worker' },
+        );
+        return {
+          runId: row.id,
+          status: row.status,
+          startedAt: row.startedAt.toISOString(),
+          deduped: false,
+        };
+      }
+      // Delegation failed — fall through to in-process path. Log loud
+      // so we notice the worker is unreachable.
+      this.logger.warn(
+        `enqueuePipelineRun: worker delegation failed for run ${row.id}; falling back to in-process`,
+      );
+    }
+
+    await this.pipelineRunRepo.update(
+      { id: row.id },
+      { workerSource: 'nest-in-process' },
+    );
+
     // Fire-and-forget. The async worker flips status, runs the
     // pipeline, and finalises the row. Cloud Run keeps the instance
     // warm while clients poll GET /pipeline/run/:id, so the post-
@@ -1034,6 +1069,39 @@ export class PipelineService {
       startedAt: row.startedAt.toISOString(),
       deduped: false,
     };
+  }
+
+  private async delegateToWorker(
+    workerUrl: string,
+    userId: string,
+    timeZoneInput: string | undefined,
+    runId: string,
+  ): Promise<boolean> {
+    const url = `${workerUrl.replace(/\/+$/, '')}/v1/worker/run`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          run_id: runId,
+          time_zone: timeZoneInput ?? null,
+        }),
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!res.ok) {
+        this.logger.warn(
+          `delegateToWorker(${runId}): worker responded ${res.status}`,
+        );
+        return false;
+      }
+      return true;
+    } catch (err: any) {
+      this.logger.warn(
+        `delegateToWorker(${runId}): ${err?.message ?? String(err)}`,
+      );
+      return false;
+    }
   }
 
   private async runPipelineAsync(
@@ -1088,13 +1156,45 @@ export class PipelineService {
       skipped: row.skipped,
       startedAt: row.startedAt.toISOString(),
       completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+      heartbeatAt: row.heartbeatAt ? row.heartbeatAt.toISOString() : null,
       durationMs: row.durationMs,
       detections: row.detections,
       sleepStages: row.sleepStages,
       features: row.features,
       stages: row.stages,
+      workerSource: row.workerSource,
       error: row.error,
     };
+  }
+
+  // Stale-run recovery: any 'running' row whose heartbeatAt hasn't
+  // advanced in the threshold window is assumed to belong to a dead
+  // worker. We flip it to 'failed' so the user-inflight partial index
+  // releases and a fresh run can be enqueued.
+  //
+  // Called from a periodic task (cron / scheduled job). Returns the
+  // number of rows recovered for observability.
+  async sweepStalePipelineRuns(staleAfterMs = 5 * 60 * 1000): Promise<number> {
+    const cutoff = new Date(Date.now() - staleAfterMs);
+    const result = await this.pipelineRunRepo
+      .createQueryBuilder()
+      .update(PipelineRun)
+      .set({
+        status: 'failed',
+        completedAt: new Date(),
+        error: `heartbeat timeout (no beat since ${cutoff.toISOString()})`,
+      })
+      .where('status = :status', { status: 'running' })
+      .andWhere('"heartbeatAt" IS NOT NULL')
+      .andWhere('"heartbeatAt" < :cutoff', { cutoff })
+      .execute();
+    const recovered = result.affected ?? 0;
+    if (recovered > 0) {
+      this.logger.warn(
+        `sweepStalePipelineRuns: recovered ${recovered} run(s) stuck past heartbeat threshold ${staleAfterMs}ms`,
+      );
+    }
+    return recovered;
   }
 
   async getResults(userId: string) {

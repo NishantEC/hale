@@ -65,4 +65,22 @@ export class PipelineRun {
 
   @Column('text', { nullable: true })
   error: string | null;
+
+  // Bumped by the worker every ~30s while status='running'. The
+  // stale-run sweeper flips any row with heartbeatAt < now-5min back
+  // to 'failed' so dedupe doesn't block forever. See migration
+  // PipelineRunLeaseHeartbeat1779900000000 for the index.
+  @Column('timestamptz', { nullable: true })
+  heartbeatAt: Date | null;
+
+  // Unique-per-attempt token. Compare-and-swap on update lets a second
+  // worker (or a Cloud Tasks retry) detect "someone else owns this run".
+  @Column('varchar', { length: 64, nullable: true })
+  leaseId: string | null;
+
+  // 'nest-in-process' | 'rust-worker'. Observability during the Phase B
+  // migration; lets us see which stages have flipped over and which
+  // user runs landed on which worker.
+  @Column('varchar', { length: 32, nullable: true })
+  workerSource: string | null;
 }
