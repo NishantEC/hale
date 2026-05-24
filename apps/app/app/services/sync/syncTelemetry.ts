@@ -128,7 +128,14 @@ function emit() {
 
 export function recordDrainOutcome(rec: DrainOutcomeRecord): void {
   lastDrain = rec
-  drainHistory = [rec, ...drainHistory].slice(0, MAX_DRAIN_HISTORY)
+  // Dedup adjacent skipped:"locked" entries. A long-held lock + 15s drain tick
+  // would otherwise fill the 20-entry ring in ~5 minutes and evict useful history.
+  const head = drainHistory[0]
+  if (rec.skipped === "locked" && head?.skipped === "locked") {
+    drainHistory = [rec, ...drainHistory.slice(1)]
+  } else {
+    drainHistory = [rec, ...drainHistory].slice(0, MAX_DRAIN_HISTORY)
+  }
   emit()
 }
 

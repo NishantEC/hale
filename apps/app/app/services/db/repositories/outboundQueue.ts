@@ -265,31 +265,30 @@ export async function recordOutboundFailureBatch(
       }
       return
     }
-    // Transient: bump attempts in-place via SQL expression so we don't
-    // need a read-modify-write loop. Cap `attempts` at MAX_TRANSIENT_ATTEMPTS
-    // so transient failures never cross the dead-letter threshold —
-    // backoff still grows (computed off the raw attempt count via
-    // MIN(20, attempts) below) but the row stays claimable forever.
-    // Backoff schedule lives in SQL too (jitter omitted in batch path —
-    // close enough; per-row callsite still has jittered backoff).
-    // Release the lease so the row can be re-claimed when its backoff
-    // window opens.
+    // Transient: read current attempts per chunk, compute next attempt + jittered
+    // backoff in JS for parity with the per-row path (recordOutboundFailure), then
+    // write each row individually inside the same tx.
     for (let i = 0; i < ids.length; i += CHUNK) {
       const slice = ids.slice(i, i + CHUNK)
-      await tx
-        .update(outboundQueue)
-        .set({
-          attempts: sql`MIN(${MAX_TRANSIENT_ATTEMPTS}, ${outboundQueue.attempts} + 1)`,
-          lastAttemptAt: now,
-          lastError: errorMessage,
-          nextAttemptAt: sql`${now} + MIN(
-            ${BACKOFF_MAX_MS},
-            ${BACKOFF_BASE_MS} * (1 << MIN(20, ${outboundQueue.attempts}))
-          )`,
-          claimedBy: null,
-          claimExpiresAt: 0,
-        })
+      const rows = await tx
+        .select({ id: outboundQueue.id, attempts: outboundQueue.attempts })
+        .from(outboundQueue)
         .where(inArray(outboundQueue.id, slice))
+      for (const row of rows) {
+        const rawAttempts = (row.attempts ?? 0) + 1
+        const nextAttempts = Math.min(rawAttempts, MAX_TRANSIENT_ATTEMPTS)
+        await tx
+          .update(outboundQueue)
+          .set({
+            attempts: nextAttempts,
+            lastAttemptAt: now,
+            lastError: errorMessage,
+            nextAttemptAt: now + backoffDelayMs(rawAttempts),
+            claimedBy: null,
+            claimExpiresAt: 0,
+          })
+          .where(eq(outboundQueue.id, row.id))
+      }
     }
   })
 }

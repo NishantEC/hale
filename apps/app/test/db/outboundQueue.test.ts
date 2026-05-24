@@ -3,6 +3,7 @@ import {
   claimOutboundBatch,
   markOutboundSynced,
   recordOutboundFailure,
+  recordOutboundFailureBatch,
   listDeadLetters,
 } from "../../app/services/db/repositories/outboundQueue"
 import { makeTestDb } from "./helpers"
@@ -65,5 +66,37 @@ describe("outboundQueue", () => {
     const dead = await listDeadLetters(db)
     expect(dead).toHaveLength(1)
     expect(dead[0].lastError).toBe("400 Bad Request")
+  })
+
+  it("recordOutboundFailureBatch matches per-row backoff schedule", async () => {
+    const db = makeTestDb() as any
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "x", payload: {} })
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "y", payload: {} })
+    const claimed = await claimOutboundBatch(db, 10)
+    await recordOutboundFailureBatch(db, claimed.map((r) => r.id), "500 server error")
+
+    // Both rows: attempts bumped, lease released, nextAttemptAt in the future.
+    const future = Date.now() + 60 * 60 * 1_000 + 60_000
+    const retry = await claimOutboundBatch(db, 10, future)
+    expect(retry).toHaveLength(2)
+    for (const r of retry) {
+      expect(r.attempts).toBe(1)
+      expect(r.lastError).toBe("500 server error")
+    }
+  })
+
+  it("recordOutboundFailureBatch caps attempts at MAX_TRANSIENT_ATTEMPTS (9)", async () => {
+    const db = makeTestDb() as any
+    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "z", payload: {} })
+    const [row] = await claimOutboundBatch(db, 10)
+    // 20 consecutive transient failures
+    for (let i = 0; i < 20; i++) {
+      await recordOutboundFailureBatch(db, [row.id], "transient")
+    }
+    const future = Date.now() + 60 * 60 * 1_000 + 60_000
+    const [retried] = await claimOutboundBatch(db, 10, future)
+    expect(retried.attempts).toBe(9)
+    // Not dead-lettered — transient cap is below MAX_ATTEMPTS_BEFORE_DEAD_LETTER (10).
+    expect(await listDeadLetters(db)).toHaveLength(0)
   })
 })
