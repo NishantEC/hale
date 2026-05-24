@@ -61,6 +61,10 @@ export const AuthProvider: FC<PropsWithChildren> = ({ children }) => {
 
   useEffect(() => {
     registerSessionClearedCallback(() => {
+      // Delete the persisted token too — otherwise app restart re-reads
+      // a known-bad token from SecureStore and we 401-loop. fire-and-forget
+      // is fine; the in-memory clear below is what unblocks rendering.
+      SecureStore.deleteItemAsync(SECURE_TOKEN_KEY).catch(() => undefined)
       setAuthTokenState(null)
       setActiveUserId(null)
     })
