@@ -12,6 +12,7 @@ import { fftRadix2, makeHannWindow } from './hrv-frequency.js';
 // ── Types ────────────────────────────────────────────────
 
 export type ActivityType =
+  | 'Exercise'
   | 'Running'
   | 'Walking'
   | 'Hiking'
@@ -362,7 +363,17 @@ function classifyBout(
   // Impact ratio (Z-axis peak-to-trough normalized by motion intensity)
   const impactRatio = computeImpactScore(boutRecords, motionIntensity);
 
-  // Classify
+  // Classify. Historical packets carry low-rate gravity only (~1/min),
+  // not the 52 Hz IMU stream cadence detection actually needs. Specific
+  // sport labels (Running, Walking, Cycling) require cadence + impact
+  // signatures we can't compute from this data — the cadence-gated
+  // branches never fire. So we only emit labels the data can support:
+  // Sedentary / Rest from stillness + HR, "Exercise" for everything
+  // else with intensity derived from HR zone. The honest type label
+  // gets filled in later by:
+  //   - applyHealthkitWorkoutMatches (Apple Watch ground truth)
+  //   - reclassifyHiking / reclassifyStairs (HK flightsClimbed signal)
+  //   - the user, via the CandidateCard swipe prompt
   let activityType: ActivityType;
   let confidence = 0.5;
 
@@ -371,41 +382,15 @@ function classifyBout(
     confidence = 0.9;
   } else if (motionIntensity < 0.02 && hrZone <= 1) {
     activityType = 'Rest';
-    confidence = 0.7;
-  } else if (
-    cadenceHz != null &&
-    cadenceHz >= CADENCE_RUNNING_LOW && cadenceHz <= CADENCE_RUNNING_HIGH &&
-    impactRatio > 3.0
-  ) {
-    activityType = 'Running';
-    confidence = 0.8;
-  } else if (
-    cadenceHz != null &&
-    cadenceHz >= CADENCE_WALKING_LOW && cadenceHz <= CADENCE_WALKING_HIGH &&
-    impactRatio > 1.5
-  ) {
-    activityType = 'Walking';
-    confidence = 0.7;
-  } else if (
-    cadenceHz != null &&
-    cadenceHz >= CADENCE_CYCLING_LOW && cadenceHz <= CADENCE_CYCLING_HIGH &&
-    impactRatio < 1.0 &&
-    hrZone >= 2
-  ) {
-    activityType = 'Cycling';
-    confidence = 0.6;
-  } else if (motionVariance > 0.5 && hrZone >= 3) {
-    activityType = 'HIIT';
-    confidence = 0.5;
-  } else if (motionIntensity > 0.05 && motionVariance < 0.15) {
-    activityType = 'Strength';
-    confidence = 0.5;
-  } else if (hrZone >= 2) {
-    activityType = 'General Exercise';
-    confidence = 0.4;
+    confidence = 0.75;
+  } else if (hrZone >= 2 || motionIntensity > 0.03) {
+    activityType = 'Exercise';
+    // Both motion AND elevated HR ⇒ very confident a bout happened.
+    // Motion alone ⇒ still confident but slightly less.
+    confidence = hrZone >= 2 && motionIntensity > 0.03 ? 0.85 : 0.7;
   } else {
     activityType = 'Light Activity';
-    confidence = 0.4;
+    confidence = 0.6;
   }
 
   // Intensity from HR zone

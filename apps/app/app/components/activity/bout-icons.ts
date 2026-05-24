@@ -16,6 +16,7 @@ function entry(sfSymbol: string, tintHex: string): ActivityVisual {
 }
 
 export const ACTIVITY_VISUALS = {
+  "Exercise":       entry("figure.run.motion", "#FBBF24"),
   "Running":        entry("figure.run", "#FF8A8A"),
   "Walking":        entry("figure.walk", "#4ADE80"),
   "Hiking":         entry("figure.hiking", "#A78BFA"),
