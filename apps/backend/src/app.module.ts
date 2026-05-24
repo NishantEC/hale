@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { databaseConfig } from './config/database.config.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -20,6 +21,7 @@ import { LivenessModule } from './liveness/liveness.module.js';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     TypeOrmModule.forRoot(databaseConfig()),
     AuthModule,
     SleepModule,

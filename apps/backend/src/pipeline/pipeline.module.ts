@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PipelineController } from './pipeline.controller.js';
 import { PipelineService } from './pipeline.service.js';
+import { PipelineSweeperService } from './pipeline-sweeper.service.js';
 import { RawSensorRecord } from './entities/raw-sensor-record.entity.js';
 import { PipelineState } from './entities/pipeline-state.entity.js';
 import { PipelineRun } from './entities/pipeline-run.entity.js';
@@ -44,7 +45,7 @@ import { ComputeEngineModule } from './compute-engine.module.js';
     ]),
   ],
   controllers: [PipelineController],
-  providers: [PipelineService],
+  providers: [PipelineService, PipelineSweeperService],
   exports: [PipelineService],
 })
 export class PipelineModule {}
