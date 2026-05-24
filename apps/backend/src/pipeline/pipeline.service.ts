@@ -494,11 +494,20 @@ export class PipelineService {
         .map((e) => ({ eventNumber: e.eventNumber, capturedAt: e.capturedAt })),
       wristEventWindowEnd,
     );
-    const sleepDetections = SleepEventEngine.detect(
-      sensorRecords,
-      timeZone,
-      offWristIntervals,
-    );
+    let sleepDetections: ReturnType<typeof SleepEventEngine.detect>;
+    if (process.env.WORKER_OWNS_SLEEP_DETECT === 'true') {
+      const persisted = await this.sleepDetectionRepo.find({
+        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+        order: { nightDate: 'ASC' },
+      });
+      sleepDetections = persisted.map((d) => sleepDetectionRowToSummary(d));
+    } else {
+      sleepDetections = SleepEventEngine.detect(
+        sensorRecords,
+        timeZone,
+        offWristIntervals,
+      );
+    }
     mark('sleep-detect');
 
     // Activity detection on non-sleep daytime periods. Surface off-wrist
@@ -1022,10 +1031,8 @@ export class PipelineService {
       error: null,
     });
 
-    // Phase A.3: when PIPELINE_WORKER_URL is set, hand off to the Rust
-    // worker. Falls back to the in-process path on any failure so a
-    // misconfigured worker URL never strands a user.
     const workerUrl = process.env.PIPELINE_WORKER_URL?.trim();
+    let workerSource: 'rust-worker' | 'nest-in-process' = 'nest-in-process';
     if (workerUrl) {
       const delegated = await this.delegateToWorker(
         workerUrl,
@@ -1034,33 +1041,19 @@ export class PipelineService {
         row.id,
       );
       if (delegated) {
-        await this.pipelineRunRepo.update(
-          { id: row.id },
-          { workerSource: 'rust-worker' },
+        workerSource = 'rust-worker';
+      } else {
+        this.logger.warn(
+          `enqueuePipelineRun: worker delegation failed for run ${row.id}; in-process path will compute worker-owned stages itself`,
         );
-        return {
-          runId: row.id,
-          status: row.status,
-          startedAt: row.startedAt.toISOString(),
-          deduped: false,
-        };
       }
-      // Delegation failed — fall through to in-process path. Log loud
-      // so we notice the worker is unreachable.
-      this.logger.warn(
-        `enqueuePipelineRun: worker delegation failed for run ${row.id}; falling back to in-process`,
-      );
     }
 
     await this.pipelineRunRepo.update(
       { id: row.id },
-      { workerSource: 'nest-in-process' },
+      { workerSource },
     );
 
-    // Fire-and-forget. The async worker flips status, runs the
-    // pipeline, and finalises the row. Cloud Run keeps the instance
-    // warm while clients poll GET /pipeline/run/:id, so the post-
-    // response work has CPU even on default --cpu-throttling.
     void this.runPipelineAsync(userId, timeZoneInput, row.id);
 
     return {
@@ -1737,6 +1730,22 @@ function groupBoutsByDay(bouts: ActivityBout[]): Map<string, ActivityBout[]> {
     map.set(key, arr);
   }
   return map;
+}
+
+function sleepDetectionRowToSummary(
+  d: SleepDetection,
+): import('../processing/interfaces.js').SleepDetectionSummary {
+  return {
+    nightDate: d.nightDate,
+    bedtime: d.bedtime,
+    wakeTime: d.wakeTime,
+    durationHours: d.durationHours,
+    interruptionCount: d.interruptionCount,
+    continuity: d.continuity,
+    regularity: d.regularity,
+    validCoverage: d.validCoverage,
+    confidence: d.confidence,
+  };
 }
 
 // Plausibility filter for HR — strap occasionally emits non-HR bytes (HR=6,

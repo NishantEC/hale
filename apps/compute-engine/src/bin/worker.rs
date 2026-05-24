@@ -1,12 +1,13 @@
 use anyhow::Context;
 use axum::{
+    Router,
     extract::State,
     http::StatusCode,
     response::{IntoResponse, Json},
     routing::{get, post},
-    Router,
 };
 use chrono::{DateTime, NaiveDate, Utc};
+use noop_compute_engine::math::sleep_detect::{self, HistoricalRecord, SleepDetectionSummary};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, PgPool};
@@ -39,6 +40,8 @@ struct RunTaskResponse {
     /// Number of (userId, dayDate) rows the worker upserted into
     /// pipeline_day_state during this call.
     day_state_upserts: u64,
+    /// Number of sleep_detections rows the worker wrote.
+    sleep_detections_written: usize,
     status: &'static str,
 }
 
@@ -61,13 +64,19 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
     {
         Ok(_) => (
             StatusCode::OK,
-            Json(HealthResponse { status: "ok", db: "ok" }),
+            Json(HealthResponse {
+                status: "ok",
+                db: "ok",
+            }),
         ),
         Err(err) => {
             tracing::error!(error = %err, "healthz db check failed");
             (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(HealthResponse { status: "degraded", db: "unreachable" }),
+                Json(HealthResponse {
+                    status: "degraded",
+                    db: "unreachable",
+                }),
             )
         }
     }
@@ -157,7 +166,8 @@ async fn run_task(
                 %time_zone,
                 ?since,
                 day_state_upserts = report.day_state_upserts,
-                "run_task: per-day fingerprints persisted"
+                sleep_detections_written = report.sleep_detections_written,
+                "run_task: fingerprints + sleep_detections persisted"
             );
             Ok(Json(RunTaskResponse {
                 user_id,
@@ -165,7 +175,8 @@ async fn run_task(
                 raw_row_count: report.raw_row_count,
                 raw_max_timestamp: report.raw_max_timestamp,
                 day_state_upserts: report.day_state_upserts,
-                status: "fingerprints-only",
+                sleep_detections_written: report.sleep_detections_written,
+                status: "sleep-detect-only",
             }))
         }
         Err(err) => {
@@ -191,6 +202,7 @@ struct RunReport {
     raw_row_count: i64,
     raw_max_timestamp: Option<DateTime<Utc>>,
     day_state_upserts: u64,
+    sleep_detections_written: usize,
 }
 
 async fn do_run_work(
@@ -218,11 +230,170 @@ async fn do_run_work(
     let fingerprints = day_fingerprints(pool, user_id, time_zone, since).await?;
     let day_state_upserts = upsert_day_state(pool, user_id, &fingerprints).await?;
 
+    // ─ Sleep detect ─────────────────────────────────────────────
+    let records = fetch_records_for_sleep(pool, user_id, since).await?;
+    let events = fetch_wrist_events(pool, user_id, since).await?;
+    let window_end = max_ts.unwrap_or_else(Utc::now);
+    let off_wrist = sleep_detect::build_off_wrist_intervals(&events, window_end);
+    let tz = parse_time_zone(time_zone);
+    let detections = sleep_detect::detect(&records, tz, &off_wrist);
+    let sleep_detections_written =
+        write_sleep_detections(pool, user_id, since, window_end, &detections).await?;
+
     Ok(RunReport {
         raw_row_count: count,
         raw_max_timestamp: max_ts,
         day_state_upserts,
+        sleep_detections_written,
     })
+}
+
+fn parse_time_zone(name: &str) -> Option<chrono_tz::Tz> {
+    chrono_tz::Tz::from_str(name).ok()
+}
+
+type SleepRecordRow = (
+    DateTime<Utc>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<bool>,
+);
+
+async fn fetch_records_for_sleep(
+    pool: &PgPool,
+    user_id: &str,
+    since: DateTime<Utc>,
+) -> anyhow::Result<Vec<HistoricalRecord>> {
+    let rows: Vec<SleepRecordRow> = sqlx::query_as(
+        r#"
+        SELECT
+            "timestamp",
+            "heartRate",
+            "gravityMagnitude",
+            "gravityX",
+            "gravityY",
+            "gravityZ",
+            "skinContact"
+        FROM raw_sensor_records
+        WHERE "userId" = $1
+          AND "timestamp" >= $2
+        ORDER BY "timestamp" ASC
+        "#,
+    )
+    .bind(user_id)
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .context("fetch raw_sensor_records for sleep_detect")?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(ts, hr, gm, gx, gy, gz, sc)| HistoricalRecord {
+            timestamp: ts,
+            heart_rate: hr.unwrap_or(0.0),
+            gravity_magnitude: gm,
+            gravity_x: gx,
+            gravity_y: gy,
+            gravity_z: gz,
+            skin_contact: sc,
+        })
+        .collect())
+}
+
+async fn fetch_wrist_events(
+    pool: &PgPool,
+    user_id: &str,
+    since: DateTime<Utc>,
+) -> anyhow::Result<Vec<(i32, DateTime<Utc>)>> {
+    let rows: Vec<(i32, DateTime<Utc>)> = sqlx::query_as(
+        r#"
+        SELECT "eventNumber"::int, "capturedAt"
+        FROM device_events
+        WHERE "userId" = $1
+          AND "capturedAt" >= $2
+          AND "eventNumber" IN (7, 8, 9, 10)
+        ORDER BY "capturedAt" ASC
+        "#,
+    )
+    .bind(user_id)
+    .bind(since)
+    .fetch_all(pool)
+    .await
+    .context("fetch device_events for off-wrist intervals")?;
+    Ok(rows)
+}
+
+/// Replace sleep_detections for the user inside (since, window_end+1d]
+/// with the freshly computed `detections`. One transaction so partial
+/// failures can't leave the table in an inconsistent state.
+async fn write_sleep_detections(
+    pool: &PgPool,
+    user_id: &str,
+    since: DateTime<Utc>,
+    window_end: DateTime<Utc>,
+    detections: &[SleepDetectionSummary],
+) -> anyhow::Result<usize> {
+    // Pad window_end by 1 day so a sleep that wakes after midnight on
+    // the last day is still cleaned up.
+    let prune_end = window_end + chrono::Duration::days(1);
+    let mut tx = pool.begin().await.context("begin sleep_detections tx")?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM sleep_detections
+        WHERE "userId" = $1
+          AND "nightDate" >= $2
+          AND "nightDate" <= $3
+        "#,
+    )
+    .bind(user_id)
+    .bind(since)
+    .bind(prune_end)
+    .execute(&mut *tx)
+    .await
+    .context("DELETE old sleep_detections")?;
+
+    let mut written = 0usize;
+    for d in detections {
+        sqlx::query(
+            r#"
+            INSERT INTO sleep_detections (
+                "userId",
+                "nightDate",
+                "bedtime",
+                "wakeTime",
+                "durationHours",
+                "interruptionCount",
+                "continuity",
+                "regularity",
+                "validCoverage",
+                "confidence",
+                "updatedAt"
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+            "#,
+        )
+        .bind(user_id)
+        .bind(d.night_date)
+        .bind(d.bedtime)
+        .bind(d.wake_time)
+        .bind(d.duration_hours)
+        .bind(d.interruption_count)
+        .bind(d.continuity)
+        .bind(d.regularity)
+        .bind(d.valid_coverage)
+        .bind(d.confidence)
+        .execute(&mut *tx)
+        .await
+        .context("INSERT sleep_detections row")?;
+        written += 1;
+    }
+
+    tx.commit().await.context("commit sleep_detections tx")?;
+    Ok(written)
 }
 
 /// Compare-and-swap status='queued' → 'running'. Returns true if we
@@ -435,7 +606,9 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("Postgres connectivity check failed at boot")?;
 
-    let state = AppState { pool: Arc::new(pool) };
+    let state = AppState {
+        pool: Arc::new(pool),
+    };
 
     let port: u16 = std::env::var("PORT")
         .ok()
