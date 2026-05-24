@@ -1,0 +1,17 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - '-f'
+      - 'Dockerfile.worker'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:dev-2026-05-25-2'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:latest'
+      - '.'
+images:
+  - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:dev-2026-05-25-2'
+  - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:latest'
+options:
+  machineType: 'E2_HIGHCPU_8'
+timeout: '1800s'

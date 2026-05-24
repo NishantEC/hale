@@ -8,8 +8,9 @@ use axum::{
 };
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::postgres::PgPoolOptions;
-use sqlx::PgPool;
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use sqlx::{ConnectOptions, PgPool};
+use std::str::FromStr;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use uuid::Uuid;
 
@@ -373,9 +374,42 @@ async fn upsert_day_state(
     Ok(total)
 }
 
+/// Build the Postgres connect options. Two flavours:
+///   1. DATABASE_URL set → parse via FromStr (sqlx connection string).
+///   2. {DB_USER,DB_PASSWORD,DB_NAME,INSTANCE_CONNECTION_NAME} set →
+///      build via PgConnectOptions with the CloudSQL UNIX socket
+///      Cloud Run mounts at /cloudsql/INSTANCE. Same secret names as
+///      the existing NestJS backend so we reuse live secrets.
+///
+/// The builder approach sidesteps URL-encoding pitfalls — passwords
+/// with `@` / `:` / `/` flow through as-is.
+fn resolve_connect_options() -> anyhow::Result<PgConnectOptions> {
+    if let Ok(url) = std::env::var("DATABASE_URL") {
+        if !url.trim().is_empty() {
+            return PgConnectOptions::from_str(&url)
+                .context("DATABASE_URL is set but not a valid Postgres URL");
+        }
+    }
+
+    let user = std::env::var("DB_USER")?;
+    let password = std::env::var("DB_PASSWORD")?;
+    let db = std::env::var("DB_NAME")?;
+    let instance = std::env::var("INSTANCE_CONNECTION_NAME")?;
+    let socket_dir = format!("/cloudsql/{instance}");
+
+    Ok(PgConnectOptions::new()
+        .socket(socket_dir)
+        .username(&user)
+        .password(&password)
+        .database(&db)
+        .log_statements(tracing::log::LevelFilter::Debug))
+}
+
 fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/healthz", get(healthz))
+        // Cloud Run's load balancer intercepts /healthz, so use /v1/health
+        // for our own DB-backed liveness probe.
+        .route("/v1/health", get(healthz))
         .route("/v1/worker/run", post(run_task))
         .with_state(state)
 }
@@ -384,14 +418,15 @@ fn build_router(state: AppState) -> Router {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().json().with_target(false).init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .context("DATABASE_URL is required for the pipeline worker")?;
+    let connect_options = resolve_connect_options().context(
+        "no DB config — set DATABASE_URL, or {DB_USER,DB_PASSWORD,DB_NAME,INSTANCE_CONNECTION_NAME}",
+    )?;
 
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .min_connections(1)
         .acquire_timeout(Duration::from_secs(10))
-        .connect(&database_url)
+        .connect_with(connect_options)
         .await
         .context("failed to open Postgres connection pool")?;
 

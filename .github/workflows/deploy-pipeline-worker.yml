@@ -1,0 +1,82 @@
+name: Deploy Pipeline Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/compute-engine/src/bin/worker.rs"
+      - "apps/compute-engine/src/**"
+      - "apps/compute-engine/Cargo.toml"
+      - "apps/compute-engine/Cargo.lock"
+      - "apps/compute-engine/Dockerfile.worker"
+      - ".github/workflows/deploy-pipeline-worker.yml"
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: flashckard
+  REGION: us-central1
+  SERVICE: noop-pipeline-worker
+  REGISTRY: us-central1-docker.pkg.dev/flashckard/noop
+  CLOUDSQL_INSTANCE: flashckard:us-central1:noop-db
+
+jobs:
+  deploy:
+    name: Build and Deploy Pipeline Worker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t ${{ env.REGISTRY }}/pipeline-worker:${{ github.sha }} \
+            -t ${{ env.REGISTRY }}/pipeline-worker:latest \
+            -f apps/compute-engine/Dockerfile.worker \
+            apps/compute-engine
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.REGISTRY }}/pipeline-worker:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/pipeline-worker:latest
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGISTRY }}/pipeline-worker:${{ github.sha }}
+          flags: |
+            --set-cloudsql-instances=${{ env.CLOUDSQL_INSTANCE }}
+            --set-env-vars=INSTANCE_CONNECTION_NAME=${{ env.CLOUDSQL_INSTANCE }}
+            --set-secrets=DB_USER=NOOP_DB_USER:latest,DB_PASSWORD=NOOP_DB_PASSWORD:latest,DB_NAME=NOOP_DB_NAME:latest
+            --service-account=noop-cloud-run@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+            --min-instances=0
+            --max-instances=5
+            --memory=1Gi
+            --cpu=1
+            --concurrency=10
+            --timeout=300
+            --allow-unauthenticated
+
+      - name: Show deployed URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} --region=${{ env.REGION }} --format='value(status.url)')
+          echo "::notice title=Pipeline Worker Deployed::$URL"
