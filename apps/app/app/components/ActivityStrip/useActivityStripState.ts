@@ -10,7 +10,6 @@ import { useBleStore } from "@/stores/bleStore"
 import { useSyncStore } from "@/stores/syncStore"
 import { useShallow } from "zustand/react/shallow"
 import { useSyncContext } from "@/context/SyncContext"
-import { runPipeline } from "@/services/api/noopClient"
 
 import {
   ACCESSORY_METADATA,
@@ -256,7 +255,6 @@ export function useActivityStripState(): ActivityStripView {
       return () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {})
         sync.refresh().catch(() => {})
-        runPipeline().catch(() => {})
       }
     }
     return () => {

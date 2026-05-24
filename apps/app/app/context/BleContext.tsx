@@ -41,7 +41,6 @@ import {
 } from "@/services/sync/continuousSyncDaemon"
 import {
   recordDetectedGap,
-  recordPipelineRun,
   recordSyncSession,
   type SyncSession,
 } from "@/services/sync/syncTelemetry"
@@ -52,13 +51,12 @@ import {
   stopAndroidForegroundService,
 } from "@/services/sync/androidForegroundService"
 import { historicalRecordToRawRow, ingestBleRecords } from "@/services/sync/bleIngest"
-import { shouldRunPipelineAfterSync } from "@/services/sync/pipelineTrigger"
 import {
   decideContinueSync,
   DEFAULT_CAUGHT_UP_WINDOW_MS,
   DEFAULT_MAX_ITERATIONS,
 } from "@/services/sync/syncLoop"
-import { runPipeline, fetchResults, SeriesPoint } from "@/services/api/noopClient"
+import { SeriesPoint } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAuth } from "@/context/AuthContext"
@@ -78,8 +76,6 @@ import {
   setSyncSummary as setStoreSyncSummary,
   setSyncIteration as setStoreSyncIteration,
   setSyncLastStopReason as setStoreSyncLastStopReason,
-  setPipelineState as setStorePipelineState,
-  setLastPipelineAt as setStoreLastPipelineAt,
   setLastBatchWindow as setStoreLastBatchWindow,
   setSyncError as setStoreSyncError,
   setScannedDevices as setStoreScannedDevices,
@@ -274,8 +270,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   // queued for delivery but never got to send before we aborted). The
   // preflight is only valuable when the prior session crashed mid-stream.
   const lastSyncCleanRef = useRef(true)
-  const isPipelineRunningRef = useRef(false)
-  const lastPipelineAtRef = useRef<number>(0)
   const lastAutoSyncAttemptAt = useRef<number>(0)
 
   // Sync-state scalars now live in syncStore (apps/app/app/stores/syncStore.ts).
@@ -301,8 +295,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const setSyncProgress = setStoreSyncProgress
   const setSyncSummary = setStoreSyncSummary
   const setLastBatchWindow = setStoreLastBatchWindow
-  const setPipelineState = setStorePipelineState
-  const setLastPipelineAt = setStoreLastPipelineAt
   const setSyncIteration = setStoreSyncIteration
   const setSyncLastStopReason = setStoreSyncLastStopReason
   const setError = setStoreSyncError
@@ -383,64 +375,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
   const disconnect = useCallback(async () => {
     await bleManager.disconnect()
   }, [])
-
-  // Fire-and-forget pipeline + view refresh. Sync UX completes as soon as the
-  // strap → SQLite leg finishes; the backend pipeline runs on its own clock.
-  // Throttled so a rapid burst of small syncs doesn't trigger a 10–25s
-  // backend pipeline every time.
-  const runPipelineInBackground = useCallback(
-    (persistedCount: number) => {
-      const msSinceLastRun =
-        lastPipelineAtRef.current === 0
-          ? Number.POSITIVE_INFINITY
-          : Date.now() - lastPipelineAtRef.current
-      if (
-        !shouldRunPipelineAfterSync({
-          persistedCount,
-          isCurrentlyRunning: isPipelineRunningRef.current,
-          msSinceLastRun,
-        })
-      ) {
-        console.log(
-          `[syncNow] skipping background pipeline (persisted=${persistedCount}, msSinceLastRun=${
-            Number.isFinite(msSinceLastRun) ? Math.round(msSinceLastRun / 1000) + "s" : "first"
-          }, running=${isPipelineRunningRef.current})`,
-        )
-        return
-      }
-      isPipelineRunningRef.current = true
-      const pipelineStartedAt = Date.now()
-      lastPipelineAtRef.current = pipelineStartedAt
-      setPipelineState("running")
-      void (async () => {
-        try {
-          await runPipeline()
-          const results = await fetchResults()
-          setSyncSummary({
-            nights: results.sleepDetections?.length ?? 0,
-            stages: results.sleepStages?.length ?? 0,
-            scores: results.dailyScores?.length ?? 0,
-          })
-          await refreshDashboard()
-          setPipelineState("success")
-          setLastPipelineAt(new Date().toISOString())
-        } catch (err: any) {
-          console.warn(
-            "[syncNow] background pipeline/fetchResults failed:",
-            err?.message ?? err,
-          )
-          setPipelineState("failed")
-        } finally {
-          // Surface the run to the telemetry ring whether success or failure
-          // so Inspector can answer "did the pipeline run, how long did it
-          // take?" without scraping the JS console.
-          recordPipelineRun(pipelineStartedAt, Date.now() - pipelineStartedAt)
-          isPipelineRunningRef.current = false
-        }
-      })()
-    },
-    [refreshDashboard],
-  )
 
   const syncNow = useCallback(async () => {
     console.log("[syncNow] start; bleState=", bleManager.connectionState)
@@ -649,12 +583,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       storage.set(LAST_SYNC_KEY, lastSyncAt)
       setBleLastSyncAt(lastSyncAt)
 
-      // Kick the backend pipeline off in the background. Sync UX is "done"
-      // once records are persisted locally and queued for upload; the
-      // pipeline is throttled inside runPipelineInBackground so frequent
-      // small syncs don't trigger a 10–25s backend run every time.
-      runPipelineInBackground(persistedCount)
-
+      // Backend owns pipeline triggering; Inspector's "Run pipeline" is the only manual override.
       void refreshDashboard().catch(() => {})
     } catch (nextError: any) {
       console.error("[syncNow] failed", nextError)
@@ -678,7 +607,7 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         error: sessionError,
       })
     }
-  }, [refreshDashboard, runPipelineInBackground])
+  }, [refreshDashboard])
 
   // Keep the daemon's syncNow handle pointing at the latest useCallback
   // instance every render.
