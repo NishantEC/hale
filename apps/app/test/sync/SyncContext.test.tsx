@@ -57,7 +57,7 @@ jest.mock("@/services/sync/refreshAllViews", () => ({
 }))
 
 jest.mock("@/services/sync/backgroundSync", () => ({
-  runBackgroundDrain: jest.fn(() => Promise.resolve({ ok: true, drained: 0 })),
+  runBackgroundDrain: jest.fn(() => Promise.resolve({ status: "no-session" })),
 }))
 
 jest.mock("@/services/sync/backgroundCatchupTask", () => ({

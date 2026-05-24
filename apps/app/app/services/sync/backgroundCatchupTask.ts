@@ -17,13 +17,16 @@ import { runBackgroundDrain } from "./backgroundSync"
 export const CATCHUP_TASK_NAME = "noop-strap-catchup-sync"
 
 TaskManager.defineTask(CATCHUP_TASK_NAME, async () => {
+  // Per Apple's BGTaskScheduler contract, Failed deprioritizes future grants.
+  // "No session" and "drain ran with POST errors" are not task-level failures —
+  // the task did its work, the data just didn't move. Only an uncaught throw
+  // counts as Failed; drainLoop's own outcome (failed/error) is captured via
+  // recordDrainOutcome telemetry, not via the OS result.
   try {
-    const result = await runBackgroundDrain(25_000)
-    return result.ok
-      ? BackgroundTask.BackgroundTaskResult.Success
-      : BackgroundTask.BackgroundTaskResult.Failed
+    await runBackgroundDrain(25_000)
+    return BackgroundTask.BackgroundTaskResult.Success
   } catch (err) {
-    console.warn("[bg-catchup] task failed", err)
+    console.warn("[bg-catchup] task threw", err)
     return BackgroundTask.BackgroundTaskResult.Failed
   }
 })

@@ -10,7 +10,8 @@
 // between these two transitions.
 import { Platform } from "react-native"
 import BackgroundService from "react-native-background-actions"
-import { runBackgroundDrain } from "./backgroundSync"
+import { openDatabase, runMigrations } from "../db"
+import { runBackgroundDrainWith } from "./backgroundSync"
 import {
   registerBackgroundCatchupTask,
   unregisterBackgroundCatchupTask,
@@ -30,9 +31,13 @@ const options = {
 
 const veryLongTask = async (taskParams?: { delay?: number }) => {
   const delay = taskParams?.delay ?? TASK_INTERVAL_MS
+  // Hoist DB + migrations above the loop — drizzle's migrate() re-scans the
+  // journal on every call, which adds up over hours of FGS uptime.
+  await runMigrations()
+  const db = openDatabase()
   while (BackgroundService.isRunning()) {
     try {
-      await runBackgroundDrain(20_000)
+      await runBackgroundDrainWith(db, 20_000)
     } catch (err) {
       console.warn("[android-fgs] drain iteration failed", err)
     }
