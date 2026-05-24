@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 
 import { SessionGuard } from '../auth/auth.guard.js';
+import { AdminGuard } from '../auth/admin.guard.js';
 import { DebugDateQueryDto } from './dto/debug-date-query.dto.js';
 import { DebugPipelineRunDto } from './dto/debug-pipeline-run.dto.js';
 import { DebugRawRecordsQueryDto } from './dto/debug-raw-records-query.dto.js';
@@ -100,7 +101,12 @@ export class DebugController {
     }
   }
 
+  // ADMIN ONLY. This endpoint runs the pipeline inline (synchronously)
+  // and can hold a Cloud Run request slot for minutes. Until it's
+  // migrated to the async job queue, restrict it to DEBUG_ADMIN_EMAILS
+  // so a random authenticated user can't starve global concurrency.
   @Post('pipeline/run')
+  @UseGuards(AdminGuard)
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async runPipeline(@Req() req: any, @Query() query: DebugPipelineRunDto) {
     try {
@@ -121,7 +127,10 @@ export class DebugController {
     }
   }
 
+  // ADMIN ONLY. Same reasoning as runPipeline — synchronous recompute
+  // that can hold a slot for minutes.
   @Post('views/recompute')
+  @UseGuards(AdminGuard)
   @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
   async recomputeViews(@Req() req: any, @Query() query: DebugDateQueryDto) {
     try {
@@ -169,7 +178,10 @@ export class DebugController {
     }
   }
 
+  // ADMIN ONLY. Demo-data seeding writes to real tables and could be
+  // abused to balloon a user's row count.
   @Post('seed')
+  @UseGuards(AdminGuard)
   async seedDemoData(@Req() req: any, @Query('nights') nights?: string) {
     try {
       const n = nights ? Math.min(Math.max(parseInt(nights, 10) || 7, 1), 30) : 7;
