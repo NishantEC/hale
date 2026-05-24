@@ -71,6 +71,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
   // promise instead of being silently dropped. Foreground resume can then
   // safely await the drain before triggering downlink pull.
   const drainPromiseRef = useRef<Promise<DrainLoopOutcome | null> | null>(null)
+  const pullPromiseRef = useRef<Promise<void> | null>(null)
 
   const drainFn = useCallback(async (): Promise<DrainLoopOutcome | null> => {
     if (drainPromiseRef.current) return drainPromiseRef.current
@@ -133,24 +134,37 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
   }, [])
 
   const pullFn = useCallback(async () => {
+    // Single-flight: concurrent callers share the same in-flight pull so
+    // setLastSyncAt writes can't race and rewind the downlink cursor.
+    if (pullPromiseRef.current) return pullPromiseRef.current
     if (!peekActiveUserId()) return
     if (!isOnlineRef.current) return
-    const db = openDatabase()
-    await pullDownlink(db, {
-      apiGet: async (path) => apiGet(path),
-      tables: [
-        "daily_metrics",
-        "daily_scores",
-        "sleep_detections",
-        "sleep_stages",
-        "night_features",
-        "signal_samples",
-        "activity_detections",
-        "baseline_profile",
-        "sleep_plans",
-      ],
-    })
-    await refreshAllViews(db)
+
+    const p = (async () => {
+      try {
+        const db = openDatabase()
+        await pullDownlink(db, {
+          apiGet: async (path) => apiGet(path),
+          tables: [
+            "daily_metrics",
+            "daily_scores",
+            "sleep_detections",
+            "sleep_stages",
+            "night_features",
+            "signal_samples",
+            "activity_detections",
+            "baseline_profile",
+            "sleep_plans",
+          ],
+        })
+        await refreshAllViews(db)
+      } finally {
+        pullPromiseRef.current = null
+      }
+    })()
+
+    pullPromiseRef.current = p
+    return p
   }, [])
 
   // Sequential: drain THEN pull. A concurrent (Promise.all) pull on top of an

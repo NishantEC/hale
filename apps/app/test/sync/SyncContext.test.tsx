@@ -52,6 +52,10 @@ jest.mock("@/services/sync/uplinkDrainer", () => ({
   drainLoop: (...args: unknown[]) => mockDrainLoop(...args),
 }))
 
+jest.mock("@/services/sync/refreshAllViews", () => ({
+  refreshAllViews: jest.fn(() => Promise.resolve()),
+}))
+
 jest.mock("@/services/sync/backgroundSync", () => ({
   runBackgroundDrain: jest.fn(() => Promise.resolve({ ok: true, drained: 0 })),
 }))
@@ -176,6 +180,65 @@ describe("SyncContext", () => {
     })
 
     expect(mockDrainLoop).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      renderer?.unmount()
+    })
+  })
+
+  it("coalesces concurrent pullFn calls into a single in-flight pull", async () => {
+    let resolvePull: (() => void) | null = null
+    mockPullDownlink.mockReset()
+    mockPullDownlink.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePull = () => resolve()
+        }),
+    )
+
+    let captured: ReturnType<typeof useSyncContext> | null = null
+    function Probe() {
+      captured = useSyncContext()
+      return null
+    }
+
+    let renderer: TestRenderer.ReactTestRenderer | null = null
+    await act(async () => {
+      renderer = TestRenderer.create(
+        <SyncProvider isDbReady>
+          <Probe />
+        </SyncProvider>,
+      )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveNetworkState?.({ isInternetReachable: true })
+      await Promise.resolve()
+    })
+
+    // Two concurrent refreshes — both await drain (single-flight) then pull.
+    let r1: Promise<void> | undefined
+    let r2: Promise<void> | undefined
+    await act(async () => {
+      r1 = captured!.refresh()
+      r2 = captured!.refresh()
+      await Promise.resolve()
+    })
+
+    expect(mockPullDownlink).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolvePull?.()
+      await r1
+      await r2
+    })
+
+    // After resolution a third refresh starts a brand-new pull.
+    await act(async () => {
+      mockPullDownlink.mockResolvedValueOnce(undefined)
+      await captured!.refresh()
+    })
+    expect(mockPullDownlink).toHaveBeenCalledTimes(2)
 
     await act(async () => {
       renderer?.unmount()
