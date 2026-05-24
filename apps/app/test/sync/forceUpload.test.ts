@@ -15,8 +15,7 @@ function makeDeps(overrides: Partial<Parameters<typeof runForceUpload>[1]["deps"
     claimOutboundBatch: jest.fn().mockResolvedValue([]),
     clearOutboundClaim: jest.fn().mockResolvedValue(undefined),
     listDeadLetters: jest.fn().mockResolvedValue([]),
-    markOutboundSynced: jest.fn().mockResolvedValue(undefined),
-    markRawSensorRecordsSynced: jest.fn().mockResolvedValue(undefined),
+    markUploaded: jest.fn().mockResolvedValue(undefined),
     queueDepth: jest.fn().mockResolvedValue(0),
     recordOutboundFailure: jest.fn().mockResolvedValue(undefined),
     recordOutboundFailureBatch: jest.fn().mockResolvedValue(undefined),
@@ -63,8 +62,7 @@ describe("runForceUpload", () => {
     expect(deps.recordOutboundFailureBatch.mock.calls[0][1]).toHaveLength(
       FORCE_UPLOAD_BATCH_SIZE,
     )
-    expect(deps.markOutboundSynced).not.toHaveBeenCalled()
-    expect(deps.markRawSensorRecordsSynced).not.toHaveBeenCalled()
+    expect(deps.markUploaded).not.toHaveBeenCalled()
     expect(progress).toContain("0/2204")
     expect(result).toEqual({
       deadCount: 0,
@@ -94,10 +92,11 @@ describe("runForceUpload", () => {
 
     expect(claim).toHaveBeenCalledTimes(3)
     expect(post).toHaveBeenCalledTimes(2)
-    expect(deps.markOutboundSynced).toHaveBeenCalledTimes(2)
-    expect(deps.markRawSensorRecordsSynced).toHaveBeenCalledTimes(2)
-    expect(deps.markRawSensorRecordsSynced).toHaveBeenLastCalledWith(
+    expect(deps.markUploaded).toHaveBeenCalledTimes(2)
+    expect(deps.markUploaded).toHaveBeenLastCalledWith(
       db,
+      "raw_sensor_records",
+      batch2.map((r: any) => r.id),
       batch2.map((r: any) => r.rowId),
       123_456_789,
     )
@@ -133,7 +132,7 @@ describe("runForceUpload", () => {
     // marks synced.
     const tablesPosted = post.mock.calls.map((c) => c[0])
     expect(tablesPosted.sort()).toEqual(["raw_sensor_records", "signal_samples"])
-    expect(deps.markOutboundSynced).toHaveBeenCalledTimes(1) // only signal_samples
+    expect(deps.markUploaded).toHaveBeenCalledTimes(1) // only signal_samples
     // Was per-row; now ONE batched call with 3 raw_sensor_records rows.
     expect(deps.recordOutboundFailureBatch).toHaveBeenCalledTimes(1)
     expect(deps.recordOutboundFailureBatch.mock.calls[0][1]).toHaveLength(3)

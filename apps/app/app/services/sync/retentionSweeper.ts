@@ -4,6 +4,7 @@ import { withWrite } from "../db/transaction"
 import {
   consoleLogs,
   deviceEvents,
+  journalEntries,
   rawSensorRecords,
   realtimeSamples,
   viewCache,
@@ -73,6 +74,16 @@ export async function sweepRetention(db: NoopDatabase, opts: SweepOptions): Prom
           eq(consoleLogs.userId, userId),
           isNotNull(consoleLogs._syncedAt),
           lt(consoleLogs.capturedAt, cutoff),
+        ),
+      )
+
+    await tx
+      .delete(journalEntries)
+      .where(
+        and(
+          eq(journalEntries.userId, userId),
+          isNotNull(journalEntries._syncedAt),
+          lt(journalEntries.timestamp, cutoff),
         ),
       )
 

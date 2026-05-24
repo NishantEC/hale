@@ -7,15 +7,12 @@ import {
 import {
   claimOutboundBatch,
   clearOutboundClaim,
-  markOutboundSynced,
   oldestPendingAt,
   queueDepth,
   recordOutboundFailureBatch,
 } from "../db/repositories/outboundQueue"
-import {
-  backfillUnsyncedRawSensorRecords,
-  markRawSensorRecordsSynced,
-} from "../db/repositories/rawSensorRecord"
+import { backfillUnsyncedRawSensorRecords } from "../db/repositories/rawSensorRecord"
+import { markUploaded } from "../db/repositories/mirrorSync"
 import { recordDrainOutcome } from "./syncTelemetry"
 
 export interface DrainOptions {
@@ -113,27 +110,18 @@ export async function drainOnce(
     // can be re-claimed; on the next claim, the backend's idempotency
     // on (tableName, rowId) handles the duplicate POST gracefully.
     try {
-      await markOutboundSynced(db, ids)
-      if (tableName === "raw_sensor_records") {
-        await markRawSensorRecordsSynced(
-          db,
-          rows.map((r) => r.rowId),
-          Date.now(),
-        )
-      }
+      await markUploaded(db, tableName, ids, rows.map((r) => r.rowId), Date.now())
       outcome.succeeded += rows.length
     } catch (err: any) {
-      const errorMessage = err?.message ?? "mark-synced failed"
+      const errorMessage = err?.message ?? "markUploaded failed"
       console.error(
-        "[drainOnce] POST succeeded but markOutboundSynced failed —",
-        "rows will re-POST on next drain; backend must be idempotent on (tableName, rowId).",
-        "ids=", ids.slice(0, 5).join(","),
-        ids.length > 5 ? `+${ids.length - 5} more` : "",
+        "[drainOnce] POST succeeded but markUploaded failed — rows will re-POST on next drain; backend must be idempotent on (tableName, rowId).",
+        "ids=", ids.slice(0, 5).join(","), ids.length > 5 ? `+${ids.length - 5} more` : "",
         "err=", errorMessage,
       )
       await clearOutboundClaim(db, ids).catch(() => {})
       outcome.failed += rows.length
-      if (!outcome.error) outcome.error = `mark-synced failed: ${errorMessage}`
+      if (!outcome.error) outcome.error = `markUploaded failed: ${errorMessage}`
     }
   }
 
