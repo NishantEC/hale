@@ -171,45 +171,24 @@ export const CandidateCard: FC<Props> = ({ card, onConfirm, onDismiss }) => {
         </Animated.View>
 
         <View style={styles.content}>
-          <View style={styles.topRow}>
-            <View style={[styles.pill, { backgroundColor: hexWithAlpha(colors.statusAmber, 0.15), borderColor: hexWithAlpha(colors.statusAmber, 0.3) }]}>
-              <View style={[styles.pillDot, { backgroundColor: colors.statusAmber }]} />
-              <Text
-                text="NEW ACTIVITY"
-                style={{ color: colors.statusAmber, fontSize: 9, fontWeight: "800", letterSpacing: 1.3 }}
-              />
+          <Pressable onPress={() => setSheetOpen(true)} style={styles.headlineRow}>
+            <View style={[styles.iconTile, { backgroundColor: v.backgroundHex }]}>
+              <SymbolView name={v.sfSymbol as never} size={14} tintColor={v.tintHex} resizeMode="scaleAspectFit" />
             </View>
+            <Text
+              text={chosenType}
+              style={{ color: colors.text, fontSize: 18, fontWeight: "700", letterSpacing: -0.3, flexShrink: 1 }}
+            />
+            <Text
+              text="▾"
+              style={{ color: colors.textMuted, fontSize: 11, fontWeight: "700", marginLeft: 2 }}
+            />
             <View style={{ flex: 1 }} />
             <Text
-              text="conf "
-              style={{ color: colors.textMuted, fontSize: 10, fontWeight: "700", letterSpacing: 0.3 }}
-            />
-            <Text
               text={`${conf}%`}
-              style={{ color: confColor, fontSize: 10, fontWeight: "800", fontVariant: ["tabular-nums"] }}
+              style={{ color: confColor, fontSize: 11, fontWeight: "800", fontVariant: ["tabular-nums"] }}
             />
-          </View>
-
-          <View style={styles.sentence}>
-            <Text
-              text="This was a "
-              style={{ color: colors.text, fontSize: 15, fontWeight: "700", letterSpacing: -0.2 }}
-            />
-            <Pressable
-              onPress={() => setSheetOpen(true)}
-              style={[styles.chip, { backgroundColor: v.backgroundHex }]}
-            >
-              <SymbolView name={v.sfSymbol as never} size={11} tintColor={v.tintHex} resizeMode="scaleAspectFit" />
-              <Text
-                text={chosenType}
-                style={{ color: v.tintHex, fontSize: 12, fontWeight: "700" }}
-              />
-              <Text
-                text="▾"
-                style={{ color: v.tintHex, fontSize: 9, opacity: 0.7 }}
-              />
-            </Pressable>
-          </View>
+          </Pressable>
 
           <View style={[styles.meta, { borderTopColor: colors.divider }]}>
             <Text
@@ -301,7 +280,6 @@ export const CandidateCard: FC<Props> = ({ card, onConfirm, onDismiss }) => {
 
 const styles = StyleSheet.create({
   card: {
-    marginHorizontal: 16,
     marginBottom: 12,
     borderRadius: 16,
     borderWidth: 1,
@@ -320,39 +298,18 @@ const styles = StyleSheet.create({
     position: "relative",
     zIndex: 1,
   } as ViewStyle,
-  topRow: {
+  headlineRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 10,
+    gap: 10,
+    marginBottom: 12,
   } as ViewStyle,
-  pill: {
-    flexDirection: "row",
+  iconTile: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
     alignItems: "center",
-    gap: 4,
-    paddingVertical: 3,
-    paddingHorizontal: 9,
-    borderRadius: 999,
-    borderWidth: 1,
-  } as ViewStyle,
-  pillDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  } as ViewStyle,
-  sentence: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 4,
-  } as ViewStyle,
-  chip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingVertical: 3,
-    paddingHorizontal: 9,
-    borderRadius: 999,
+    justifyContent: "center",
   } as ViewStyle,
   meta: {
     flexDirection: "row",
