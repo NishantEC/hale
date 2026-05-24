@@ -119,7 +119,7 @@ export async function drainOnce(
         "ids=", ids.slice(0, 5).join(","), ids.length > 5 ? `+${ids.length - 5} more` : "",
         "err=", errorMessage,
       )
-      await clearOutboundClaim(db, ids).catch(() => {})
+      await clearOutboundClaim(db, ids, holder).catch(() => {})
       outcome.failed += rows.length
       if (!outcome.error) outcome.error = `markUploaded failed: ${errorMessage}`
     }

@@ -17,6 +17,7 @@ import * as Updates from "expo-updates"
 import { apiGet, apiPost } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import { queueDepth, listDeadLetters } from "@/services/db/repositories/outboundQueue"
+import { makeDrainHolder } from "@/services/db/repositories/drainLock"
 import {
   DEFAULT_RAW_RETENTION_DAYS,
   SETTING_RAW_RETENTION_DAYS,
@@ -90,7 +91,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
             apiPost("/pipeline/ingest-table", { tableName, rows: payloads }, 60_000),
           batchSize: 200,
           maxMs: FOREGROUND_DRAIN_MAX_MS,
-          holder: "foreground",
+          holder: makeDrainHolder("foreground"),
         })
 
         // Surface outcome to UI honestly. Three cases:

@@ -1,6 +1,7 @@
 import * as SecureStore from "expo-secure-store"
 import { openDatabase, runMigrations, type NoopDatabase } from "../db"
 import { setSessionToken } from "../api/noopClient"
+import { makeDrainHolder } from "../db/repositories/drainLock"
 import { drainLoop } from "./uplinkDrainer"
 import type { DrainLoopOutcome } from "./uplinkDrainer"
 
@@ -31,7 +32,7 @@ export async function runBackgroundDrainWith(
       apiPost("/pipeline/ingest-table", { tableName, rows: payloads }, 60_000),
     batchSize: 200,
     maxMs,
-    holder: "background",
+    holder: makeDrainHolder("background"),
   })
   return { status: "drained", outcome }
 }

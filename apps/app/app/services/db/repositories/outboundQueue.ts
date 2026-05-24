@@ -148,16 +148,23 @@ export async function claimOutboundBatch(
 // e.g. the JS context is shutting down, or batching across tables and
 // one POST errored so we want to free the rest of the same claim batch
 // for the next drainer.
-export async function clearOutboundClaim(db: NoopDatabase, ids: string[]): Promise<void> {
+export async function clearOutboundClaim(
+  db: NoopDatabase,
+  ids: string[],
+  holder?: string,
+): Promise<void> {
   if (ids.length === 0) return
   const CHUNK = 500
   await withWrite(db, async (tx) => {
     for (let i = 0; i < ids.length; i += CHUNK) {
       const slice = ids.slice(i, i + CHUNK)
+      const whereClause = holder
+        ? and(inArray(outboundQueue.id, slice), eq(outboundQueue.claimedBy, holder))
+        : inArray(outboundQueue.id, slice)
       await tx
         .update(outboundQueue)
         .set({ claimedBy: null, claimExpiresAt: 0 })
-        .where(inArray(outboundQueue.id, slice))
+        .where(whereClause)
     }
   })
 }

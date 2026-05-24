@@ -6,6 +6,13 @@ import { drainLock } from "../schema"
 export const DRAIN_LOCK_NAME = "uplink"
 export const DEFAULT_DRAIN_LOCK_TTL_MS = 60_000
 
+// Unique per-call holder string so a TTL-overflow + restart can't let a
+// dying caller release a fresh caller's lock or claim. Pair with
+// releaseDrainLock/clearOutboundClaim's holder-scoped WHERE.
+export function makeDrainHolder(role: string): string {
+  return `${role}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`
+}
+
 export interface DrainLockHandle {
   holder: string
   expiresAt: number

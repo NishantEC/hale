@@ -2,6 +2,7 @@ import type { NoopDatabase } from "../db"
 import { isTransientApiError } from "../api/noopClient"
 import {
   acquireDrainLock,
+  makeDrainHolder,
   releaseDrainLock,
 } from "../db/repositories/drainLock"
 import {
@@ -79,19 +80,10 @@ export async function runForceUpload(
   const backfillLimit = opts.backfillLimit ?? FORCE_UPLOAD_BACKFILL_LIMIT
   const now = opts.now ?? Date.now
 
-  // Coordinate with the regular drainer via the shared SQLite drain lock.
-  // Without this, runForceUpload's claimOutboundBatch could SELECT the same
-  // eligible rows as an in-flight drainLoop before either lease became
-  // visible — both paths would then POST the same payloads. Backend
-  // idempotency on (tableName, rowId) absorbs most of it but pollutes
-  // dead-letter / attempt-count telemetry. TTL bumped to 5 min because
-  // Force Upload can ship MUCH larger batches than the regular drain.
-  //
-  // Holder is uniquified per call so that if our TTL expires (long apiPost
-  // or huge backfill push past the 4 min deadline check) and a *new*
-  // force-upload acquires the lock, our finally-release won't accidentally
-  // clear theirs — releaseDrainLock matches on holder.
-  const holder = `force-upload:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`
+  // Shared drain lock prevents force-upload + regular drainer racing the
+  // same rows. Holder is unique per call so a TTL-overflow restart can't
+  // let our finally-release clear a fresh holder's lock or claim.
+  const holder = makeDrainHolder("force-upload")
   const lock = await deps.acquireDrainLock(db, holder, { ttlMs: 300_000 })
   if (!lock) {
     const [depthAfter, deadCount] = await Promise.all([
@@ -125,7 +117,7 @@ export async function runForceUpload(
       firstError = "force upload timed out — try again to continue"
       break
     }
-    const batch = await deps.claimOutboundBatch(db, batchSize, now(), "force-upload")
+    const batch = await deps.claimOutboundBatch(db, batchSize, now(), holder)
     if (batch.length === 0) break
 
     const groups = new Map<string, OutboundBatchRow[]>()
@@ -176,7 +168,7 @@ export async function runForceUpload(
           "ids=", ids.slice(0, 5).join(","), ids.length > 5 ? `+${ids.length - 5} more` : "",
           "err=", errorMessage,
         )
-        await deps.clearOutboundClaim(db, ids).catch(() => undefined)
+        await deps.clearOutboundClaim(db, ids, holder).catch(() => undefined)
         if (!firstError) firstError = `markUploaded failed: ${errorMessage}`
         batchHadError = true
       }

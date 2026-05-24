@@ -51,7 +51,7 @@ describe("runForceUpload", () => {
       db,
       FORCE_UPLOAD_BATCH_SIZE,
       expect.any(Number),
-      "force-upload",
+      expect.stringMatching(/^force-upload:/),
     )
     expect(post).toHaveBeenCalledWith(
       "raw_sensor_records",
