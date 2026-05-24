@@ -91,7 +91,13 @@ export async function runForceUpload(
   // idempotency on (tableName, rowId) absorbs most of it but pollutes
   // dead-letter / attempt-count telemetry. TTL bumped to 5 min because
   // Force Upload can ship MUCH larger batches than the regular drain.
-  const lock = await deps.acquireDrainLock(db, "force-upload", { ttlMs: 300_000 })
+  //
+  // Holder is uniquified per call so that if our TTL expires (long apiPost
+  // or huge backfill push past the 4 min deadline check) and a *new*
+  // force-upload acquires the lock, our finally-release won't accidentally
+  // clear theirs — releaseDrainLock matches on holder.
+  const holder = `force-upload:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`
+  const lock = await deps.acquireDrainLock(db, holder, { ttlMs: 300_000 })
   if (!lock) {
     const [depthAfter, deadCount] = await Promise.all([
       deps.queueDepth(db),
@@ -207,6 +213,6 @@ export async function runForceUpload(
     error: firstError,
   }
   } finally {
-    await deps.releaseDrainLock(db, "force-upload").catch(() => undefined)
+    await deps.releaseDrainLock(db, holder).catch(() => undefined)
   }
 }

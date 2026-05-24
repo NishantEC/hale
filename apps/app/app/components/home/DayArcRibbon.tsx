@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View, ViewStyle } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import Svg, { Line, Path, Rect } from "react-native-svg"
 
-import { BoutCard, GapRule } from "@/components/activity"
+import { BoutCard, GapRule, RestDayEmpty } from "@/components/activity"
 import { Text } from "@/components/Text"
 import type { DayRibbon } from "@/services/api/noopClient"
 import type { TapeEvent } from "@/utils/buildTodayTape"
@@ -26,6 +26,12 @@ function dayBoundsLocal(dateKey: string): { start: number; end: number } {
   const [y, m, d] = dateKey.split("-").map(Number)
   const start = new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0).getTime()
   return { start, end: start + DAY_MS }
+}
+
+function isTodayFor(dateKey: string, nowMs: number): boolean {
+  const d = new Date(nowMs)
+  const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+  return dateKey === key
 }
 
 function clampSegment(
@@ -262,16 +268,7 @@ export const DayArcRibbon: FC<Props> = ({
         <View style={[styles.divider, { backgroundColor: colors.divider }]} />
 
         {events.length === 0 ? (
-          <View style={{ paddingVertical: 12 }}>
-            <Text
-              text="No events yet."
-              style={{ color: colors.textDim, fontSize: 13 }}
-            />
-            <Text
-              text="Sleep, recovery and activity events will appear here as your day progresses."
-              style={{ color: colors.textMuted, fontSize: 12, marginTop: 4 }}
-            />
-          </View>
+          <RestDayEmpty variant="tape" isToday={isTodayFor(selectedDate, now)} />
         ) : (
           events.map((event, i) => (
             <View key={event.id}>
