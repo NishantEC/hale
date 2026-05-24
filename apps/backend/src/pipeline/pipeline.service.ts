@@ -1031,29 +1031,6 @@ export class PipelineService {
       error: null,
     });
 
-    const workerUrl = process.env.PIPELINE_WORKER_URL?.trim();
-    let workerSource: 'rust-worker' | 'nest-in-process' = 'nest-in-process';
-    if (workerUrl) {
-      const delegated = await this.delegateToWorker(
-        workerUrl,
-        userId,
-        timeZoneInput,
-        row.id,
-      );
-      if (delegated) {
-        workerSource = 'rust-worker';
-      } else {
-        this.logger.warn(
-          `enqueuePipelineRun: worker delegation failed for run ${row.id}; in-process path will compute worker-owned stages itself`,
-        );
-      }
-    }
-
-    await this.pipelineRunRepo.update(
-      { id: row.id },
-      { workerSource },
-    );
-
     void this.runPipelineAsync(userId, timeZoneInput, row.id);
 
     return {
@@ -1080,7 +1057,7 @@ export class PipelineService {
           run_id: runId,
           time_zone: timeZoneInput ?? null,
         }),
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(60_000),
       });
       if (!res.ok) {
         this.logger.warn(
@@ -1107,10 +1084,27 @@ export class PipelineService {
         { id: runId },
         { status: 'running' },
       );
+
+      const workerUrl = process.env.PIPELINE_WORKER_URL?.trim();
+      let workerSource: 'rust-worker' | 'nest-in-process' = 'nest-in-process';
+      if (workerUrl) {
+        const delegated = await this.delegateToWorker(
+          workerUrl,
+          userId,
+          timeZoneInput,
+          runId,
+        );
+        if (delegated) {
+          workerSource = 'rust-worker';
+        } else {
+          this.logger.warn(
+            `runPipelineAsync(${runId}): worker delegation failed; in-process path will compute worker-owned stages itself`,
+          );
+        }
+      }
+      await this.pipelineRunRepo.update({ id: runId }, { workerSource });
+
       await this.runPipeline(userId, timeZoneInput, { runId });
-      // runPipeline updates the row with status='succeeded' on its
-      // normal terminal paths (skipped or completed). Nothing else to
-      // do here on success.
     } catch (err: any) {
       this.logger.error(
         `runPipelineAsync(${runId}) failed: ${err?.message}`,
