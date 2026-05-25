@@ -1356,21 +1356,31 @@ export class PipelineService {
     nightFeatures: import('../processing/interfaces.js').NightFeatureSet[],
     timeZone: string,
   ) {
-    const keys = new Set<number>();
-
+    // Single Intl.DateTimeFormat reused across all records — constructing
+    // a new one per record (the old dayKey() path) cost ~30ms each and
+    // dominated runPipeline wall-clock at 49k+ records (~50 min observed).
+    // Dedupe by YYYY-MM-DD string, then materialise Dates only for the
+    // small final set.
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const dayStrings = new Set<string>();
     for (const record of sensorRecords) {
-      keys.add(this.dayKey(record.timestamp, timeZone));
+      dayStrings.add(formatter.format(record.timestamp));
     }
     for (const detection of sleepDetections) {
-      keys.add(this.dayKey(detection.nightDate, timeZone));
+      dayStrings.add(formatter.format(detection.nightDate));
     }
     for (const feature of nightFeatures) {
-      keys.add(this.dayKey(feature.nightDate, timeZone));
+      dayStrings.add(formatter.format(feature.nightDate));
     }
 
-    return [...keys]
-      .sort((left, right) => left - right)
-      .map((key) => new Date(key));
+    return [...dayStrings]
+      .sort()
+      .map((dayStr) => calendarDayStart(new Date(dayStr + 'T00:00:00Z'), timeZone));
   }
 
   private startOfDay(date: Date, timeZone: string) {
