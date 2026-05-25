@@ -602,18 +602,30 @@ export class PipelineService {
       );
     }
 
-    const effectiveFeatures = [...featureByNightKey.values()].sort(
+    const workerOwnsWellness = process.env.WORKER_OWNS_WELLNESS === 'true';
+    let effectiveFeatures = [...featureByNightKey.values()].sort(
       (left, right) => left.nightDate.getTime() - right.nightDate.getTime(),
     );
-    const recomputedBaseline = recomputeBaselineProfile(effectiveFeatures);
+    let recomputedBaseline = recomputeBaselineProfile(effectiveFeatures);
+    if (workerOwnsWellness) {
+      effectiveFeatures = await this.loadNightFeaturesFromDb(userId, cutoff);
+      recomputedBaseline = await this.loadBaselineFromDb(userId, recomputedBaseline);
+      // Refresh the map so downstream consumers see worker-written values.
+      featureByNightKey.clear();
+      for (const f of effectiveFeatures) {
+        featureByNightKey.set(this.dayKey(f.nightDate, timeZone), f);
+      }
+    }
 
     const stageByNightKey = new Map(
       sleepStages.map((stage) => [this.dayKey(stage.nightDate, timeZone), stage] as const),
     );
 
-    const dailyScores = effectiveFeatures.map((feature) =>
-      computeDailyScore(feature, recomputedBaseline, targetMinutes, effectiveFeatures),
-    );
+    const dailyScores = workerOwnsWellness
+      ? await this.loadDailyScoresFromDb(userId, cutoff)
+      : effectiveFeatures.map((feature) =>
+          computeDailyScore(feature, recomputedBaseline, targetMinutes, effectiveFeatures),
+        );
 
     const sleepScoreByNightKey = new Map<number, number | null>();
     for (const detection of sleepDetections) {
@@ -1590,6 +1602,65 @@ export class PipelineService {
    * hiking checks duration ≥ 20 min, stair detector limits to ≤ 10 min, so
    * they don't overlap.
    */
+  private async loadNightFeaturesFromDb(
+    userId: string,
+    cutoff: Date,
+  ): Promise<import('../processing/interfaces.js').NightFeatureSet[]> {
+    const rows = await this.nightFeatureRepo.find({
+      where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+      order: { nightDate: 'ASC' },
+    });
+    return rows.map((r) => ({
+      nightDate: r.nightDate,
+      restingHeartRate: r.restingHeartRate,
+      rmssd: r.rmssd,
+      sdnn: r.sdnn,
+      pnn50: r.pnn50 ?? 0,
+      respiratoryRate: r.respiratoryRate,
+      continuity: r.continuity,
+      regularity: r.regularity,
+      validCoverage: r.validCoverage,
+      confidenceRaw: r.confidenceRaw,
+      sleepEstimateHours: r.sleepEstimateHours,
+      sourceBlend: r.sourceBlend,
+    }));
+  }
+
+  private async loadBaselineFromDb(
+    userId: string,
+    fallback: import('../processing/interfaces.js').BaselineProfile,
+  ): Promise<import('../processing/interfaces.js').BaselineProfile> {
+    const row = await this.baselineRepo.findOne({ where: { userId } });
+    if (!row) return fallback;
+    return {
+      restingHeartRate: row.restingHeartRate,
+      rmssd: row.rmssd,
+      sdnn: row.sdnn,
+      nightsUsed: row.nightsUsed,
+      isWarmedUp: row.nightsUsed >= 5,
+      maxHeartRate: row.maxHeartRate ?? null,
+    };
+  }
+
+  private async loadDailyScoresFromDb(
+    userId: string,
+    cutoff: Date,
+  ): Promise<import('../processing/interfaces.js').DailyWellnessScore[]> {
+    const rows = await this.dailyScoreRepo.find({
+      where: { userId, dayDate: MoreThanOrEqual(cutoff) },
+      order: { dayDate: 'ASC' },
+    });
+    return rows.map((r) => ({
+      dayDate: r.dayDate,
+      dailyBalance: r.dailyBalance,
+      loadPressure: r.loadPressure,
+      sleepReserveHours: r.sleepReserveHours,
+      confidence: r.confidence as import('../processing/interfaces.js').WellnessConfidence,
+      recommendation: r.recommendation as 'Restore' | 'Steady' | 'Build',
+      detail: r.detail,
+    }));
+  }
+
   private async loadSleepStagesFromDb(
     userId: string,
     cutoff: Date,
