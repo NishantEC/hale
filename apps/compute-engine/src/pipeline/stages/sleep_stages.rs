@@ -20,13 +20,6 @@ use crate::pipeline::types::{StageName, StageOutcome};
 
 pub struct SleepStagesStage;
 
-fn flag_enabled() -> bool {
-    matches!(
-        std::env::var("WORKER_OWNS_SLEEP_STAGES").as_deref(),
-        Ok("true")
-    )
-}
-
 impl WindowStage for SleepStagesStage {
     fn name(&self) -> StageName {
         StageName::SleepStages
@@ -42,12 +35,6 @@ impl WindowStage for SleepStagesStage {
         ctx: &'a WindowContext<'a>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<StageOutcome>> + Send + 'a>> {
         Box::pin(async move {
-            if !flag_enabled() {
-                return Ok(StageOutcome {
-                    rows_written: 0,
-                    stats: serde_json::json!({ "skipped": "WORKER_OWNS_SLEEP_STAGES not set" }),
-                });
-            }
             let detections = fetch_detections(ctx.pool, ctx.user_id, ctx.since).await?;
             if detections.is_empty() {
                 return Ok(StageOutcome::default());

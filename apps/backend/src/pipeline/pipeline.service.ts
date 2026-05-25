@@ -494,20 +494,12 @@ export class PipelineService {
         .map((e) => ({ eventNumber: e.eventNumber, capturedAt: e.capturedAt })),
       wristEventWindowEnd,
     );
-    let sleepDetections: ReturnType<typeof SleepEventEngine.detect>;
-    if (process.env.WORKER_OWNS_SLEEP_DETECT === 'true') {
-      const persisted = await this.sleepDetectionRepo.find({
-        where: { userId, nightDate: MoreThanOrEqual(cutoff) },
-        order: { nightDate: 'ASC' },
-      });
-      sleepDetections = persisted.map((d) => sleepDetectionRowToSummary(d));
-    } else {
-      sleepDetections = SleepEventEngine.detect(
-        sensorRecords,
-        timeZone,
-        offWristIntervals,
-      );
-    }
+    const persistedSleep = await this.sleepDetectionRepo.find({
+      where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+      order: { nightDate: 'ASC' },
+    });
+    const sleepDetections: ReturnType<typeof SleepEventEngine.detect> =
+      persistedSleep.map((d) => sleepDetectionRowToSummary(d));
     mark('sleep-detect');
 
     // Activity detection on non-sleep daytime periods. Surface off-wrist
@@ -517,14 +509,7 @@ export class PipelineService {
       dbWristEvents,
       wristEventWindowEnd,
     );
-    let activityBouts = process.env.WORKER_OWNS_ACTIVITY_DETECT === 'true'
-      ? await this.loadActivityBoutsFromDb(userId, cutoff)
-      : detectActivities(
-      sensorRecords,
-      sleepDetections,
-      baseline,
-      sourceLabeledIntervals,
-    );
+    let activityBouts = await this.loadActivityBoutsFromDb(userId, cutoff);
 
     // Apply HealthKit-driven reclassifiers (hiking, stairs, Apple workout match)
     if (activityBouts.length > 0) {
@@ -560,10 +545,7 @@ export class PipelineService {
       ),
     );
 
-    const sleepStages =
-      process.env.WORKER_OWNS_SLEEP_STAGES === 'true'
-        ? await this.loadSleepStagesFromDb(userId, cutoff)
-        : classifySleepStages(allEpochFeatures, sleepDetections);
+    const sleepStages = await this.loadSleepStagesFromDb(userId, cutoff);
     mark('sleep-stages');
 
     const featureByNightKey = new Map<number, import('../processing/interfaces.js').NightFeatureSet>();
@@ -602,30 +584,25 @@ export class PipelineService {
       );
     }
 
-    const workerOwnsWellness = process.env.WORKER_OWNS_WELLNESS === 'true';
-    let effectiveFeatures = [...featureByNightKey.values()].sort(
-      (left, right) => left.nightDate.getTime() - right.nightDate.getTime(),
-    );
-    let recomputedBaseline = recomputeBaselineProfile(effectiveFeatures);
-    if (workerOwnsWellness) {
-      effectiveFeatures = await this.loadNightFeaturesFromDb(userId, cutoff);
-      recomputedBaseline = await this.loadBaselineFromDb(userId, recomputedBaseline);
-      // Refresh the map so downstream consumers see worker-written values.
-      featureByNightKey.clear();
-      for (const f of effectiveFeatures) {
-        featureByNightKey.set(this.dayKey(f.nightDate, timeZone), f);
-      }
+    const effectiveFeatures = await this.loadNightFeaturesFromDb(userId, cutoff);
+    const recomputedBaseline = await this.loadBaselineFromDb(userId, {
+      restingHeartRate: 0,
+      rmssd: 0,
+      sdnn: 0,
+      nightsUsed: 0,
+      isWarmedUp: false,
+      maxHeartRate: null,
+    });
+    featureByNightKey.clear();
+    for (const f of effectiveFeatures) {
+      featureByNightKey.set(this.dayKey(f.nightDate, timeZone), f);
     }
 
     const stageByNightKey = new Map(
       sleepStages.map((stage) => [this.dayKey(stage.nightDate, timeZone), stage] as const),
     );
 
-    const dailyScores = workerOwnsWellness
-      ? await this.loadDailyScoresFromDb(userId, cutoff)
-      : effectiveFeatures.map((feature) =>
-          computeDailyScore(feature, recomputedBaseline, targetMinutes, effectiveFeatures),
-        );
+    const dailyScores = await this.loadDailyScoresFromDb(userId, cutoff);
 
     const sleepScoreByNightKey = new Map<number, number | null>();
     for (const detection of sleepDetections) {

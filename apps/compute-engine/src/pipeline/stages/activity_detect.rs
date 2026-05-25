@@ -24,13 +24,6 @@ use crate::pipeline::types::{StageName, StageOutcome};
 
 pub struct ActivityDetectStage;
 
-fn flag_enabled() -> bool {
-    matches!(
-        std::env::var("WORKER_OWNS_ACTIVITY_DETECT").as_deref(),
-        Ok("true")
-    )
-}
-
 impl WindowStage for ActivityDetectStage {
     fn name(&self) -> StageName {
         StageName::ActivityDetect
@@ -46,12 +39,6 @@ impl WindowStage for ActivityDetectStage {
         ctx: &'a WindowContext<'a>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<StageOutcome>> + Send + 'a>> {
         Box::pin(async move {
-            if !flag_enabled() {
-                return Ok(StageOutcome {
-                    rows_written: 0,
-                    stats: serde_json::json!({ "skipped": "WORKER_OWNS_ACTIVITY_DETECT not set" }),
-                });
-            }
             let records = fetch_activity_records(ctx.pool, ctx.user_id, ctx.since).await?;
             let sleep = fetch_sleep_windows(ctx.pool, ctx.user_id, ctx.since).await?;
             let baseline = fetch_baseline(ctx.pool, ctx.user_id).await?;

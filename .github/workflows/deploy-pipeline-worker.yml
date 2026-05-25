@@ -65,7 +65,7 @@ jobs:
           image: ${{ env.REGISTRY }}/pipeline-worker:${{ github.sha }}
           flags: |
             --set-cloudsql-instances=${{ env.CLOUDSQL_INSTANCE }}
-            --set-env-vars=INSTANCE_CONNECTION_NAME=${{ env.CLOUDSQL_INSTANCE }},WORKER_OWNS_ACTIVITY_DETECT=true,WORKER_OWNS_SLEEP_STAGES=true
+            --set-env-vars=INSTANCE_CONNECTION_NAME=${{ env.CLOUDSQL_INSTANCE }}
             --set-secrets=DB_USER=NOOP_DB_USER:latest,DB_PASSWORD=NOOP_DB_PASSWORD:latest,DB_NAME=NOOP_DB_NAME:latest
             --service-account=noop-cloud-run@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
             --min-instances=0

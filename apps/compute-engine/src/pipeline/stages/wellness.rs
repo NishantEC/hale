@@ -5,8 +5,6 @@
 //!
 //! Stage runs after sleep_detect; depends on sleep_detect's output
 //! revision so the input fingerprint changes when sleep windows shift.
-//! Gated behind WORKER_OWNS_WELLNESS (default off) so this ship is
-//! zero behavior change in prod.
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
@@ -23,10 +21,6 @@ use crate::pipeline::stage::WindowStage;
 use crate::pipeline::types::{StageName, StageOutcome};
 
 pub struct WellnessStage;
-
-fn flag_enabled() -> bool {
-    matches!(std::env::var("WORKER_OWNS_WELLNESS").as_deref(), Ok("true"))
-}
 
 const DEFAULT_TARGET_SLEEP_MINUTES: f64 = 8.0 * 60.0;
 
@@ -47,12 +41,6 @@ impl WindowStage for WellnessStage {
         ctx: &'a WindowContext<'a>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<StageOutcome>> + Send + 'a>> {
         Box::pin(async move {
-            if !flag_enabled() {
-                return Ok(StageOutcome {
-                    rows_written: 0,
-                    stats: serde_json::json!({ "skipped": "WORKER_OWNS_WELLNESS not set" }),
-                });
-            }
             let samples = fetch_signal_samples(ctx.pool, ctx.user_id, ctx.since).await?;
             let sanitized = wellness_scoring::sanitize_signal_samples(&samples);
             let detections = fetch_sleep_detections(ctx.pool, ctx.user_id, ctx.since).await?;

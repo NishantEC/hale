@@ -115,9 +115,6 @@ jobs:
             COMPUTE_ENGINE_ENABLED=true
             COMPUTE_ENGINE_URL=https://noop-compute-engine-z7lfiw76rq-uc.a.run.app
             PIPELINE_WORKER_URL=https://noop-pipeline-worker-z7lfiw76rq-uc.a.run.app
-            WORKER_OWNS_SLEEP_DETECT=true
-            WORKER_OWNS_ACTIVITY_DETECT=true
-            WORKER_OWNS_SLEEP_STAGES=true
           flags: |
             --set-cloudsql-instances=${{ env.CLOUDSQL_INSTANCE }}
             --set-secrets=DB_USER=NOOP_DB_USER:latest,DB_PASSWORD=NOOP_DB_PASSWORD:latest,DB_NAME=NOOP_DB_NAME:latest,BETTER_AUTH_SECRET=NOOP_JWT_SECRET:latest
