@@ -517,7 +517,9 @@ export class PipelineService {
       dbWristEvents,
       wristEventWindowEnd,
     );
-    let activityBouts = detectActivities(
+    let activityBouts = process.env.WORKER_OWNS_ACTIVITY_DETECT === 'true'
+      ? await this.loadActivityBoutsFromDb(userId, cutoff)
+      : detectActivities(
       sensorRecords,
       sleepDetections,
       baseline,
@@ -1585,6 +1587,33 @@ export class PipelineService {
    * hiking checks duration ≥ 20 min, stair detector limits to ≤ 10 min, so
    * they don't overlap.
    */
+  private async loadActivityBoutsFromDb(
+    userId: string,
+    cutoff: Date,
+  ): Promise<ActivityBout[]> {
+    const rows = await this.activityDetectionRepo.find({
+      where: { userId, startTime: MoreThanOrEqual(cutoff) },
+      order: { startTime: 'ASC' },
+    });
+    return rows.map((r) => ({
+      startTime: r.startTime,
+      endTime: r.endTime,
+      durationMinutes: r.durationMinutes,
+      activityType: r.activityType as ActivityBout['activityType'],
+      intensity: r.intensity as ActivityBout['intensity'],
+      confidence: r.confidence,
+      heartRateAvg: r.heartRateAvg,
+      heartRateMax: r.heartRateMax,
+      strainScore: r.strainScore,
+      cadenceHz: r.cadenceHz ?? null,
+      flightsCount: r.flightsCount ?? null,
+      elevationGainMeters: r.elevationGainMeters ?? null,
+      distanceMeters: r.distanceMeters ?? null,
+      externalSource: r.externalSource ?? null,
+      source: (r.source as ActivityBout['source']) ?? 'detected',
+    }));
+  }
+
   private async applyHealthkitReclassifiers(
     userId: string,
     bouts: ActivityBout[],
