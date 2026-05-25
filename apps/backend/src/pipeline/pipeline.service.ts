@@ -854,7 +854,7 @@ export class PipelineService {
           run_id: runId,
           time_zone: timeZoneInput ?? null,
         }),
-        signal: AbortSignal.timeout(60_000),
+        signal: AbortSignal.timeout(900_000),
       });
       if (!res.ok) {
         this.logger.warn(
@@ -877,11 +877,9 @@ export class PipelineService {
     runId: string,
   ): Promise<void> {
     try {
-      await this.pipelineRunRepo.update(
-        { id: runId },
-        { status: 'running' },
-      );
-
+      // Leave status='queued' so the worker's claim_lease CAS
+      // ('queued' → 'running') can succeed. If delegation fails, we
+      // bump to 'running' ourselves below and do the in-process tail.
       const workerUrl = process.env.PIPELINE_WORKER_URL?.trim();
       let workerSource: 'rust-worker' | 'nest-in-process' = 'nest-in-process';
       if (workerUrl) {
@@ -899,7 +897,18 @@ export class PipelineService {
           );
         }
       }
-      await this.pipelineRunRepo.update({ id: runId }, { workerSource });
+      // Worker either finished (status now 'succeeded'/'failed') or didn't
+      // claim. Bump back to 'running' for the in-process tail unless the
+      // worker already terminated the run.
+      const current = await this.pipelineRunRepo.findOne({ where: { id: runId } });
+      if (current && current.status !== 'succeeded' && current.status !== 'failed') {
+        await this.pipelineRunRepo.update(
+          { id: runId },
+          { status: 'running', workerSource },
+        );
+      } else if (current) {
+        await this.pipelineRunRepo.update({ id: runId }, { workerSource });
+      }
 
       await this.runPipeline(userId, timeZoneInput, { runId });
     } catch (err: any) {
