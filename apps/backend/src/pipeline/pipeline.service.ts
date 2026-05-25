@@ -32,10 +32,6 @@ import { applyHealthkitWorkoutMatches } from '../processing/healthkit-workout-ma
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 import { HealthkitDailySummary } from '../activity/entities/healthkit-daily-summary.entity.js';
 import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.js';
-import {
-  computeDerivedMetrics,
-  precomputeMetricSeries,
-} from '../processing/derived-metrics.js';
 import { computeSleepScoreForNight } from '../processing/sleep-score.js';
 import { computeTypicalRanges } from '../processing/typical-ranges.js';
 import { journalSleepCorrelations } from '../processing/journal-correlations.js';
@@ -53,13 +49,6 @@ import type {
   JournalFactorEntry,
   DerivedMetricsBundle,
 } from '../processing/interfaces.js';
-import { ComputeEngineClient } from './compute-engine-client.js';
-import {
-  buildBatchRequest,
-  liftActivityBouts,
-  liftPersistedToBundle,
-} from './compute-engine-bridge.js';
-import type { PersistedDailyMetricV1 } from './compute-engine-types.js';
 
 @Injectable()
 export class PipelineService {
@@ -99,7 +88,6 @@ export class PipelineService {
     @InjectRepository(DeviceEvent)
     private deviceEventRepo: Repository<DeviceEvent>,
     private dataSource: DataSource,
-    private readonly computeEngineClient: ComputeEngineClient,
   ) {}
 
   // Per-user TZ fallback. `user.timeZone` is populated by SessionGuard whenever
@@ -492,13 +480,6 @@ export class PipelineService {
       persistedSleep.map((d) => sleepDetectionRowToSummary(d));
     mark('sleep-detect');
 
-    // Activity detection on non-sleep daytime periods. Surface off-wrist
-    // intervals as their own entries so the user sees where coverage was
-    // lost (e.g. charging, BLE drop).
-    const sourceLabeledIntervals = buildSourceLabeledOffWristIntervals(
-      dbWristEvents,
-      wristEventWindowEnd,
-    );
     let activityBouts = await this.loadActivityBoutsFromDb(userId, cutoff);
 
     // Apply HealthKit-driven reclassifiers (hiking, stairs, Apple workout match)
@@ -577,7 +558,6 @@ export class PipelineService {
       referenceDays,
       timeZone,
     );
-    const rustOwnsActivities = false;
 
     const typicalRanges = computeTypicalRanges(sleepDetections, sleepStages, now);
     const correlations = journalSleepCorrelations(
