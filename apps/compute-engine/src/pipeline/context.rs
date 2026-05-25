@@ -21,6 +21,18 @@ pub struct DayContext {
     pub time_zone: Option<Tz>,
 }
 
+/// Context handed to `WindowStage::run`. Stages do their own DB fetches
+/// against `pool` so the conductor doesn't pre-load data a particular
+/// run doesn't need.
+#[derive(Debug)]
+pub struct WindowContext<'a> {
+    pub user_id: &'a str,
+    pub time_zone: &'a str,
+    pub since: DateTime<Utc>,
+    pub window_end: DateTime<Utc>,
+    pub pool: &'a PgPool,
+}
+
 pub async fn fetch_day_context(
     pool: &PgPool,
     user_id: &str,

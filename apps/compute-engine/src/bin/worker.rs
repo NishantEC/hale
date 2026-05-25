@@ -7,10 +7,10 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, Utc};
-use noop_compute_engine::math::sleep_detect::{self, HistoricalRecord, SleepDetectionSummary};
 use noop_compute_engine::pipeline::{
-    dirty::{expand_for_boundaries, load_dirty_days},
+    dirty::load_dirty_days,
     ledger::StageLedger,
+    stage::{Stage, default_registry},
     types::StageName,
 };
 use serde::{Deserialize, Serialize};
@@ -226,23 +226,36 @@ async fn do_run_work(
 
     let count = row.0.unwrap_or(0);
     let max_ts = row.1;
+    let window_end = max_ts.unwrap_or_else(Utc::now);
 
     let dirty = load_dirty_days(pool, user_id, time_zone, since, /* force */ false).await?;
     let day_state_upserts = StageLedger::upsert_raw_day_state(pool, user_id, &dirty).await?;
 
-    let records = fetch_records_for_sleep(pool, user_id, since).await?;
-    let events = fetch_wrist_events(pool, user_id, since).await?;
-    let window_end = max_ts.unwrap_or_else(Utc::now);
-    let off_wrist = sleep_detect::build_off_wrist_intervals(&events, window_end);
-    let tz = parse_time_zone(time_zone);
-    let detections = sleep_detect::detect(&records, tz, &off_wrist);
-    let sleep_detections_written =
-        write_sleep_detections(pool, user_id, since, window_end, &detections).await?;
-
-    // Record stage_state rows for sleep_detect on every dirty day so the
-    // table populates from Week-1 onward — Week-2 will flip the conductor
-    // over to per-day execution against these rows.
-    record_sleep_detect_ledger(pool, run_id, user_id, &dirty).await?;
+    let registry = default_registry();
+    let mut sleep_detections_written: usize = 0;
+    for stage in registry.ordered() {
+        match stage {
+            Stage::Window(window_stage) => {
+                let outcome = run_window_stage(
+                    pool,
+                    run_id,
+                    user_id,
+                    time_zone,
+                    since,
+                    window_end,
+                    &dirty,
+                    window_stage.as_ref(),
+                )
+                .await?;
+                if window_stage.name() == StageName::SleepDetect {
+                    sleep_detections_written = outcome.rows_written as usize;
+                }
+            }
+            Stage::Day(_) => {
+                // Day-granular stages land Week-3+. Skip gracefully.
+            }
+        }
+    }
 
     Ok(RunReport {
         raw_row_count: count,
@@ -252,194 +265,74 @@ async fn do_run_work(
     })
 }
 
-async fn record_sleep_detect_ledger(
+#[allow(clippy::too_many_arguments)]
+async fn run_window_stage(
     pool: &PgPool,
     run_id: Uuid,
     user_id: &str,
+    time_zone: &str,
+    since: DateTime<Utc>,
+    window_end: DateTime<Utc>,
     dirty: &[noop_compute_engine::pipeline::types::DirtyDay],
-) -> anyhow::Result<()> {
-    let days = expand_for_boundaries(dirty);
-    for day in days {
-        let raw_max = dirty
-            .iter()
-            .find(|d| d.day_date == day)
-            .map(|d| d.raw_max_updated_at)
-            .unwrap_or_else(Utc::now);
-        let fp = StageLedger::fingerprint(raw_max, StageName::SleepDetect, &[]);
-        let changed = StageLedger::mark_pending_if_changed(
-            pool,
-            run_id,
-            user_id,
-            day,
-            StageName::SleepDetect,
-            &fp,
-        )
-        .await?;
-        if !changed {
-            continue;
+    stage: &dyn noop_compute_engine::pipeline::stage::WindowStage,
+) -> anyhow::Result<noop_compute_engine::pipeline::types::StageOutcome> {
+    let stage_name = stage.name();
+    // Plan: which dirty days actually need this stage run? Even though
+    // a WindowStage processes the whole window once, the ledger still
+    // records per-day pending/running/succeeded so observability is
+    // per-day.
+    let mut planned_days = Vec::new();
+    for d in dirty {
+        let fp = StageLedger::fingerprint(d.raw_max_updated_at, stage_name, &[]);
+        if StageLedger::mark_pending_if_changed(pool, run_id, user_id, d.day_date, stage_name, &fp)
+            .await?
+        {
+            planned_days.push(d.day_date);
         }
-        let mut tx = pool.begin().await.context("begin stage_state tx")?;
-        StageLedger::mark_running(&mut *tx, run_id, user_id, day, StageName::SleepDetect).await?;
+    }
+    if planned_days.is_empty() {
+        return Ok(noop_compute_engine::pipeline::types::StageOutcome::default());
+    }
+
+    let ctx = noop_compute_engine::pipeline::context::WindowContext {
+        user_id,
+        time_zone,
+        since,
+        window_end,
+        pool,
+    };
+
+    let mut tx = pool.begin().await.context("begin stage tx")?;
+    for day in &planned_days {
+        StageLedger::mark_running(&mut *tx, run_id, user_id, *day, stage_name).await?;
+    }
+    let outcome = match stage.run(&mut tx, &ctx).await {
+        Ok(o) => o,
+        Err(err) => {
+            let msg = format!("{err:#}");
+            tx.rollback().await.ok();
+            let mut tx2 = pool.begin().await.context("begin failure tx")?;
+            for day in &planned_days {
+                StageLedger::mark_failed(&mut *tx2, run_id, user_id, *day, stage_name, &msg)
+                    .await?;
+            }
+            tx2.commit().await.context("commit failure tx")?;
+            return Err(err);
+        }
+    };
+    for day in &planned_days {
         StageLedger::mark_succeeded(
             &mut *tx,
             run_id,
             user_id,
-            day,
-            StageName::SleepDetect,
-            serde_json::json!({}),
+            *day,
+            stage_name,
+            outcome.stats.clone(),
         )
         .await?;
-        tx.commit().await.context("commit stage_state tx")?;
     }
-    Ok(())
-}
-
-fn parse_time_zone(name: &str) -> Option<chrono_tz::Tz> {
-    chrono_tz::Tz::from_str(name).ok()
-}
-
-type SleepRecordRow = (
-    DateTime<Utc>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<f64>,
-    Option<bool>,
-);
-
-async fn fetch_records_for_sleep(
-    pool: &PgPool,
-    user_id: &str,
-    since: DateTime<Utc>,
-) -> anyhow::Result<Vec<HistoricalRecord>> {
-    let rows: Vec<SleepRecordRow> = sqlx::query_as(
-        r#"
-        SELECT
-            "timestamp",
-            "heartRate",
-            "gravityMagnitude",
-            "gravityX",
-            "gravityY",
-            "gravityZ",
-            "skinContact"
-        FROM raw_sensor_records
-        WHERE "userId" = $1
-          AND "timestamp" >= $2
-        ORDER BY "timestamp" ASC
-        "#,
-    )
-    .bind(user_id)
-    .bind(since)
-    .fetch_all(pool)
-    .await
-    .context("fetch raw_sensor_records for sleep_detect")?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(ts, hr, gm, gx, gy, gz, sc)| HistoricalRecord {
-            timestamp: ts,
-            heart_rate: hr.unwrap_or(0.0),
-            gravity_magnitude: gm,
-            gravity_x: gx,
-            gravity_y: gy,
-            gravity_z: gz,
-            skin_contact: sc,
-        })
-        .collect())
-}
-
-async fn fetch_wrist_events(
-    pool: &PgPool,
-    user_id: &str,
-    since: DateTime<Utc>,
-) -> anyhow::Result<Vec<(i32, DateTime<Utc>)>> {
-    let rows: Vec<(i32, DateTime<Utc>)> = sqlx::query_as(
-        r#"
-        SELECT "eventNumber"::int, "capturedAt"
-        FROM device_events
-        WHERE "userId" = $1
-          AND "capturedAt" >= $2
-          AND "eventNumber" IN (7, 8, 9, 10)
-        ORDER BY "capturedAt" ASC
-        "#,
-    )
-    .bind(user_id)
-    .bind(since)
-    .fetch_all(pool)
-    .await
-    .context("fetch device_events for off-wrist intervals")?;
-    Ok(rows)
-}
-
-/// Replace sleep_detections for the user inside (since, window_end+1d]
-/// with the freshly computed `detections`. One transaction so partial
-/// failures can't leave the table in an inconsistent state.
-async fn write_sleep_detections(
-    pool: &PgPool,
-    user_id: &str,
-    since: DateTime<Utc>,
-    window_end: DateTime<Utc>,
-    detections: &[SleepDetectionSummary],
-) -> anyhow::Result<usize> {
-    // Pad window_end by 1 day so a sleep that wakes after midnight on
-    // the last day is still cleaned up.
-    let prune_end = window_end + chrono::Duration::days(1);
-    let mut tx = pool.begin().await.context("begin sleep_detections tx")?;
-
-    sqlx::query(
-        r#"
-        DELETE FROM sleep_detections
-        WHERE "userId" = $1
-          AND "nightDate" >= $2
-          AND "nightDate" <= $3
-        "#,
-    )
-    .bind(user_id)
-    .bind(since)
-    .bind(prune_end)
-    .execute(&mut *tx)
-    .await
-    .context("DELETE old sleep_detections")?;
-
-    let mut written = 0usize;
-    for d in detections {
-        sqlx::query(
-            r#"
-            INSERT INTO sleep_detections (
-                "userId",
-                "nightDate",
-                "bedtime",
-                "wakeTime",
-                "durationHours",
-                "interruptionCount",
-                "continuity",
-                "regularity",
-                "validCoverage",
-                "confidence",
-                "updatedAt"
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-            "#,
-        )
-        .bind(user_id)
-        .bind(d.night_date)
-        .bind(d.bedtime)
-        .bind(d.wake_time)
-        .bind(d.duration_hours)
-        .bind(d.interruption_count)
-        .bind(d.continuity)
-        .bind(d.regularity)
-        .bind(d.valid_coverage)
-        .bind(d.confidence)
-        .execute(&mut *tx)
-        .await
-        .context("INSERT sleep_detections row")?;
-        written += 1;
-    }
-
-    tx.commit().await.context("commit sleep_detections tx")?;
-    Ok(written)
+    tx.commit().await.context("commit stage tx")?;
+    Ok(outcome)
 }
 
 /// Compare-and-swap status='queued' → 'running'. Returns true if we
