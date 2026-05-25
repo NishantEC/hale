@@ -113,5 +113,7 @@ impl Default for StageRegistry {
 /// Returns the registry seeded with whatever stages the worker should run
 /// today. Week-2 registers sleep_detect; subsequent weeks add the rest.
 pub fn default_registry() -> StageRegistry {
-    StageRegistry::new().register_window(super::stages::sleep_detect::SleepDetectStage)
+    StageRegistry::new()
+        .register_window(super::stages::sleep_detect::SleepDetectStage)
+        .register_window(super::stages::activity_detect::ActivityDetectStage)
 }
