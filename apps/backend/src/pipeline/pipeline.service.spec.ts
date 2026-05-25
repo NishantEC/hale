@@ -225,7 +225,10 @@ describe('PipelineService sweepStalePipelineRuns', () => {
 
     expect(recovered).toBe(3);
     expect(spies.where).toHaveBeenCalledWith('status = :status', { status: 'running' });
-    expect(spies.andWhere).toHaveBeenCalledWith('"heartbeatAt" IS NOT NULL');
+    expect(spies.andWhere).toHaveBeenCalledWith(
+      expect.stringContaining('"heartbeatAt" IS NOT NULL'),
+      expect.objectContaining({ cutoff: expect.any(Date) }),
+    );
     expect(captured.setCalledWith).toMatchObject({ status: 'failed' });
     expect(captured.setCalledWith.error).toMatch(/heartbeat timeout/);
   });

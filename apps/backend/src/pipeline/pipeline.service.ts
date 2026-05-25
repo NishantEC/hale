@@ -969,8 +969,10 @@ export class PipelineService {
         error: `heartbeat timeout (no beat since ${cutoff.toISOString()})`,
       })
       .where('status = :status', { status: 'running' })
-      .andWhere('"heartbeatAt" IS NOT NULL')
-      .andWhere('"heartbeatAt" < :cutoff', { cutoff })
+      .andWhere(
+        '(("heartbeatAt" IS NOT NULL AND "heartbeatAt" < :cutoff) OR ("heartbeatAt" IS NULL AND "startedAt" < :cutoff))',
+        { cutoff },
+      )
       .execute();
     const recovered = result.affected ?? 0;
     if (recovered > 0) {
