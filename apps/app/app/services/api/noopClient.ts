@@ -94,7 +94,6 @@ function withDeviceTimeZone(path: string): string {
 
 function withBaseHeaders(headers: HeadersInit = {}): HeadersInit {
   return {
-    'ngrok-skip-browser-warning': 'true',
     Origin: AUTH_ORIGIN,
     ...headers,
   };
