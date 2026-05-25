@@ -781,24 +781,16 @@ export class PipelineService {
         timeZone,
       );
 
-      for (const feature of effectiveFeatures) {
-        await this.upsertNightFeature(
-          nightFeatureRepo,
-          userId,
-          feature,
-          this.startOfDay(feature.nightDate, timeZone),
-          timeZone,
-        );
-      }
+      // night_features, sleep_detections, sleep_stages, baseline_profiles
+      // are now written by the Rust worker before this transaction runs.
+      // Re-persisting them here would just overwrite worker output with
+      // the same values; the prune calls above are kept because they
+      // clean up rows outside the worker's DELETE-INSERT scope.
 
-      for (const detection of sleepDetections) {
-        await this.upsertSleepDetection(sleepDetectionRepo, userId, detection, timeZone);
-      }
-
-      for (const stage of sleepStages) {
-        await this.upsertSleepStage(sleepStageRepo, userId, stage, timeZone);
-      }
-
+      // daily_scores still gets an upsert because the worker writes the
+      // wellness portion (balance / load / recommendation) and NestJS
+      // owns the per-night sleepScore column. The upsert preserves the
+      // worker's fields and adds sleepScore.
       for (const score of dailyScores) {
         await this.upsertDailyScore(
           dailyScoreRepo,
@@ -818,8 +810,6 @@ export class PipelineService {
           timeZone,
         );
       }
-
-      await this.upsertBaseline(baselineRepo, userId, recomputedBaseline);
 
       // Persist the watermark inside the same transaction so the next run
       // either sees the new state (and skips correctly) or sees the old
