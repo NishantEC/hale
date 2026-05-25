@@ -18,8 +18,8 @@ describe('databaseConfig', () => {
     expect(databaseConfig()).toMatchObject({
       extra: {
         max: 3,
-        idleTimeoutMillis: 10_000,
-        connectionTimeoutMillis: 5_000,
+        idleTimeoutMillis: 30 * 60_000,
+        connectionTimeoutMillis: 30_000,
       },
     });
   });

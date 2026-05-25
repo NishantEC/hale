@@ -19,10 +19,16 @@ export function postgresPoolOptions({
 }: PoolConfigInput = {}): PostgresPoolOptions {
   return {
     max: positiveInt(process.env[maxEnv], defaultMax),
-    idleTimeoutMillis: positiveInt(process.env.DB_POOL_IDLE_TIMEOUT_MS, 10_000),
+    // 30 min — connections must survive long worker delegation awaits
+    // (delegateToWorker has a 15-min HTTP timeout; the next DB query
+    // post-await was hitting an idle-reaped connection).
+    idleTimeoutMillis: positiveInt(process.env.DB_POOL_IDLE_TIMEOUT_MS, 30 * 60_000),
+    // 30s for cold-start connection establishment to the CloudSQL UNIX
+    // socket. Was 5s; the new revision's first DB query after the worker
+    // came back was timing out before the socket was warm.
     connectionTimeoutMillis: positiveInt(
       process.env.DB_POOL_CONNECTION_TIMEOUT_MS,
-      5_000,
+      30_000,
     ),
   };
 }
