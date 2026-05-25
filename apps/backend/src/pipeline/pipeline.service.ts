@@ -20,16 +20,9 @@ import { IngestDto } from './dto/ingest.dto.js';
 import { IngestTableDto } from './dto/ingest-table.dto.js';
 
 import { sanitize } from '../processing/ppg-quality-gate.js';
-import {
-  buildNightFeatureSet,
-  effectiveSleepFeatureSet,
-  computeDailyScore,
-  recomputeBaselineProfile,
-} from '../processing/wellness-scoring.js';
 import { SleepEventEngine, buildOffWristIntervals } from '../processing/sleep-event-engine.js';
 import { DeviceEvent } from '../telemetry/entities/device-event.entity.js';
 import {
-  detectActivities,
   detectActivityGaps,
   type ActivityBout,
 } from '../processing/activity-detector.js';
@@ -39,9 +32,6 @@ import { applyHealthkitWorkoutMatches } from '../processing/healthkit-workout-ma
 import { ActivityDetection } from '../activity/entities/activity-detection.entity.js';
 import { HealthkitDailySummary } from '../activity/entities/healthkit-daily-summary.entity.js';
 import { HealthkitWorkout } from '../activity/entities/healthkit-workout.entity.js';
-import { extractEpochFeatures } from '../processing/epoch-features.js';
-import { classifySleepStages } from '../processing/sleep-stage-classifier.js';
-import { median } from '../processing/utils.js';
 import {
   computeDerivedMetrics,
   precomputeMetricSeries,
@@ -530,60 +520,10 @@ export class PipelineService {
     // and the insert would leave the user with detected activities missing
     // for that range until the next pipeline run.
 
-    // Extract epoch features and classify sleep stages
-    const nightMedianHR =
-      sensorRecords.length > 0
-        ? median(sensorRecords.map((r) => r.heartRate).filter((h) => h > 0))
-        : 60;
-
-    const allEpochFeatures = sleepDetections.flatMap((detection) =>
-      extractEpochFeatures(
-        sensorRecords,
-        detection.bedtime,
-        detection.wakeTime,
-        nightMedianHR,
-      ),
-    );
-
     const sleepStages = await this.loadSleepStagesFromDb(userId, cutoff);
     mark('sleep-stages');
 
     const featureByNightKey = new Map<number, import('../processing/interfaces.js').NightFeatureSet>();
-    for (const detection of sleepDetections) {
-      const nightEpochs = allEpochFeatures.filter(
-        (e) =>
-          e.timestamp.getTime() >= detection.bedtime.getTime() &&
-          e.timestamp.getTime() <= detection.wakeTime.getTime(),
-      );
-      const respValues = nightEpochs
-        .map((e) => e.respiratoryRate)
-        .filter((v): v is number => Number.isFinite(v) && v > 0);
-      const respiratoryRate =
-        respValues.length > 0
-          ? respValues.reduce((a, b) => a + b, 0) / respValues.length
-          : null;
-
-      const baseFeature = buildNightFeatureSet(
-        sanitized,
-        this.startOfDay(detection.nightDate, timeZone),
-        baseline,
-        {
-          bedtime: detection.bedtime,
-          wakeTime: detection.wakeTime,
-          continuity: detection.continuity,
-          regularity: detection.regularity,
-          validCoverage: detection.validCoverage,
-          sleepEstimateHours: detection.durationHours,
-          respiratoryRate,
-        },
-      );
-      const effectiveFeature = effectiveSleepFeatureSet(baseFeature, detection);
-      featureByNightKey.set(
-        this.dayKey(effectiveFeature.nightDate, timeZone),
-        effectiveFeature,
-      );
-    }
-
     const effectiveFeatures = await this.loadNightFeaturesFromDb(userId, cutoff);
     const recomputedBaseline = await this.loadBaselineFromDb(userId, {
       restingHeartRate: 0,
@@ -593,7 +533,6 @@ export class PipelineService {
       isWarmedUp: false,
       maxHeartRate: null,
     });
-    featureByNightKey.clear();
     for (const f of effectiveFeatures) {
       featureByNightKey.set(this.dayKey(f.nightDate, timeZone), f);
     }
