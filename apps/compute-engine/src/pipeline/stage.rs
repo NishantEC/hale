@@ -118,4 +118,5 @@ pub fn default_registry() -> StageRegistry {
         .register_window(super::stages::activity_detect::ActivityDetectStage)
         .register_window(super::stages::sleep_stages::SleepStagesStage)
         .register_window(super::stages::wellness::WellnessStage)
+        .register_window(super::stages::derived_metrics::DerivedMetricsStage)
 }

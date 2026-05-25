@@ -561,129 +561,23 @@ export class PipelineService {
       );
     }
 
-    // precomputeMetricSeries does the expensive shared series work for
-    // the JS fallback path (stressPoints, spo2Points, skinTemperaturePoints,
-    // rollingRmssd). It's ~25 minutes on a 45-day window, so it's deferred
-    // until we actually need it — when Rust batch succeeds, Rust does its
-    // own per-day precompute server-side and we never hit this code.
+    // daily_metrics is written by the Rust worker's derived_metrics
+    // stage; backend just reads the rows back for downstream view
+    // assembly. The compute-engine HTTP bridge + JS fallback that used
+    // to live here is gone.
     const referenceDays = this.collectReferenceDays(
       sensorRecords,
       sleepDetections,
       effectiveFeatures,
       timeZone,
     );
-    const usingRust = this.computeEngineClient.isEnabled();
-    const runId = randomUUID();
-    const derivedMetricsByDay: { dayDate: Date; metrics: DerivedMetricsBundle }[] = [];
-    const rustActivityBouts: ActivityBout[] = [];
-    let rustOwnsActivities = false;
-
-    // Phase 2 batch: one HTTP call covers every reference day. Rust loops
-    // days internally — Node only allocates the request payload once,
-    // avoiding the per-day 65 MiB allocation churn that pushed memory past
-    // 4 GiB in Phase 1 per-day. On any failure (network/timeout/parse/etc.)
-    // we fall back to the in-process JS loop for ALL days, which keeps the
-    // shadow-mode result invariants simple.
-    let batchSucceeded = false;
-    if (usingRust && referenceDays.length > 0) {
-      const batchReq = buildBatchRequest({
-        samples: sanitized,
-        sensorRecords,
-        effectiveFeatures,
-        sleepDetections,
-        baseline: recomputedBaseline,
-        dayDates: referenceDays,
-        timeZone,
-      });
-      const r = await this.computeEngineClient.computeBatch(batchReq, {
-        userId,
-        runId,
-        days: referenceDays.length,
-      });
-      if (r.ok) {
-        const byDay = new Map<string, PersistedDailyMetricV1>();
-        for (const entry of r.result.derivedMetricsByDay) {
-          byDay.set(entry.dayDate, entry.metrics);
-        }
-        for (const dayDate of referenceDays) {
-          const key = this.startOfDay(dayDate, timeZone)
-            .toISOString()
-            .slice(0, 10);
-          const persisted = byDay.get(key);
-          if (!persisted) {
-            // Rust returned a different set of day keys than we sent.
-            // Treat as malformed and fall back to JS.
-            this.logger.warn(
-              `compute-engine batch missing day ${key}; falling back to JS`,
-            );
-            derivedMetricsByDay.length = 0;
-            rustActivityBouts.length = 0;
-            rustOwnsActivities = false;
-            break;
-          }
-          derivedMetricsByDay.push({
-            dayDate,
-            metrics: liftPersistedToBundle(persisted),
-          });
-          rustActivityBouts.push(...liftActivityBouts(persisted));
-        }
-        if (derivedMetricsByDay.length === referenceDays.length) {
-          rustOwnsActivities = true;
-          batchSucceeded = true;
-        }
-      }
-    }
-
-    if (!batchSucceeded) {
-      // JS in-process loop. Either Rust was disabled, the batch call failed,
-      // or the response was missing day keys. Bridge code is bypassed.
-      // precomputeMetricSeries is run lazily here so we only pay its ~25-min
-      // cost when JS actually has to do the work.
-      derivedMetricsByDay.length = 0;
-      rustActivityBouts.length = 0;
-      rustOwnsActivities = false;
-      const metricsPrecomputed = precomputeMetricSeries(sanitized, sensorRecords);
-      for (const dayDate of referenceDays) {
-        derivedMetricsByDay.push({
-          dayDate,
-          metrics: computeDerivedMetrics(
-            sanitized,
-            sensorRecords,
-            effectiveFeatures,
-            sleepDetections,
-            recomputedBaseline,
-            dayDate,
-            timeZone,
-            metricsPrecomputed,
-          ),
-        });
-      }
-    }
-
-    // When the Rust path owned every day's compute, prefer its bouts over
-    // the TS detector output. The Rust path doesn't emit Off-Wrist /
-    // No-Data sentinels yet, so run the standalone gap detector and merge
-    // them in so the activity feed still surfaces coverage holes.
-    // Otherwise the TS bouts stay (already in `activityBouts`).
-    if (rustOwnsActivities) {
-      const gaps = detectActivityGaps(
-        sensorRecords,
-        sleepDetections,
-        sourceLabeledIntervals,
-      );
-      activityBouts = [...rustActivityBouts, ...gaps].sort(
-        (a, b) => a.startTime.getTime() - b.startTime.getTime(),
-      );
-      if (activityBouts.length > 0) {
-        activityBouts = await this.applyHealthkitReclassifiers(
-          userId,
-          activityBouts,
-          sensorRecords,
-          baseline,
-          timeZone,
-        );
-      }
-    }
+    const derivedMetricsByDay = await this.loadDailyMetricsFromDb(
+      userId,
+      cutoff,
+      referenceDays,
+      timeZone,
+    );
+    const rustOwnsActivities = false;
 
     const typicalRanges = computeTypicalRanges(sleepDetections, sleepStages, now);
     const correlations = journalSleepCorrelations(
@@ -1508,6 +1402,48 @@ export class PipelineService {
    * hiking checks duration ≥ 20 min, stair detector limits to ≤ 10 min, so
    * they don't overlap.
    */
+  private async loadDailyMetricsFromDb(
+    userId: string,
+    cutoff: Date,
+    referenceDays: Date[],
+    timeZone: string,
+  ): Promise<{ dayDate: Date; metrics: DerivedMetricsBundle }[]> {
+    const rows = await this.dailyMetricRepo.find({
+      where: { userId, dayDate: MoreThanOrEqual(cutoff) },
+      order: { dayDate: 'ASC' },
+    });
+    const byKey = new Map<number, DailyMetric>();
+    for (const r of rows) {
+      byKey.set(this.dayKey(r.dayDate, timeZone), r);
+    }
+    return referenceDays
+      .map((dayDate) => {
+        const row = byKey.get(this.dayKey(dayDate, timeZone));
+        if (!row) return null;
+        const metrics: DerivedMetricsBundle = {
+          stressAverage: row.stressAverage ?? null,
+          spo2Average: row.spo2Average ?? null,
+          skinTempAvgCelsius: row.skinTempAvgCelsius ?? null,
+          skinTempDeltaCelsius: row.skinTempDeltaCelsius ?? null,
+          strainScore: row.strainScore ?? null,
+          sleepConsistencyScore: row.sleepConsistencyScore ?? null,
+          detectedSleepNights: row.detectedSleepNights,
+          lfHfRatioAverage: row.lfHfRatioAverage ?? null,
+          recoveryIndex: row.recoveryIndex ?? null,
+          trainingLoadRatio: row.trainingLoadRatio ?? null,
+          trainingLoadRiskZone: row.trainingLoadRiskZone ?? null,
+          spo2DipCount: row.spo2DipCount ?? null,
+          odiPerHour: row.odiPerHour ?? null,
+          lowestSpo2: row.lowestSpo2 ?? null,
+          coreTemperatureEstimate: row.coreTemperatureEstimate ?? null,
+          circadianNadir: row.circadianNadir ?? null,
+          sleepArchitectureScore: row.sleepArchitectureScore ?? null,
+        } as DerivedMetricsBundle;
+        return { dayDate, metrics };
+      })
+      .filter((entry): entry is { dayDate: Date; metrics: DerivedMetricsBundle } => entry !== null);
+  }
+
   private async loadNightFeaturesFromDb(
     userId: string,
     cutoff: Date,
