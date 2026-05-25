@@ -16,6 +16,7 @@ pub mod stress;
 pub mod timestamp_slice;
 pub mod training_load;
 pub mod util;
+pub mod wellness_scoring;
 
 pub use timestamp_slice::{
     HasTimestamp, HasValue, average_by_timestamp, slice_by_timestamp, sum_by_timestamp,

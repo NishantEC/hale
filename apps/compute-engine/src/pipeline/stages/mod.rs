@@ -5,3 +5,4 @@
 pub mod activity_detect;
 pub mod sleep_detect;
 pub mod sleep_stages;
+pub mod wellness;
