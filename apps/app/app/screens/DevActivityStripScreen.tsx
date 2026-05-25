@@ -49,6 +49,7 @@ function mockSnapshot(state: AccessoryState): AccessorySnapshot {
     syncError: null,
     pipelineState: "idle",
     deadCount: 0,
+    lastDeadLetterError: null,
     connectionState: "disconnected",
     wasWornRecently: false,
     disconnectedAt: null,
@@ -78,7 +79,7 @@ function mockSnapshot(state: AccessoryState): AccessorySnapshot {
     case "sync_error":
       return { ...base, syncError: "HTTP 500" }
     case "dead_letters":
-      return { ...base, deadCount: 12 }
+      return { ...base, deadCount: 12, lastDeadLetterError: "401 Unauthorized" }
     case "disconnected_was_worn":
       return {
         ...base,

@@ -46,6 +46,7 @@ type SyncContextValue = {
   isSyncing: boolean
   pendingCount: number
   deadCount: number
+  lastDeadLetterError: string | null
   syncError: string | null
   refresh: () => Promise<void>
 }
@@ -60,6 +61,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
   const [isSyncing, setIsSyncing] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
   const [deadCount, setDeadCount] = useState(0)
+  const [lastDeadLetterError, setLastDeadLetterError] = useState<string | null>(null)
   const [syncError, setSyncError] = useState<string | null>(null)
   // lastDrainOutcome + lastDrainAt live in the drainTelemetry zustand store so
   // they don't churn every useSyncContext() consumer on each drain settle.
@@ -112,12 +114,18 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
           }
         }
 
-        const [pending, dead] = await Promise.all([
+        const [pending, deadRows] = await Promise.all([
           queueDepth(db),
-          listDeadLetters(db).then((rows) => rows.length),
+          listDeadLetters(db),
         ])
         setPendingCount(pending)
-        setDeadCount(dead)
+        setDeadCount(deadRows.length)
+        const mostRecent = deadRows.reduce<typeof deadRows[number] | null>(
+          (acc, row) =>
+            !acc || (row.lastAttemptAt ?? 0) > (acc.lastAttemptAt ?? 0) ? row : acc,
+          null,
+        )
+        setLastDeadLetterError(mostRecent?.lastError ?? null)
       } catch (err: any) {
         // drainLoop itself threw (e.g. SQLite open failure). Independent of
         // per-row failures captured in outcome.error.
@@ -250,10 +258,11 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
       isSyncing,
       pendingCount,
       deadCount,
+      lastDeadLetterError,
       syncError,
       refresh,
     }),
-    [isOnline, isSyncing, pendingCount, deadCount, syncError, refresh],
+    [isOnline, isSyncing, pendingCount, deadCount, lastDeadLetterError, syncError, refresh],
   )
 
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>

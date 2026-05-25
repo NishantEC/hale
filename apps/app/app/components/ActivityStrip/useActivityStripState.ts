@@ -93,6 +93,7 @@ function buildSnapshot(
 
     syncError: sync.syncError ?? null,
     deadCount: sync.deadCount,
+    lastDeadLetterError: sync.lastDeadLetterError ?? null,
     isOnline: sync.isOnline,
     pendingCount: sync.pendingCount,
     queueIsSyncing: sync.isSyncing,

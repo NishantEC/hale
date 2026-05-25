@@ -37,6 +37,7 @@ export type AccessorySnapshot = {
 
   syncError: string | null
   deadCount: number
+  lastDeadLetterError: string | null
   isOnline: boolean
   pendingCount: number
   queueIsSyncing: boolean
@@ -136,7 +137,12 @@ export function copyFor(state: AccessoryState, snapshot: AccessorySnapshot): str
     case "alarm_firing":          return "Alarm — Tap to dismiss"
     case "ble_error":             return `Strap error${snapshot.bleError ? ` — ${truncate(snapshot.bleError, 24)}` : ""}`
     case "sync_error":            return "Sync failed — Tap to retry"
-    case "dead_letters":          return `${snapshot.deadCount} record${snapshot.deadCount === 1 ? "" : "s"} didn't upload`
+    case "dead_letters": {
+      const n = snapshot.deadCount
+      const base = `${n} record${n === 1 ? "" : "s"} didn't upload`
+      const err = snapshot.lastDeadLetterError
+      return err ? `${base} — ${truncate(err, 32)}` : base
+    }
     case "disconnected_was_worn": return "Strap disconnected"
     case "stale_sync":            return snapshot.lastSyncAt ? `Last sync ${relative(snapshot.now - snapshot.lastSyncAt)}` : "Last sync long ago"
     case "app_update":            return "App update ready · Restart"

@@ -19,6 +19,7 @@ function makeDeps(overrides: Partial<Parameters<typeof runForceUpload>[1]["deps"
     queueDepth: jest.fn().mockResolvedValue(0),
     recordOutboundFailure: jest.fn().mockResolvedValue(undefined),
     recordOutboundFailureBatch: jest.fn().mockResolvedValue(undefined),
+    resurrectDeadLetters: jest.fn().mockResolvedValue(0),
     // Batch 2: force-upload now coordinates with the regular drain via the
     // shared drain lock. Mock the lock as freely acquirable for the tests
     // that don't specifically exercise contention.
@@ -68,6 +69,7 @@ describe("runForceUpload", () => {
       deadCount: 0,
       depthAfter: 2204,
       error: "Request timed out after 20s",
+      resurrected: 0,
       uploaded: 0,
     })
   })
@@ -105,6 +107,7 @@ describe("runForceUpload", () => {
       uploaded: FORCE_UPLOAD_BATCH_SIZE * 2,
       depthAfter: 0,
       deadCount: 0,
+      resurrected: 0,
       error: null,
     })
   })
@@ -151,6 +154,23 @@ describe("runForceUpload", () => {
 
     expect(post).not.toHaveBeenCalled()
     expect(deps.claimOutboundBatch).not.toHaveBeenCalled()
-    expect(result).toEqual({ uploaded: 0, depthAfter: 0, deadCount: 0, error: null })
+    expect(result).toEqual({ uploaded: 0, depthAfter: 0, deadCount: 0, resurrected: 0, error: null })
+  })
+
+  it("resurrects dead letters before draining and surfaces the count", async () => {
+    const db = {}
+    const batch = makeBatch(3, "raw_sensor_records", 0)
+    const deps = makeDeps({
+      resurrectDeadLetters: jest.fn().mockResolvedValue(429),
+      claimOutboundBatch: jest.fn().mockResolvedValueOnce(batch).mockResolvedValueOnce([]),
+      queueDepth: jest.fn().mockResolvedValueOnce(429).mockResolvedValueOnce(0),
+    })
+    const post = jest.fn().mockResolvedValue({ ok: true })
+
+    const result = await runForceUpload(db as never, { deps, post })
+
+    expect(deps.resurrectDeadLetters).toHaveBeenCalledTimes(1)
+    expect(result.resurrected).toBe(429)
+    expect(result.uploaded).toBe(3)
   })
 })

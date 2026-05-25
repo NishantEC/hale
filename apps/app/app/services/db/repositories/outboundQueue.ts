@@ -324,6 +324,37 @@ export async function retryOutboundRow(db: NoopDatabase, id: string): Promise<vo
   })
 }
 
+// Bulk reset every dead-letter row in one transaction. Used by Force
+// Upload so an entire backlog of permanently-failed rows (often the
+// fallout of a single bad token rotation that pre-fix dead-lettered
+// every in-flight POST) can be recovered without 1:1 inspector clicks.
+// Returns the number of rows resurrected.
+export async function resurrectDeadLetters(db: NoopDatabase): Promise<number> {
+  return withWrite(db, async (tx) => {
+    const dead = await tx
+      .select({ id: outboundQueue.id })
+      .from(outboundQueue)
+      .where(gte(outboundQueue.attempts, MAX_ATTEMPTS_BEFORE_DEAD_LETTER))
+    if (dead.length === 0) return 0
+    const ids = dead.map((r) => r.id)
+    const CHUNK = 500
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const slice = ids.slice(i, i + CHUNK)
+      await tx
+        .update(outboundQueue)
+        .set({
+          attempts: 0,
+          lastError: null,
+          nextAttemptAt: 0,
+          claimedBy: null,
+          claimExpiresAt: 0,
+        })
+        .where(inArray(outboundQueue.id, slice))
+    }
+    return dead.length
+  })
+}
+
 // Permanently discard a queue entry without uploading.
 export async function discardOutboundRow(db: NoopDatabase, id: string): Promise<void> {
   await withWrite(db, async (tx) => {

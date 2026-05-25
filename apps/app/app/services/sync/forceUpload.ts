@@ -12,6 +12,7 @@ import {
   queueDepth,
   recordOutboundFailure,
   recordOutboundFailureBatch,
+  resurrectDeadLetters,
 } from "../db/repositories/outboundQueue"
 import { backfillUnsyncedRawSensorRecords } from "../db/repositories/rawSensorRecord"
 import { markUploaded } from "../db/repositories/mirrorSync"
@@ -35,6 +36,7 @@ export interface ForceUploadResult {
   uploaded: number
   depthAfter: number
   deadCount: number
+  resurrected: number
   error: string | null
 }
 
@@ -47,6 +49,7 @@ export interface ForceUploadDependencies {
   queueDepth: typeof queueDepth
   recordOutboundFailure: typeof recordOutboundFailure
   recordOutboundFailureBatch: typeof recordOutboundFailureBatch
+  resurrectDeadLetters: typeof resurrectDeadLetters
   acquireDrainLock: typeof acquireDrainLock
   releaseDrainLock: typeof releaseDrainLock
 }
@@ -60,6 +63,7 @@ export const defaultForceUploadDependencies: ForceUploadDependencies = {
   queueDepth,
   recordOutboundFailure,
   recordOutboundFailureBatch,
+  resurrectDeadLetters,
   acquireDrainLock,
   releaseDrainLock,
 }
@@ -94,19 +98,19 @@ export async function runForceUpload(
       uploaded: 0,
       depthAfter,
       deadCount,
+      resurrected: 0,
       error: "another sync is in progress — try again in a moment",
     }
   }
 
   try {
-  // Anchor the deadline before backfill so a slow catch-up (up to backfillLimit
-  // rows) can't eat into the 1 min cushion under the 5 min lock TTL.
   const deadline = now() + FORCE_UPLOAD_MAX_MS
+  const resurrected = await deps.resurrectDeadLetters(db).catch(() => 0)
   await deps.backfillUnsyncedRawSensorRecords(db, backfillLimit).catch(() => undefined)
 
   const total = await deps.queueDepth(db)
   if (total === 0) {
-    return { uploaded: 0, depthAfter: 0, deadCount: 0, error: null }
+    return { uploaded: 0, depthAfter: 0, deadCount: 0, resurrected, error: null }
   }
 
   let uploaded = 0
@@ -187,6 +191,7 @@ export async function runForceUpload(
     uploaded,
     depthAfter,
     deadCount,
+    resurrected,
     error: firstError,
   }
   } finally {

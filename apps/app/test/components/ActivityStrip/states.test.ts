@@ -11,6 +11,7 @@ function snap(overrides: Partial<AccessorySnapshot> = {}): AccessorySnapshot {
     syncError: null,
     pipelineState: "idle",
     deadCount: 0,
+    lastDeadLetterError: null,
     connectionState: "disconnected",
     wasWornRecently: false,
     disconnectedAt: null,

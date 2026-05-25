@@ -165,8 +165,9 @@ export const DebugInspectorScreen: FC = () => {
       } else if (result.error) {
         setError(`Upload failed after ${result.uploaded}: ${result.error}`)
       } else {
+        const resurrectedBit = result.resurrected > 0 ? ` (resurrected ${result.resurrected})` : ""
         setBanner(
-          `Uploaded ${result.uploaded}. ${result.depthAfter} queued. ${result.deadCount} dead.`,
+          `Uploaded ${result.uploaded}. ${result.depthAfter} queued. ${result.deadCount} dead${resurrectedBit}.`,
         )
       }
     } catch (err: any) {

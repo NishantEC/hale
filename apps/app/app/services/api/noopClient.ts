@@ -776,13 +776,18 @@ export class ApiError extends Error {
 // 5xx → server error (transient).
 // 408 Request Timeout, 429 Too Many Requests, 425 Too Early → transient even
 // though they are 4xx by spec.
-// All other 4xx → permanent: malformed request, auth failure, schema
-// rejection. Retrying won't help.
+// 401 → transient. Treating "session token expired mid-drain" as permanent
+// dead-lettered the entire in-flight batch the moment a token rotated — that
+// silently lost user data. The right behavior is: clearSession() runs in
+// requestJsonImpl, the user re-auths via AuthContext, and the next drain
+// retries with the fresh token.
+// All other 4xx → permanent: malformed request, schema rejection, forbidden.
+// Retrying won't help.
 export function isTransientApiError(err: unknown): boolean {
   if (!(err instanceof ApiError)) return true; // unknown shape — assume transient
   if (err.status === 0) return true;
   if (err.status >= 500) return true;
-  if (err.status === 408 || err.status === 425 || err.status === 429) return true;
+  if (err.status === 401 || err.status === 408 || err.status === 425 || err.status === 429) return true;
   return false;
 }
 
