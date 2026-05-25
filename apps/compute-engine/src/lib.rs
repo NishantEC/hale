@@ -2,6 +2,7 @@ pub mod calendar;
 pub mod derived_metrics;
 pub mod handlers;
 pub mod math;
+pub mod pipeline;
 pub mod types;
 
 use axum::{

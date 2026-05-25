@@ -6,8 +6,13 @@ use axum::{
     response::{IntoResponse, Json},
     routing::{get, post},
 };
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use noop_compute_engine::math::sleep_detect::{self, HistoricalRecord, SleepDetectionSummary};
+use noop_compute_engine::pipeline::{
+    dirty::{expand_for_boundaries, load_dirty_days},
+    ledger::StageLedger,
+    types::StageName,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{ConnectOptions, PgPool};
@@ -43,12 +48,6 @@ struct RunTaskResponse {
     /// Number of sleep_detections rows the worker wrote.
     sleep_detections_written: usize,
     status: &'static str,
-}
-
-#[derive(Debug)]
-struct DayFingerprint {
-    day_date: NaiveDate,
-    raw_max_updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
@@ -138,7 +137,7 @@ async fn run_task(
         }
     });
 
-    let outcome = do_run_work(state.pool.as_ref(), &user_id, &time_zone, since).await;
+    let outcome = do_run_work(state.pool.as_ref(), run_id, &user_id, &time_zone, since).await;
 
     // Stop the heartbeat task before finalizing so we don't race the
     // terminal update.
@@ -207,6 +206,7 @@ struct RunReport {
 
 async fn do_run_work(
     pool: &PgPool,
+    run_id: Uuid,
     user_id: &str,
     time_zone: &str,
     since: DateTime<Utc>,
@@ -227,10 +227,9 @@ async fn do_run_work(
     let count = row.0.unwrap_or(0);
     let max_ts = row.1;
 
-    let fingerprints = day_fingerprints(pool, user_id, time_zone, since).await?;
-    let day_state_upserts = upsert_day_state(pool, user_id, &fingerprints).await?;
+    let dirty = load_dirty_days(pool, user_id, time_zone, since, /* force */ false).await?;
+    let day_state_upserts = StageLedger::upsert_raw_day_state(pool, user_id, &dirty).await?;
 
-    // ─ Sleep detect ─────────────────────────────────────────────
     let records = fetch_records_for_sleep(pool, user_id, since).await?;
     let events = fetch_wrist_events(pool, user_id, since).await?;
     let window_end = max_ts.unwrap_or_else(Utc::now);
@@ -240,12 +239,59 @@ async fn do_run_work(
     let sleep_detections_written =
         write_sleep_detections(pool, user_id, since, window_end, &detections).await?;
 
+    // Record stage_state rows for sleep_detect on every dirty day so the
+    // table populates from Week-1 onward — Week-2 will flip the conductor
+    // over to per-day execution against these rows.
+    record_sleep_detect_ledger(pool, run_id, user_id, &dirty).await?;
+
     Ok(RunReport {
         raw_row_count: count,
         raw_max_timestamp: max_ts,
         day_state_upserts,
         sleep_detections_written,
     })
+}
+
+async fn record_sleep_detect_ledger(
+    pool: &PgPool,
+    run_id: Uuid,
+    user_id: &str,
+    dirty: &[noop_compute_engine::pipeline::types::DirtyDay],
+) -> anyhow::Result<()> {
+    let days = expand_for_boundaries(dirty);
+    for day in days {
+        let raw_max = dirty
+            .iter()
+            .find(|d| d.day_date == day)
+            .map(|d| d.raw_max_updated_at)
+            .unwrap_or_else(Utc::now);
+        let fp = StageLedger::fingerprint(raw_max, StageName::SleepDetect, &[]);
+        let changed = StageLedger::mark_pending_if_changed(
+            pool,
+            run_id,
+            user_id,
+            day,
+            StageName::SleepDetect,
+            &fp,
+        )
+        .await?;
+        if !changed {
+            continue;
+        }
+        let mut tx = pool.begin().await.context("begin stage_state tx")?;
+        StageLedger::mark_running(&mut *tx, run_id, user_id, day, StageName::SleepDetect).await?;
+        StageLedger::mark_succeeded(
+            &mut *tx,
+            run_id,
+            user_id,
+            day,
+            StageName::SleepDetect,
+            serde_json::json!({}),
+        )
+        .await?;
+        tx.commit().await.context("commit stage_state tx")?;
+    }
+    Ok(())
 }
 
 fn parse_time_zone(name: &str) -> Option<chrono_tz::Tz> {
@@ -470,79 +516,6 @@ async fn finalize_lease(
     .await
     .context("finalize_lease update")?;
     Ok(())
-}
-
-/// Group raw_sensor_records by user-local calendar day and return the
-/// max("updatedAt") observed per day. The day_date in the result is in
-/// the user's timezone (IANA name).
-async fn day_fingerprints(
-    pool: &PgPool,
-    user_id: &str,
-    time_zone: &str,
-    since: DateTime<Utc>,
-) -> anyhow::Result<Vec<DayFingerprint>> {
-    let rows: Vec<(NaiveDate, DateTime<Utc>)> = sqlx::query_as(
-        r#"
-        SELECT
-            (("timestamp" AT TIME ZONE $2)::date) AS day,
-            MAX("updatedAt") AS raw_max_updated_at
-        FROM raw_sensor_records
-        WHERE "userId" = $1
-          AND "timestamp" >= $3
-        GROUP BY day
-        ORDER BY day
-        "#,
-    )
-    .bind(user_id)
-    .bind(time_zone)
-    .bind(since)
-    .fetch_all(pool)
-    .await
-    .context("day_fingerprints query")?;
-
-    Ok(rows
-        .into_iter()
-        .map(|(day_date, raw_max_updated_at)| DayFingerprint {
-            day_date,
-            raw_max_updated_at,
-        })
-        .collect())
-}
-
-/// Upsert (userId, dayDate) → rawMaxUpdatedAt. ON CONFLICT keeps
-/// lastComputedAt + computedRevision untouched (they belong to the
-/// re-derive step, which Phase B owns). Returns the number of rows
-/// affected.
-async fn upsert_day_state(
-    pool: &PgPool,
-    user_id: &str,
-    fingerprints: &[DayFingerprint],
-) -> anyhow::Result<u64> {
-    if fingerprints.is_empty() {
-        return Ok(0);
-    }
-    let mut total: u64 = 0;
-    for fp in fingerprints {
-        let result = sqlx::query(
-            r#"
-            INSERT INTO pipeline_day_state
-                ("userId", "dayDate", "rawMaxUpdatedAt", "updatedAt")
-            VALUES ($1, $2, $3, NOW())
-            ON CONFLICT ("userId", "dayDate") DO UPDATE
-            SET "rawMaxUpdatedAt" = EXCLUDED."rawMaxUpdatedAt",
-                "updatedAt" = NOW()
-            WHERE pipeline_day_state."rawMaxUpdatedAt" IS DISTINCT FROM EXCLUDED."rawMaxUpdatedAt"
-            "#,
-        )
-        .bind(user_id)
-        .bind(fp.day_date)
-        .bind(fp.raw_max_updated_at)
-        .execute(pool)
-        .await
-        .with_context(|| format!("upsert pipeline_day_state for {} {}", user_id, fp.day_date))?;
-        total += result.rows_affected();
-    }
-    Ok(total)
 }
 
 /// Build the Postgres connect options. Two flavours:
