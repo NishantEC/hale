@@ -145,16 +145,14 @@ fn compute_epoch_feature(
     } else {
         0.0
     };
-    let hr_min =
-        heart_rates
-            .iter()
-            .cloned()
-            .fold(f64::NAN, |a, b| if a.is_nan() { b } else { a.min(b) });
-    let hr_max =
-        heart_rates
-            .iter()
-            .cloned()
-            .fold(f64::NAN, |a, b| if a.is_nan() { b } else { a.max(b) });
+    let hr_min = heart_rates
+        .iter()
+        .cloned()
+        .fold(f64::NAN, |a, b| if a.is_nan() { b } else { a.min(b) });
+    let hr_max = heart_rates
+        .iter()
+        .cloned()
+        .fold(f64::NAN, |a, b| if a.is_nan() { b } else { a.max(b) });
     let hr_delta_from_baseline = if night_median_hr > 0.0 && !hr_mean.is_nan() {
         (hr_mean - night_median_hr) / night_median_hr
     } else {
