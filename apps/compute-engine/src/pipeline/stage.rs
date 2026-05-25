@@ -116,4 +116,5 @@ pub fn default_registry() -> StageRegistry {
     StageRegistry::new()
         .register_window(super::stages::sleep_detect::SleepDetectStage)
         .register_window(super::stages::activity_detect::ActivityDetectStage)
+        .register_window(super::stages::sleep_stages::SleepStagesStage)
 }

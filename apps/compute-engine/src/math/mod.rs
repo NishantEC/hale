@@ -1,12 +1,14 @@
 pub mod activity;
 pub mod activity_detect;
 pub mod core_temperature;
+pub mod epoch_features;
 pub mod hrv;
 pub mod recovery_index;
 pub mod sensor_sample;
 pub mod skin_temp;
 pub mod sleep_consistency;
 pub mod sleep_detect;
+pub mod sleep_stages;
 pub mod spo2;
 pub mod spo2_events;
 pub mod strain;
