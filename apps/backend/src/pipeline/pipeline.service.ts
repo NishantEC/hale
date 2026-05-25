@@ -560,7 +560,10 @@ export class PipelineService {
       ),
     );
 
-    const sleepStages = classifySleepStages(allEpochFeatures, sleepDetections);
+    const sleepStages =
+      process.env.WORKER_OWNS_SLEEP_STAGES === 'true'
+        ? await this.loadSleepStagesFromDb(userId, cutoff)
+        : classifySleepStages(allEpochFeatures, sleepDetections);
     mark('sleep-stages');
 
     const featureByNightKey = new Map<number, import('../processing/interfaces.js').NightFeatureSet>();
@@ -1587,6 +1590,28 @@ export class PipelineService {
    * hiking checks duration ≥ 20 min, stair detector limits to ≤ 10 min, so
    * they don't overlap.
    */
+  private async loadSleepStagesFromDb(
+    userId: string,
+    cutoff: Date,
+  ): Promise<import('../processing/interfaces.js').SleepStageSummary[]> {
+    const rows = await this.sleepStageRepo.find({
+      where: { userId, nightDate: MoreThanOrEqual(cutoff) },
+      order: { nightDate: 'ASC' },
+    });
+    return rows.map((r) => ({
+      nightDate: r.nightDate,
+      remMinutes: r.remMinutes,
+      coreMinutes: r.coreMinutes,
+      deepMinutes: r.deepMinutes,
+      awakeMinutes: r.awakeMinutes,
+      unknownMinutes: r.unknownMinutes,
+      confidence: r.confidence,
+      source: r.source,
+      epochTimeline: (r.epochTimeline as unknown) as import('../processing/interfaces.js').SleepStageEpoch[],
+      epochMinutes: r.epochMinutes,
+    }));
+  }
+
   private async loadActivityBoutsFromDb(
     userId: string,
     cutoff: Date,
