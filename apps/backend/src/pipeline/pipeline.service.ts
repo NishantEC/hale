@@ -795,6 +795,12 @@ export class PipelineService {
   // client can poll the same job (codex adversarial review 2026-05-21,
   // finding #3).
   async enqueuePipelineRun(userId: string, timeZoneInput?: string) {
+    // Resolve TZ before passing to the worker — without this the worker
+    // defaults to UTC, and night_date = start_of_day(wake_time, UTC)
+    // mis-attributes sleeps to the wrong calendar day (e.g. a wake at
+    // 04:00 IST lands as nightDate = previous-day UTC).
+    const resolvedTz = timeZoneInput ?? (await this.userTimeZone(userId)) ?? 'UTC';
+
     const existing = await this.pipelineRunRepo.findOne({
       where: [
         { userId, status: 'queued' as any },
@@ -828,7 +834,7 @@ export class PipelineService {
       error: null,
     });
 
-    void this.runPipelineAsync(userId, timeZoneInput, row.id);
+    void this.runPipelineAsync(userId, resolvedTz, row.id);
 
     return {
       runId: row.id,
