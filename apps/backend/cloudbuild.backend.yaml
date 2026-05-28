@@ -1,0 +1,17 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - '-f'
+      - 'apps/backend/Dockerfile'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/flashckard/noop/backend:${_TAG}'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/flashckard/noop/backend:latest'
+      - '.'
+images:
+  - 'us-central1-docker.pkg.dev/flashckard/noop/backend:${_TAG}'
+  - 'us-central1-docker.pkg.dev/flashckard/noop/backend:latest'
+options:
+  machineType: 'E2_HIGHCPU_8'
+timeout: '1800s'

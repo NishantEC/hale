@@ -5,12 +5,12 @@ steps:
       - '-f'
       - 'Dockerfile.worker'
       - '-t'
-      - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:dev-2026-05-25-fix-delegation'
+      - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:dev-2026-05-25-sleep'
       - '-t'
       - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:latest'
       - '.'
 images:
-  - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:dev-2026-05-25-fix-delegation'
+  - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:dev-2026-05-25-sleep'
   - 'us-central1-docker.pkg.dev/flashckard/noop/pipeline-worker:latest'
 options:
   machineType: 'E2_HIGHCPU_8'
