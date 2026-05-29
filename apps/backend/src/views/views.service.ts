@@ -1105,7 +1105,13 @@ export class ViewsService {
             : 'Vitals concern';
 
     const restingHR = baselineProfile?.restingHeartRate ?? null;
-    const maxHR = baselineProfile?.maxHeartRate ?? null;
+    // Fall back to a generic 180bpm ceiling when the user's baseline doesn't
+    // carry an explicit maxHeartRate yet. Without this, every brand-new user
+    // (or anyone whose baseline didn't derive a max) sees an empty Stress
+    // monitor even when the strap is streaming HR data.
+    const maxHR =
+      baselineProfile?.maxHeartRate ??
+      (restingHR != null && restingHR > 0 ? Math.max(180, Math.round(restingHR * 2.5)) : null);
     const sleepStart = selectedDetection?.bedtime ?? null;
     const sleepEnd = selectedDetection?.wakeTime ?? null;
 
