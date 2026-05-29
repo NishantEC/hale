@@ -9,9 +9,7 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs"
 import { Gauge, GearSix, House, IconProps, Pulse } from "phosphor-react-native"
 
 import { Text } from "@/components/Text"
-import { useDashboard } from "@/context/DashboardContext"
 import { LOCAL_THEME } from "@/utils/localTheme"
-import type { MonitorState } from "@/services/api/noopClient"
 
 type IconType = FC<IconProps>
 
@@ -33,9 +31,10 @@ const SPRING = { damping: 22, stiffness: 240, mass: 0.7 }
 
 export const NoopTabBar: FC<BottomTabBarProps> = ({ state, navigation }) => {
   const { colors } = LOCAL_THEME
-  const { homeView } = useDashboard()
-  const monitorState: MonitorState = homeView?.monitors?.health?.state ?? "stale"
-  const tint = stateTint(monitorState, colors)
+  // Static brand tint — matches the rest of the app's monochrome `colors.tint`
+  // (white in dark theme, near-black in light). Decoupled from health state so
+  // the tab bar reads as fixed chrome instead of a status indicator.
+  const tint = brandTint(colors)
 
   const [layouts, setLayouts] = useState<Record<number, { x: number; width: number }>>({})
   const layoutsRef = useRef(layouts)
@@ -145,36 +144,17 @@ export const NoopTabBar: FC<BottomTabBarProps> = ({ state, navigation }) => {
   )
 }
 
-function stateTint(
-  s: MonitorState,
-  colors: typeof LOCAL_THEME.colors,
-): { iconActive: string; pillBackground: string; pillBorder: string; glow: string } {
-  if (s === "ok")
-    return {
-      iconActive: colors.statusGreen,
-      pillBackground: hexAlpha(colors.statusGreen, 0.18),
-      pillBorder: hexAlpha(colors.statusGreen, 0.5),
-      glow: colors.statusGreen,
-    }
-  if (s === "warn")
-    return {
-      iconActive: colors.statusAmber,
-      pillBackground: hexAlpha(colors.statusAmber, 0.18),
-      pillBorder: hexAlpha(colors.statusAmber, 0.5),
-      glow: colors.statusAmber,
-    }
-  if (s === "alert")
-    return {
-      iconActive: colors.statusRed,
-      pillBackground: hexAlpha(colors.statusRed, 0.18),
-      pillBorder: hexAlpha(colors.statusRed, 0.5),
-      glow: colors.statusRed,
-    }
+function brandTint(colors: typeof LOCAL_THEME.colors): {
+  iconActive: string
+  pillBackground: string
+  pillBorder: string
+  glow: string
+} {
   return {
-    iconActive: colors.text,
-    pillBackground: hexAlpha("#FFFFFF", 0.08),
-    pillBorder: hexAlpha("#FFFFFF", 0.18),
-    glow: "#FFFFFF",
+    iconActive: colors.tint,
+    pillBackground: hexAlpha(colors.tint, 0.14),
+    pillBorder: hexAlpha(colors.tint, 0.32),
+    glow: colors.tint,
   }
 }
 
