@@ -37,6 +37,8 @@ import {
 } from '../common/calendar.js';
 import { coverageFromMinutes, Coverage } from './coverage.js';
 
+type MonitorState = 'ok' | 'warn' | 'alert' | 'stale';
+
 type DashboardData = {
   selectedDate: Date;
   selectedKey: string;
@@ -254,14 +256,40 @@ export class ViewsService {
             },
           );
 
+    const sleep7d = this.sevenDayAverageBefore(
+      data.dailyScores,
+      'dayDate',
+      data.selectedKey,
+      data.timeZone,
+      (s) => s.sleepScore ?? null,
+    );
+    const recovery7d = this.sevenDayAverageBefore(
+      data.dailyScores,
+      'dayDate',
+      data.selectedKey,
+      data.timeZone,
+      (s) => s.dailyBalance,
+    );
+    const strain7d = this.sevenDayAverageBefore(
+      data.dailyMetrics,
+      'dayDate',
+      data.selectedKey,
+      data.timeZone,
+      (m) => m.strainScore ?? null,
+    );
+
     const rings = {
       sleep: {
         value: homeSleepScore == null ? '--' : `${homeSleepScore}`,
         progress: this.clamp01((homeSleepScore ?? 0) / 100),
+        numericValue: homeSleepScore ?? null,
+        sevenDayAverage: sleep7d,
       },
       recovery: {
-        value: selectedScore ? `${selectedScore.dailyBalance}%` : '--',
+        value: selectedScore ? `${selectedScore.dailyBalance}` : '--',
         progress: this.normalizedPercent(selectedScore?.dailyBalance),
+        numericValue: selectedScore?.dailyBalance ?? null,
+        sevenDayAverage: recovery7d,
       },
       strain: {
         value:
@@ -269,8 +297,22 @@ export class ViewsService {
             ? this.formatDecimal(selectedMetric.strainScore, 2)
             : '--',
         progress: this.clamp01((selectedMetric?.strainScore ?? 0) / 21),
+        numericValue: selectedMetric?.strainScore ?? null,
+        sevenDayAverage: strain7d,
       },
     };
+
+    const monitors = await this.buildHomeMonitors({
+      userId,
+      dayStart,
+      dayEnd,
+      timeZone: data.timeZone,
+      baselineProfile: data.baselineProfile,
+      selectedScore,
+      selectedMetric,
+      selectedFeature,
+      selectedDetection,
+    });
 
     const topInsightTitle = selectedScore?.recommendation ?? 'Steady';
     const liveHeartRateValue = '--';
@@ -285,6 +327,7 @@ export class ViewsService {
         subtitle: this.formatSelectedDateSubtitle(data.selectedDate, data.timeZone),
       },
       rings,
+      monitors,
       cards: {
         recommendation: {
           title: topInsightTitle,
@@ -332,6 +375,7 @@ export class ViewsService {
             ? `${Math.round(selectedFeature.restingHeartRate)}`
             : '--',
         baselineRhr: data.baselineProfile?.restingHeartRate ?? null,
+        respiratoryRate: selectedFeature?.respiratoryRate ?? null,
         odiPerHour: selectedMetric?.odiPerHour ?? null,
         stress:
           selectedMetric?.stressAverage != null
@@ -969,6 +1013,206 @@ export class ViewsService {
     timeZone?: string,
   ): T | null {
     return this.findByDay(items, key, selectedKey, timeZone);
+  }
+
+  private async buildHomeMonitors(input: {
+    userId: string;
+    dayStart: Date;
+    dayEnd: Date;
+    timeZone: string;
+    baselineProfile: BaselineProfile | null;
+    selectedScore: DailyScore | null;
+    selectedMetric: DailyMetric | null;
+    selectedFeature: NightFeature | null;
+    selectedDetection: SleepDetection | null;
+  }) {
+    const {
+      userId,
+      dayStart,
+      dayEnd,
+      timeZone,
+      baselineProfile,
+      selectedMetric,
+      selectedFeature,
+      selectedDetection,
+    } = input;
+
+    const latest = await this.rawSensorRepo
+      .createQueryBuilder('r')
+      .select('r."timestamp"', 't')
+      .where('r."userId" = :userId', { userId })
+      .andWhere('r."timestamp" >= :start AND r."timestamp" < :end', {
+        start: dayStart,
+        end: dayEnd,
+      })
+      .orderBy('r."timestamp"', 'DESC')
+      .limit(1)
+      .getRawOne<{ t: Date }>();
+
+    const lastReadingAt = latest?.t ? new Date(latest.t).toISOString() : null;
+    const staleSinceMs = lastReadingAt
+      ? Math.max(0, Date.now() - new Date(lastReadingAt).getTime())
+      : null;
+
+    const baselineReady = (baselineProfile?.nightsUsed ?? 0) >= 5;
+    let inRangeCount = 0;
+    let totalMetrics = 0;
+
+    if (baselineReady && baselineProfile) {
+      if (selectedFeature?.rmssd != null && selectedFeature.rmssd > 0) {
+        totalMetrics++;
+        if (selectedFeature.rmssd >= baselineProfile.rmssd * 0.8) inRangeCount++;
+      }
+      if (
+        selectedFeature?.restingHeartRate != null &&
+        selectedFeature.restingHeartRate > 0
+      ) {
+        totalMetrics++;
+        if (
+          Math.abs(selectedFeature.restingHeartRate - baselineProfile.restingHeartRate) <= 10
+        )
+          inRangeCount++;
+      }
+    }
+    if (selectedFeature?.respiratoryRate != null && selectedFeature.respiratoryRate > 0) {
+      totalMetrics++;
+      if (selectedFeature.respiratoryRate >= 10 && selectedFeature.respiratoryRate <= 20)
+        inRangeCount++;
+    }
+    if (selectedMetric?.spo2Average != null) {
+      totalMetrics++;
+      if (selectedMetric.spo2Average >= 95) inRangeCount++;
+    }
+
+    const healthState: MonitorState =
+      !lastReadingAt
+        ? 'stale'
+        : totalMetrics === 0
+          ? 'stale'
+          : inRangeCount === totalMetrics
+            ? 'ok'
+            : inRangeCount >= Math.ceil(totalMetrics / 2)
+              ? 'warn'
+              : 'alert';
+
+    const healthVerdict =
+      healthState === 'ok'
+        ? 'Within range'
+        : healthState === 'stale'
+          ? 'No data yet'
+          : healthState === 'warn'
+            ? 'Check vitals'
+            : 'Vitals concern';
+
+    const restingHR = baselineProfile?.restingHeartRate ?? null;
+    const maxHR = baselineProfile?.maxHeartRate ?? null;
+    const sleepStart = selectedDetection?.bedtime ?? null;
+    const sleepEnd = selectedDetection?.wakeTime ?? null;
+
+    let todayStrip: Array<number | null> = new Array(24).fill(null);
+    const timeInZone = { calm: 0, moderate: 0, high: 0 };
+    let overallScore: number | null = null;
+    let stressState: MonitorState = 'stale';
+    let zone: 'Calm' | 'Moderate' | 'High' | null = null;
+
+    if (restingHR != null && maxHR != null && maxHR > restingHR) {
+      const rows: Array<{ hr: string; t: Date }> = await this.rawSensorRepo
+        .createQueryBuilder('r')
+        .select('r."heartRate"', 'hr')
+        .addSelect('r."timestamp"', 't')
+        .where('r."userId" = :userId', { userId })
+        .andWhere('r."timestamp" >= :start AND r."timestamp" < :end', {
+          start: dayStart,
+          end: dayEnd,
+        })
+        .andWhere('r."heartRate" > 0')
+        .getRawMany();
+
+      const bucketScores: number[][] = Array.from({ length: 24 }, () => []);
+      const allScores: number[] = [];
+
+      for (const row of rows) {
+        const hr = Number(row.hr);
+        if (!Number.isFinite(hr) || hr <= 0) continue;
+        const ts = new Date(row.t);
+        if (sleepStart && sleepEnd && ts >= sleepStart && ts < sleepEnd) continue;
+
+        const localHour = Number(
+          new Intl.DateTimeFormat('en-US', {
+            timeZone,
+            hour: 'numeric',
+            hour12: false,
+          }).format(ts),
+        );
+        const hour = ((localHour % 24) + 24) % 24;
+
+        const stress = Math.max(
+          0,
+          Math.min(100, ((hr - restingHR) / (maxHR - restingHR)) * 100),
+        );
+        bucketScores[hour].push(stress);
+        allScores.push(stress);
+
+        if (stress < 35) timeInZone.calm++;
+        else if (stress < 65) timeInZone.moderate++;
+        else timeInZone.high++;
+      }
+
+      todayStrip = bucketScores.map((scores) =>
+        scores.length
+          ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length)
+          : null,
+      );
+
+      if (allScores.length) {
+        overallScore = Math.round(
+          allScores.reduce((s, v) => s + v, 0) / allScores.length,
+        );
+        zone = overallScore < 35 ? 'Calm' : overallScore < 65 ? 'Moderate' : 'High';
+        stressState = zone === 'High' ? 'warn' : 'ok';
+      }
+    }
+
+    return {
+      health: {
+        state: healthState,
+        verdict: healthVerdict,
+        inRangeCount,
+        totalMetrics,
+        staleSinceMs,
+        lastReadingAt,
+      },
+      stress: {
+        state: stressState,
+        score: overallScore,
+        zone,
+        lastReadingAt,
+        todayStrip,
+        timeInZone,
+      },
+    };
+  }
+
+  private sevenDayAverageBefore<T extends Record<string, any>>(
+    items: T[],
+    key: keyof T,
+    selectedKey: string,
+    timeZone: string | undefined,
+    extract: (item: T) => number | null | undefined,
+  ): number | null {
+    const candidates: { dayKey: string; value: number }[] = [];
+    for (const item of items) {
+      const itemKey = this.dayKey(new Date(item[key] as any), timeZone);
+      if (itemKey >= selectedKey) continue;
+      const value = extract(item);
+      if (value == null || !Number.isFinite(value)) continue;
+      candidates.push({ dayKey: itemKey, value });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => (a.dayKey < b.dayKey ? 1 : -1));
+    const window = candidates.slice(0, 7);
+    const sum = window.reduce((acc, c) => acc + c.value, 0);
+    return Number((sum / window.length).toFixed(2));
   }
 
   private formatSelectedDateTitle(date: Date, timeZone?: string) {

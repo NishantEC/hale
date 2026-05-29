@@ -1,5 +1,7 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
+  ActionSheetIOS,
+  Platform,
   RefreshControl,
   StyleSheet,
   TextStyle,
@@ -8,7 +10,7 @@ import {
   View,
   ViewStyle,
 } from "react-native"
-import { Brain, Heartbeat, Lightning, NotePencil, Watch } from "phosphor-react-native"
+import { Brain, Heartbeat, Lightning, Plus, Watch } from "phosphor-react-native"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, {
@@ -26,6 +28,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BlurHeader } from "@/components/BlurHeader"
 import { DateSwitcher } from "@/components/DateSwitcher"
+import { NativeDateSwitcher } from "@/components/NativeDateSwitcher"
 import { HomeDateCalendar } from "@/components/home/HomeDateCalendar"
 import { MetricRingsRow } from "@/components/home/MetricRingsRow"
 import { MonitorCard } from "@/components/home/MonitorCard"
@@ -84,6 +87,34 @@ function formatSelectedDateTitle(dateKey: string) {
     month: "short",
     day: "numeric",
   }).format(date)
+}
+
+function ringDelta(
+  current: number | null,
+  baseline: number | null,
+  precision: number = 0,
+): { direction: "up" | "down" | "flat"; text: string } | null {
+  if (current == null || baseline == null) return null
+  const diff = current - baseline
+  const epsilon = precision === 0 ? 0.5 : 0.05
+  if (Math.abs(diff) < epsilon) return { direction: "flat", text: "— 7d avg" }
+  const direction: "up" | "down" = diff > 0 ? "up" : "down"
+  const arrow = direction === "up" ? "▲" : "▼"
+  const magnitude = Math.abs(diff).toFixed(precision)
+  return { direction, text: `${arrow} ${magnitude} 7d` }
+}
+
+function formatFreshness(iso: string | null): string | null {
+  if (!iso) return null
+  const ts = new Date(iso).getTime()
+  if (!Number.isFinite(ts)) return null
+  const ageSec = Math.max(0, (Date.now() - ts) / 1000)
+  if (ageSec < 90) return "Just now"
+  const ageMin = ageSec / 60
+  if (ageMin < 60) return `${Math.round(ageMin)}m ago`
+  const ageHr = ageMin / 60
+  if (ageHr < 24) return `${Math.round(ageHr)}h ago`
+  return `${Math.round(ageHr / 24)}d ago`
 }
 
 export const HomeScreen: FC = () => {
@@ -321,19 +352,27 @@ export const HomeScreen: FC = () => {
       key: "sleep",
       label: "Sleep",
       value: (homeView?.rings.sleep.value ?? "--").replace("%", ""),
-      unit: "%",
+      unit: "",
       progress: homeView?.rings.sleep.progress ?? 0,
       color: colors.ringSleep,
       onPress: () => navigateTo("SleepDetail", "sleep-detail", { date: selectedDate }),
+      delta: ringDelta(
+        homeView?.rings.sleep.numericValue ?? null,
+        homeView?.rings.sleep.sevenDayAverage ?? null,
+      ),
     },
     {
       key: "recovery",
       label: "Recovery",
       value: (homeView?.rings.recovery.value ?? "--").replace("%", ""),
-      unit: "%",
+      unit: "",
       progress: homeView?.rings.recovery.progress ?? 0,
       color: colors.ringRecovery,
-      onPress: () => navigateTo("HomeMetric", "home-metric", { metric: "recovery" }),
+      onPress: () => navigateTo("RecoveryDetail", "recovery-detail", { date: selectedDate }),
+      delta: ringDelta(
+        homeView?.rings.recovery.numericValue ?? null,
+        homeView?.rings.recovery.sevenDayAverage ?? null,
+      ),
     },
     {
       key: "strain",
@@ -348,6 +387,11 @@ export const HomeScreen: FC = () => {
       progress: homeView?.rings.strain.progress ?? 0,
       color: colors.ringStrain,
       onPress: () => navigateTo("StrainActivity", "strain-activity"),
+      delta: ringDelta(
+        homeView?.rings.strain.numericValue ?? null,
+        homeView?.rings.strain.sevenDayAverage ?? null,
+        1,
+      ),
     },
   ] as const
 
@@ -380,6 +424,23 @@ export const HomeScreen: FC = () => {
     ],
   )
 
+  function handleQuickLog(action: QuickLogAction) {
+    switch (action) {
+      case "activity":
+        navigateTo("StrainActivity", "strain-activity")
+        break
+      case "journal":
+        navigateTo("JournalEntry", "journal-entry", { date: selectedDate })
+        break
+      case "bedtime":
+        navigateTo("SleepPlanner", "sleep-planner")
+        break
+      case "session":
+        navigateTo("StrainActivity", "strain-activity")
+        break
+    }
+  }
+
   function handleTapePress(event: TapeEvent) {
     switch (event.type) {
       case "sleep":
@@ -387,7 +448,7 @@ export const HomeScreen: FC = () => {
         break
       case "recovery":
       case "vital":
-        navigateTo("HomeMetric", "home-metric", { metric: "recovery" })
+        navigateTo("RecoveryDetail", "recovery-detail", { date: selectedDate })
         break
       case "workout":
         if (event.payload?.boutId) {
@@ -425,20 +486,33 @@ export const HomeScreen: FC = () => {
           scrollEnabled={!isHorizontalDaySwipeActive}
         >
           <View style={themed($topStrip)}>
-            <DateSwitcher
-              title={isCalendarOpen ? calendarMonthLabel : selectedDateTitle}
-              onPrevious={isCalendarOpen ? () => shiftCalendarMonth(-1) : moveToPreviousDay}
-              onNext={isCalendarOpen ? () => shiftCalendarMonth(1) : moveToNextDay}
-              onOpenCalendar={() => setCalendarOpen((v) => !v)}
-              isOpen={isCalendarOpen}
-            />
+            {process.env.EXPO_PUBLIC_HOME_NATIVE_DATE === "1" ? (
+              <NativeDateSwitcher
+                title={isCalendarOpen ? calendarMonthLabel : selectedDateTitle}
+                onPrevious={isCalendarOpen ? () => shiftCalendarMonth(-1) : moveToPreviousDay}
+                onNext={isCalendarOpen ? () => shiftCalendarMonth(1) : moveToNextDay}
+                onOpenCalendar={() => setCalendarOpen((v) => !v)}
+                isOpen={isCalendarOpen}
+              />
+            ) : (
+              <DateSwitcher
+                title={isCalendarOpen ? calendarMonthLabel : selectedDateTitle}
+                onPrevious={isCalendarOpen ? () => shiftCalendarMonth(-1) : moveToPreviousDay}
+                onNext={isCalendarOpen ? () => shiftCalendarMonth(1) : moveToNextDay}
+                onOpenCalendar={() => setCalendarOpen((v) => !v)}
+                isOpen={isCalendarOpen}
+              />
+            )}
 
-            <DevicePill
-              batteryLabel={batteryLabel}
-              isCharging={isCharging}
-              isConnected={connectionState === "ready"}
-              onPress={() => navigateTo("DeviceSettings", "device-settings")}
-            />
+            <View style={themed($topStripRight)}>
+              <ComposeButton onSelect={handleQuickLog} />
+              <DevicePill
+                batteryLabel={batteryLabel}
+                isCharging={isCharging}
+                isConnected={connectionState === "ready"}
+                onPress={() => navigateTo("DeviceSettings", "device-settings")}
+              />
+            </View>
           </View>
 
           <Animated.View
@@ -496,6 +570,7 @@ export const HomeScreen: FC = () => {
                     score={String(healthMonitor?.inRangeCount ?? 0)}
                     scoreSubscript={`/${healthMonitor?.totalMetrics ?? 4}`}
                     verdict={healthMonitor?.verdict ?? "No recent data"}
+                    freshness={formatFreshness(healthMonitor?.lastReadingAt ?? null)}
                     tint={colors.ringRecovery}
                     onPress={() => navigateTo("HealthMonitor", "health-monitor")}
                   />
@@ -503,8 +578,9 @@ export const HomeScreen: FC = () => {
                     icon={Brain}
                     title="Stress"
                     state={stressMonitor?.state ?? "stale"}
-                    score={stressMonitor?.score == null ? "--" : stressMonitor.score.toFixed(1)}
+                    score={stressMonitor?.score == null ? "--" : stressMonitor.score.toFixed(0)}
                     verdict={stressMonitor?.zone ?? "No reading"}
+                    freshness={formatFreshness(stressMonitor?.lastReadingAt ?? null)}
                     tint={colors.ringHrv}
                     onPress={() => navigateTo("StressMonitor", "stress-monitor")}
                   />
@@ -534,16 +610,38 @@ export const HomeScreen: FC = () => {
   )
 }
 
-function ComposeButton({ onPress }: { onPress: () => void }) {
+type QuickLogAction = "activity" | "journal" | "bedtime" | "session"
+
+function ComposeButton({ onSelect }: { onSelect: (action: QuickLogAction) => void }) {
   const colors = LOCAL_THEME.colors
+
+  const open = useCallback(() => {
+    const labels = ["Add activity", "Journal", "Bedtime", "Start session", "Cancel"]
+    const actions: QuickLogAction[] = ["activity", "journal", "bedtime", "session"]
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: labels,
+          cancelButtonIndex: 4,
+          userInterfaceStyle: "dark",
+        },
+        (idx) => {
+          if (idx >= 0 && idx < actions.length) onSelect(actions[idx])
+        },
+      )
+      return
+    }
+    onSelect("journal")
+  }, [onSelect])
+
   return (
     <TouchableOpacity
       accessibilityRole="button"
-      accessibilityLabel="New journal entry"
+      accessibilityLabel="Quick log"
       style={themed($composeButton)}
-      onPress={onPress}
+      onPress={open}
     >
-      <NotePencil size={18} color={colors.text} />
+      <Plus size={18} color={colors.text} />
     </TouchableOpacity>
   )
 }

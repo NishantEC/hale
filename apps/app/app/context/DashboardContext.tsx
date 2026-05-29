@@ -59,6 +59,7 @@ function deriveMonitorsFallback(
     inRangeCount,
     totalMetrics: 4,
     staleSinceMs: null,
+    lastReadingAt: null,
   }
 
   const stressStr = activities.stress
@@ -183,10 +184,16 @@ function clamp01(value: number) {
 
 function computeSleepRing(durationHours?: number | null, targetSleepMinutes = 480) {
   if (durationHours == null) {
-    return { value: "--", progress: 0 }
+    return { value: "--", progress: 0, numericValue: null, sevenDayAverage: null }
   }
   const pct = Math.max(0, Math.min(100, (durationHours / (targetSleepMinutes / 60)) * 100))
-  return { value: `${Math.round(pct)}%`, progress: clamp01(pct / 100) }
+  const rounded = Math.round(pct)
+  return {
+    value: `${rounded}`,
+    progress: clamp01(pct / 100),
+    numericValue: rounded,
+    sevenDayAverage: null,
+  }
 }
 
 function isViewsApiUnavailable(error: unknown) {
@@ -221,12 +228,16 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
     rings: {
       sleep: computeSleepRing(detection?.durationHours, targetSleepMinutes),
       recovery: {
-        value: score?.dailyBalance != null ? `${score.dailyBalance}%` : "--",
+        value: score?.dailyBalance != null ? `${score.dailyBalance}` : "--",
         progress: clamp01((score?.dailyBalance ?? 0) / 100),
+        numericValue: score?.dailyBalance ?? null,
+        sevenDayAverage: null,
       },
       strain: {
         value: metric?.strainScore != null ? `${Math.round(metric.strainScore)}` : "--",
         progress: clamp01((metric?.strainScore ?? 0) / 21),
+        numericValue: metric?.strainScore ?? null,
+        sevenDayAverage: null,
       },
     },
     cards: {
@@ -269,6 +280,7 @@ function buildLegacyHomeView(results: PipelineResults, selectedKey: string): Hom
       restingHr:
         feature?.restingHeartRate != null ? `${Math.round(feature.restingHeartRate)}` : "--",
       baselineRhr: null,
+      respiratoryRate: feature?.respiratoryRate ?? null,
       odiPerHour: (metric as any)?.odiPerHour ?? null,
       stress: metric?.stressAverage != null ? `${Math.round(metric.stressAverage)}` : "--",
       spo2: metric?.spo2Average != null ? `${metric.spo2Average.toFixed(1)}%` : "--",

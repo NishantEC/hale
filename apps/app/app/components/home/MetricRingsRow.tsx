@@ -15,6 +15,10 @@ type Ring = {
   color: string
   hero?: boolean
   onPress?: () => void
+  delta?: {
+    direction: "up" | "down" | "flat"
+    text: string
+  } | null
 }
 
 type Props = {
@@ -130,6 +134,24 @@ const RingItem: FC<{ ring: Ring; size: RingSize }> = ({ ring, size }) => {
           textTransform: "uppercase",
         }}
       />
+      {ring.delta ? (
+        <Text
+          text={ring.delta.text}
+          style={{
+            color:
+              ring.delta.direction === "up"
+                ? colors.statusGreen
+                : ring.delta.direction === "down"
+                  ? colors.statusRed
+                  : colors.textMuted,
+            fontSize: 10,
+            fontWeight: "600",
+            marginTop: 3,
+            letterSpacing: 0.2,
+            fontVariant: ["tabular-nums"],
+          }}
+        />
+      ) : null}
     </View>
   )
 }

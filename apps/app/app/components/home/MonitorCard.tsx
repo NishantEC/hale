@@ -19,6 +19,7 @@ type Props = {
   score: string
   scoreSubscript?: string
   verdict: string
+  freshness?: string | null
   tint?: string
   onPress: () => void
 }
@@ -30,6 +31,7 @@ export const MonitorCard: FC<Props> = ({
   score,
   scoreSubscript,
   verdict,
+  freshness,
   tint,
   onPress,
 }) => {
@@ -104,6 +106,18 @@ export const MonitorCard: FC<Props> = ({
             marginTop: 2,
           }}
         />
+        {freshness ? (
+          <Text
+            text={freshness}
+            style={{
+              color: colors.textMuted,
+              fontSize: 10,
+              fontWeight: "500",
+              marginTop: 4,
+              letterSpacing: 0.2,
+            }}
+          />
+        ) : null}
       </View>
     </Pressable>
   )

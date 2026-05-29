@@ -107,6 +107,11 @@ export type SeriesPoint = {
 export type HomeMetricRing = {
   value: string;
   progress: number;
+  // Numeric value (sleep score 0-100, recovery 0-100, strain 0-21) used by
+  // the ring delta caption to compute ▲/▼ against `sevenDayAverage`. Null
+  // when the user is brand-new and has no recent history.
+  numericValue: number | null;
+  sevenDayAverage: number | null;
 };
 
 export type MonitorState = "ok" | "warn" | "alert" | "stale"
@@ -117,6 +122,7 @@ export interface HealthMonitorSummary {
   inRangeCount: number
   totalMetrics: number
   staleSinceMs: number | null
+  lastReadingAt: string | null
 }
 
 export interface StressMonitorSummary {
@@ -177,6 +183,7 @@ export interface HomeViewModel {
     hrvMs: number | null;
     restingHr: string;
     baselineRhr: number | null;
+    respiratoryRate: number | null;
     odiPerHour: number | null;
     stress: string;
     spo2: string;

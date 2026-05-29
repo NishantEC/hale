@@ -8,8 +8,12 @@ function repo(rows: any[] = [], one: any = null) {
     andWhere: jest.fn().mockReturnThis(),
     groupBy: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
     setParameters: jest.fn().mockReturnThis(),
+    setParameter: jest.fn().mockReturnThis(),
     getRawMany: jest.fn().mockResolvedValue([]),
+    getRawOne: jest.fn().mockResolvedValue(null),
+    getOne: jest.fn().mockResolvedValue(null),
   };
   return {
     find: jest.fn().mockResolvedValue(rows),
@@ -93,6 +97,30 @@ describe('ViewsService sleep view date selection', () => {
     expect(view.cards.recommendation.title).toBe('Steady'); // fallback when no score
     expect(view.cards.stress.title).toBe('--');
     expect(view.cards.loadPressure.title).toBe('--');
+
+    // Rings carry numericValue + sevenDayAverage for the home delta caption.
+    expect(view.rings.sleep).toMatchObject({
+      numericValue: null,
+      sevenDayAverage: null,
+    });
+    expect(view.rings.recovery).toMatchObject({
+      numericValue: null,
+      sevenDayAverage: null,
+    });
+    expect(view.rings.strain).toMatchObject({
+      numericValue: null,
+      sevenDayAverage: null,
+    });
+
+    // Activities carries respiratoryRate for the Health-tab vitals tile.
+    expect(view.activities).toHaveProperty('respiratoryRate');
+
+    // Monitors block always present with stale defaults when no sensor data.
+    expect(view.monitors.health.state).toBe('stale');
+    expect(view.monitors.health.lastReadingAt).toBeNull();
+    expect(view.monitors.stress.state).toBe('stale');
+    expect(view.monitors.stress.score).toBeNull();
+    expect(view.monitors.stress.todayStrip).toHaveLength(24);
   });
 
   it('builds trend summaries with week-over-week comparisons when at least 8 nights exist', async () => {

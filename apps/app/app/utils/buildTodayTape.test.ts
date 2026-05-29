@@ -9,9 +9,9 @@ function makeHomeView(rings: Partial<HomeViewModel["rings"]>): HomeViewModel {
     selectedDateSubtitle: "",
     topStrip: { title: "", subtitle: "" },
     rings: {
-      sleep: rings.sleep ?? { value: "--", progress: 0 },
-      recovery: rings.recovery ?? { value: "--", progress: 0 },
-      strain: rings.strain ?? { value: "--", progress: 0 },
+      sleep: rings.sleep ?? { value: "--", progress: 0, numericValue: null, sevenDayAverage: null },
+      recovery: rings.recovery ?? { value: "--", progress: 0, numericValue: null, sevenDayAverage: null },
+      strain: rings.strain ?? { value: "--", progress: 0, numericValue: null, sevenDayAverage: null },
     },
     cards: {
       recommendation: { title: "", subtitle: "", footer: "" },
@@ -33,6 +33,7 @@ function makeHomeView(rings: Partial<HomeViewModel["rings"]>): HomeViewModel {
       hrvMs: null,
       restingHr: "",
       baselineRhr: null,
+      respiratoryRate: null,
       odiPerHour: null,
       stress: "",
       spo2: "",
@@ -162,7 +163,7 @@ describe("buildTodayTape", () => {
   it("emits a recovery event when homeView has a recovery ring with a value", () => {
     const events = buildTodayTape({
       homeView: makeHomeView({
-        recovery: { value: "87", progress: 0.87 },
+        recovery: { value: "87", progress: 0.87, numericValue: 87, sevenDayAverage: null },
       }),
       journalEntries: [],
       now: NOW,
@@ -180,7 +181,7 @@ describe("buildTodayTape", () => {
   it("does not emit a recovery event when value is empty / placeholder", () => {
     const events = buildTodayTape({
       homeView: makeHomeView({
-        recovery: { value: "--", progress: 0 },
+        recovery: { value: "--", progress: 0, numericValue: null, sevenDayAverage: null },
       }),
       journalEntries: [],
       now: NOW,
@@ -192,7 +193,7 @@ describe("buildTodayTape", () => {
 
   it("emits a sleep wake-up event when there's a sleep ring", () => {
     const events = buildTodayTape({
-      homeView: makeHomeView({ sleep: { value: "7:23", progress: 0.92 } }),
+      homeView: makeHomeView({ sleep: { value: "7:23", progress: 0.92, numericValue: 92, sevenDayAverage: null } }),
       journalEntries: [],
       now: NOW,
       colors: COLORS,
