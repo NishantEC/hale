@@ -1,7 +1,8 @@
-import { FC, useEffect, useMemo, useState } from "react"
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ScrollView, View, ViewStyle } from "react-native"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
+import { useFocusEffect } from "@react-navigation/native"
 
 import { DateSwitcher } from "@/components/DateSwitcher"
 import { ComposeButton, type QuickLogAction } from "@/components/home/ComposeButton"
@@ -28,14 +29,15 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 export const HealthScreen: FC = () => {
   const insets = useSafeAreaInsets()
   const { colors } = LOCAL_THEME
-  const { selectedDate, homeView, goToPreviousDay, goToNextDay } = useDashboard()
+  const { selectedDate, homeView, refreshDashboard, goToPreviousDay, goToNextDay } = useDashboard()
   const batteryLevel = useBleBatteryLevel()
   const isCharging = useBleIsCharging()
   const connectionState = useBleConnectionState()
 
   const [healthView, setHealthView] = useState<HealthViewModel | null>(null)
+  const lastFocusRefreshAt = useRef(0)
 
-  useEffect(() => {
+  const reloadHealthView = useCallback(() => {
     let cancelled = false
     fetchHealthView()
       .then((v) => {
@@ -46,6 +48,21 @@ export const HealthScreen: FC = () => {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    return reloadHealthView()
+  }, [reloadHealthView])
+
+  useFocusEffect(
+    useCallback(() => {
+      const now = Date.now()
+      if (now - lastFocusRefreshAt.current > 30_000) {
+        lastFocusRefreshAt.current = now
+        refreshDashboard().catch(() => undefined)
+        reloadHealthView()
+      }
+    }, [refreshDashboard, reloadHealthView]),
+  )
 
   const monitorsHealth = homeView?.monitors?.health
   const activities = homeView?.activities

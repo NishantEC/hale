@@ -9,7 +9,7 @@ import {
   ViewStyle,
 } from "react-native"
 import { Brain, Heartbeat } from "phosphor-react-native"
-import { useNavigation } from "@react-navigation/native"
+import { useFocusEffect, useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, {
   FadeIn,
@@ -143,6 +143,17 @@ export const HomeScreen: FC = () => {
   )
   const [coverageByDate, setCoverageByDate] = useState<Record<string, CoverageKind>>({})
   const lastShownError = useRef<string | null>(null)
+  const lastFocusRefreshAt = useRef(0)
+
+  useFocusEffect(
+    useCallback(() => {
+      const now = Date.now()
+      if (now - lastFocusRefreshAt.current > 30_000) {
+        lastFocusRefreshAt.current = now
+        refreshDashboard().catch(() => undefined)
+      }
+    }, [refreshDashboard]),
+  )
 
   // Fetch coverage for the visible month whenever the calendar is open or the
   // cursor changes. Local viewCache provides instant render; remote fetch
