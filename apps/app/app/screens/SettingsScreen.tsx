@@ -11,6 +11,7 @@ import {
   View,
   ViewStyle,
 } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import Constants from "expo-constants"
 import { router } from "expo-router"
 import {
@@ -340,7 +341,7 @@ export const SettingsScreen: FC = () => {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]}>
       <Animated.ScrollView
         contentContainerStyle={$scroll}
         onScroll={onScroll}
@@ -574,7 +575,7 @@ export const SettingsScreen: FC = () => {
         onSubmit={saveDob}
         saving={dobSaving}
       />
-    </View>
+    </SafeAreaView>
   )
 }
 
