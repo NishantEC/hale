@@ -1,4 +1,4 @@
-import { FC, useMemo } from "react"
+import { FC, useEffect } from "react"
 import { Dimensions, StyleSheet, View } from "react-native"
 import {
   BlurMask,
@@ -9,7 +9,8 @@ import {
   Rect,
   vec,
 } from "@shopify/react-native-skia"
-import Animated, {
+import {
+  cancelAnimation,
   Easing,
   useDerivedValue,
   useSharedValue,
@@ -42,13 +43,18 @@ export const AuroraBackdrop: FC<Props> = ({ state, background = "#0d0d0d" }) => 
 
   // Drive a single 18-second loop. All blob positions are derived from this
   // shared value so the animation cost stays at one withRepeat tween.
-  useMemo(() => {
+  // Critical: cancel on unmount so navigation tear-down doesn't leak the
+  // repeating timing onto a discarded shared value (caused intermittent
+  // crashes when switching tabs).
+  useEffect(() => {
     t.value = withRepeat(
       withTiming(1, { duration: 18000, easing: Easing.inOut(Easing.quad) }),
       -1,
       true,
     )
-    return null
+    return () => {
+      cancelAnimation(t)
+    }
   }, [t])
 
   const blob1 = useDerivedValue(() => ({

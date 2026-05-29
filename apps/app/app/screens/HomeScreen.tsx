@@ -22,7 +22,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated"
-import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BlurHeader } from "@/components/BlurHeader"
 import { DateSwitcher } from "@/components/DateSwitcher"
@@ -482,7 +481,7 @@ export const HomeScreen: FC = () => {
       onCancelled={() => setIsHorizontalDaySwipeActive(false)}
       onFailed={() => setIsHorizontalDaySwipeActive(false)}
     >
-      <SafeAreaView style={themed($screenWrap)} edges={["top"]}>
+      <View style={themed($screenWrap)}>
         <Animated.ScrollView
           contentContainerStyle={themed($container)}
           onScroll={onScroll}
@@ -616,7 +615,7 @@ export const HomeScreen: FC = () => {
         </Animated.ScrollView>
 
         <BlurHeader title={selectedDateTitle} scrollY={scrollY} fadeOver={56} />
-      </SafeAreaView>
+      </View>
     </PanGestureHandler>
   )
 }

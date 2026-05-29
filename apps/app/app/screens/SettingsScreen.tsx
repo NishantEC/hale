@@ -29,7 +29,6 @@ import {
   Watch,
 } from "phosphor-react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
-import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BlurHeader } from "@/components/BlurHeader"
 import { Text } from "@/components/Text"
@@ -341,7 +340,7 @@ export const SettingsScreen: FC = () => {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Animated.ScrollView
         contentContainerStyle={$scroll}
         onScroll={onScroll}
@@ -358,15 +357,15 @@ export const SettingsScreen: FC = () => {
           text="Settings"
           style={{
             color: colors.text,
-            fontSize: 24,
+            fontSize: 28,
             fontWeight: "700",
-            letterSpacing: -0.2,
+            letterSpacing: -0.4,
             marginBottom: 4,
           }}
         />
         <Text
           text={authEmail ? `Signed in · ${authEmail}` : "Not signed in"}
-          style={{ color: colors.textDim, fontSize: 14, marginBottom: 24 }}
+          style={{ color: colors.textDim, fontSize: 14, marginBottom: 20 }}
           numberOfLines={1}
           ellipsizeMode="middle"
         />
@@ -575,7 +574,7 @@ export const SettingsScreen: FC = () => {
         onSubmit={saveDob}
         saving={dobSaving}
       />
-    </SafeAreaView>
+    </View>
   )
 }
 
@@ -623,7 +622,7 @@ function formatLastSync(lastSyncAt: string | null | undefined, now: number): str
 
 const $scroll: ViewStyle = {
   paddingHorizontal: 24,
-  paddingTop: 32,
+  paddingTop: 12,
   paddingBottom: 132,
   gap: 8,
 }

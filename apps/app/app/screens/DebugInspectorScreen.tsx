@@ -8,7 +8,6 @@ import {
   ViewStyle,
 } from "react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
-import { SafeAreaView } from "react-native-safe-area-context"
 
 import { ActionsRow } from "@/components/Inspector/ActionsRow"
 import { DaemonDrilldown } from "@/components/Inspector/DaemonDrilldown"
@@ -347,7 +346,7 @@ export const DebugInspectorScreen: FC = () => {
         : "connecting"
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.screenBackground }} edges={["top"]}>
+    <View style={{ flex: 1, backgroundColor: colors.screenBackground }}>
       <Animated.ScrollView
         contentContainerStyle={$container}
         onScroll={onScroll}
@@ -494,13 +493,13 @@ export const DebugInspectorScreen: FC = () => {
           </View>
         ) : null}
       </Animated.ScrollView>
-    </SafeAreaView>
+    </View>
   )
 }
 
 const $container: ViewStyle = {
   paddingHorizontal: 14,
-  paddingTop: 24,
+  paddingTop: 12,
   paddingBottom: 100,
   gap: 12,
 }

@@ -20,6 +20,14 @@ export default function TabsLayout() {
 
   const monitorState: AuroraState = homeView?.monitors?.health?.state ?? "stale"
   const pathname = usePathname()
+  // Aurora + TopHeader are data-context chrome — only Home + Health should
+  // wear them. Settings + Inspector are utility tabs where the red/amber
+  // monitor tint reads as "something is wrong" and the date pill is
+  // meaningless.
+  const isHomeRoute = pathname === "/" || pathname.endsWith("/index")
+  const isHealthRoute = pathname.endsWith("/health")
+  const showAurora = isHomeRoute || isHealthRoute
+  const showSharedHeader = isHealthRoute
 
   const screenOptions = useMemo(
     () => ({
@@ -37,12 +45,14 @@ export default function TabsLayout() {
 
   return (
     <View style={[$root, { backgroundColor: colors.background }]}>
-      <AuroraBackdrop state={monitorState} background={colors.background} />
+      {showAurora ? (
+        <AuroraBackdrop state={monitorState} background={colors.background} />
+      ) : null}
       <SafeAreaView style={$flex} edges={["top"]}>
         {/* HomeScreen renders its own header because it owns the calendar
-            picker + day-swipe gesture. Every other tab uses the shared
-            TopHeader so chrome stays consistent. */}
-        {pathname.endsWith("/") || pathname.endsWith("/index") ? null : <TopHeader />}
+            picker + day-swipe gesture. Health uses the shared TopHeader.
+            Settings + Inspector are utility tabs — no top chrome. */}
+        {showSharedHeader ? <TopHeader /> : null}
         <Tabs screenOptions={screenOptions} tabBar={(props) => <NoopTabBar {...props} />}>
           <Tabs.Screen name="index" options={{ title: "Home" }} />
           <Tabs.Screen name="health" options={{ title: "Health" }} />
