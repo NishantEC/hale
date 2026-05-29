@@ -355,18 +355,13 @@ export const SettingsScreen: FC = () => {
         }
       >
         <Text
-          text="Settings"
-          style={{
-            color: colors.text,
-            fontSize: 28,
-            fontWeight: "700",
-            letterSpacing: -0.4,
-            marginBottom: 4,
-          }}
-        />
-        <Text
           text={authEmail ? `Signed in · ${authEmail}` : "Not signed in"}
-          style={{ color: colors.textDim, fontSize: 14, marginBottom: 20 }}
+          style={{
+            color: colors.textDim,
+            fontSize: 13,
+            marginBottom: 16,
+            letterSpacing: 0.1,
+          }}
           numberOfLines={1}
           ellipsizeMode="middle"
         />
