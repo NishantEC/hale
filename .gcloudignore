@@ -1,0 +1,42 @@
+# Gcloud source uploads: keep only what the Dockerfile needs. The repo
+# has ~40GB of stray content (node_modules, .git history, Xcode build
+# artifacts, training data, brainstorm mockups) that has no business
+# being bundled into a Cloud Build source archive.
+.git/
+.gitignore
+
+# Workspaces install their own deps inside Docker; never upload them.
+node_modules/
+**/node_modules/
+
+# Build / cache artifacts from every workspace
+**/dist/
+**/build/
+**/.next/
+**/.expo/
+**/.turbo/
+**/.cache/
+**/coverage/
+
+# iOS / Android native build output
+apps/app/ios/build/
+apps/app/ios/Pods/
+apps/app/android/build/
+apps/app/android/.gradle/
+apps/app/android/app/build/
+
+# Rust target dir for the compute-engine
+apps/compute-engine/target/
+
+# Training data and large fixtures
+apps/backend/training/
+apps/backend/test/fixtures/
+apps/compute-engine/data/
+
+# Local-only state
+.superpowers/
+.claude/
+.DS_Store
+*.log
+*.lock
+!package-lock.json

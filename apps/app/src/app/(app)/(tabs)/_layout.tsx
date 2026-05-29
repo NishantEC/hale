@@ -1,45 +1,77 @@
-import { Platform } from "react-native"
-import { NativeTabs } from "expo-router/unstable-native-tabs"
+import { useMemo } from "react"
+import { Platform, View, ViewStyle } from "react-native"
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+import { Tabs, usePathname } from "expo-router"
 
 import { ActivityStrip, useActivityStripState } from "@/components/ActivityStrip"
-import { LOCAL_THEME } from "@/utils/localTheme"
+import { AuroraBackdrop, type AuroraState } from "@/components/health/AuroraBackdrop"
+import { NoopTabBar } from "@/components/health/NoopTabBar"
+import { TopHeader } from "@/components/health/TopHeader"
+import { useDashboard } from "@/context/DashboardContext"
 import { useColorMode } from "@/context/ThemeContext"
-
-function supportsBottomAccessory(): boolean {
-  if (Platform.OS !== "ios") return false
-  const major = parseInt(String(Platform.Version).split(".")[0], 10)
-  return Number.isFinite(major) && major >= 26
-}
+import { LOCAL_THEME } from "@/utils/localTheme"
 
 export default function TabsLayout() {
   useColorMode()
   const { colors } = LOCAL_THEME
+  const insets = useSafeAreaInsets()
   const view = useActivityStripState()
-  const showAccessory = supportsBottomAccessory() && view.state !== "idle"
+  const { homeView } = useDashboard()
+
+  const monitorState: AuroraState = homeView?.monitors?.health?.state ?? "stale"
+  const pathname = usePathname()
+
+  const screenOptions = useMemo(
+    () => ({
+      headerShown: false,
+      tabBarStyle: { display: "none" as const },
+      sceneStyle: { backgroundColor: "transparent" },
+      animation: Platform.OS === "ios" ? ("shift" as const) : ("none" as const),
+      // Keep each tab's screen state when switching. React Navigation does
+      // this by default for bottom tabs — explicit for clarity.
+      unmountOnBlur: false,
+      lazy: true,
+    }),
+    [],
+  )
 
   return (
-    <NativeTabs tintColor={colors.tint} minimizeBehavior="automatic" blurEffect="systemChromeMaterial">
-      {showAccessory && (
-        <NativeTabs.BottomAccessory>
-          <ActivityStrip view={view} />
-        </NativeTabs.BottomAccessory>
-      )}
-      <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Icon sf={{ default: "house", selected: "house.fill" }} md="home" />
-        <NativeTabs.Trigger.Label hidden>Home</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="health">
-        <NativeTabs.Trigger.Icon sf="waveform.path.ecg" md="monitor_heart" />
-        <NativeTabs.Trigger.Label hidden>Health</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="inspector">
-        <NativeTabs.Trigger.Icon sf={{ default: "gauge.medium", selected: "gauge.high" }} md="speed" />
-        <NativeTabs.Trigger.Label hidden>Inspector</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="settings">
-        <NativeTabs.Trigger.Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} md="settings" />
-        <NativeTabs.Trigger.Label hidden>Settings</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <View style={[$root, { backgroundColor: colors.background }]}>
+      <AuroraBackdrop state={monitorState} background={colors.background} />
+      <SafeAreaView style={$flex} edges={["top"]}>
+        {/* HomeScreen renders its own header because it owns the calendar
+            picker + day-swipe gesture. Every other tab uses the shared
+            TopHeader so chrome stays consistent. */}
+        {pathname.endsWith("/") || pathname.endsWith("/index") ? null : <TopHeader />}
+        <Tabs screenOptions={screenOptions} tabBar={(props) => <NoopTabBar {...props} />}>
+          <Tabs.Screen name="index" options={{ title: "Home" }} />
+          <Tabs.Screen name="health" options={{ title: "Health" }} />
+          <Tabs.Screen name="inspector" options={{ title: "Inspector" }} />
+          <Tabs.Screen name="settings" options={{ title: "Settings" }} />
+        </Tabs>
+        {view.state !== "idle" ? (
+          <View
+            pointerEvents="box-none"
+            style={[$activityWrap, { bottom: insets.bottom + 96 }]}
+          >
+            <ActivityStrip view={view} />
+          </View>
+        ) : null}
+      </SafeAreaView>
+    </View>
   )
+}
+
+const $root: ViewStyle = {
+  flex: 1,
+}
+
+const $flex: ViewStyle = {
+  flex: 1,
+}
+
+const $activityWrap: ViewStyle = {
+  position: "absolute",
+  left: 16,
+  right: 16,
 }

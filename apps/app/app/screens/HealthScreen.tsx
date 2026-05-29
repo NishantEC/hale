@@ -1,13 +1,9 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ScrollView, View, ViewStyle } from "react-native"
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+import { ScrollView, ViewStyle } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
 import { useFocusEffect } from "@react-navigation/native"
 
-import { DateSwitcher } from "@/components/DateSwitcher"
-import { ComposeButton, type QuickLogAction } from "@/components/home/ComposeButton"
-import { DevicePill } from "@/components/home/DevicePill"
-import { AuroraBackdrop, type AuroraState } from "@/components/health/AuroraBackdrop"
 import {
   type DeltaDirection,
   type VitalRow,
@@ -18,21 +14,13 @@ import { HealthspanCard } from "@/components/health/HealthspanCard"
 import { TrendCard } from "@/components/health/TrendCard"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
-import {
-  useBleBatteryLevel,
-  useBleConnectionState,
-  useBleIsCharging,
-} from "@/stores/bleStore"
 import { fetchHealthView, type HealthViewModel } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 export const HealthScreen: FC = () => {
   const insets = useSafeAreaInsets()
   const { colors } = LOCAL_THEME
-  const { selectedDate, homeView, refreshDashboard, goToPreviousDay, goToNextDay } = useDashboard()
-  const batteryLevel = useBleBatteryLevel()
-  const isCharging = useBleIsCharging()
-  const connectionState = useBleConnectionState()
+  const { selectedDate, homeView, refreshDashboard } = useDashboard()
 
   const [healthView, setHealthView] = useState<HealthViewModel | null>(null)
   const lastFocusRefreshAt = useRef(0)
@@ -75,7 +63,7 @@ export const HealthScreen: FC = () => {
     const score = total > 0 ? `${inRange}` : "--"
     const sub = total > 0 ? `/${total}` : undefined
     const verdict = monitorsHealth?.verdict ?? (total === 0 ? "Calibrating" : "")
-    const state: AuroraState = monitorsHealth?.state ?? "stale"
+    const state = monitorsHealth?.state ?? "stale"
     const tint =
       state === "ok"
         ? colors.statusGreen
@@ -196,65 +184,27 @@ export const HealthScreen: FC = () => {
   const ageDelta = noopAge != null && chronoAge != null ? noopAge - chronoAge : null
   const paceOfAging = healthView?.current?.paceOfAging ?? null
 
-  const handleQuickLog = (action: QuickLogAction) => {
-    switch (action) {
-      case "activity":
-        router.push("/strain-activity")
-        break
-      case "journal":
-        router.push({ pathname: "/journal-entry", params: { date: selectedDate } })
-        break
-      case "bedtime":
-        router.push("/sleep-planner")
-        break
-      case "session":
-        router.push("/strain-activity")
-        break
-    }
-  }
-
-  const batteryLabel = batteryLevel == null ? "—" : `${batteryLevel}%`
-
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <AuroraBackdrop state={hero.state} background={colors.background} />
-      <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
-        <View style={$topbar}>
-          <DateSwitcher
-            title={formatTitleFor(selectedDate)}
-            onPrevious={goToPreviousDay}
-            onNext={goToNextDay}
-          />
-          <View style={$topRight}>
-            <ComposeButton onSelect={handleQuickLog} />
-            <DevicePill
-              batteryLabel={batteryLabel}
-              isCharging={isCharging}
-              isConnected={connectionState === "ready"}
-              onPress={() => router.push("/device-settings")}
-            />
-          </View>
-        </View>
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            paddingHorizontal: 16,
-            paddingTop: 8,
-            paddingBottom: insets.bottom + 100,
-            gap: 14,
-          }}
-        >
-          <HealthMonitorCard
-            score={hero.score}
-            scoreSubscript={hero.sub}
-            verdict={hero.verdict}
-            body={hero.body}
-            tint={hero.tint}
-            rows={vitalRows}
-            defaultExpanded={false}
-          />
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: insets.bottom + 110,
+        gap: 14,
+      }}
+    >
+      <HealthMonitorCard
+        score={hero.score}
+        scoreSubscript={hero.sub}
+        verdict={hero.verdict}
+        body={hero.body}
+        tint={hero.tint}
+        rows={vitalRows}
+        defaultExpanded={false}
+      />
 
-          {noopAge != null ? (
+      {noopAge != null ? (
             <HealthspanCard
               noopAge={noopAge.toFixed(1)}
               chronologicalAge={chronoAge != null ? chronoAge.toFixed(1) : "--"}
@@ -291,13 +241,11 @@ export const HealthScreen: FC = () => {
             />
           ) : null}
 
-          <Text
-            text="Tap the Health Monitor card to expand. Range bars lock against your personal range after 14 nights of strap data."
-            style={{ color: colors.textMuted, fontSize: 11, paddingHorizontal: 4, paddingTop: 4 }}
-          />
-        </ScrollView>
-      </SafeAreaView>
-    </View>
+      <Text
+        text="Tap the Health Monitor card to expand. Range bars lock against your personal range after 14 nights of strap data."
+        style={{ color: colors.textMuted, fontSize: 11, paddingHorizontal: 4, paddingTop: 4 }}
+      />
+    </ScrollView>
   )
 }
 
@@ -461,40 +409,9 @@ function parsePercent(value: string | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function formatTitleFor(dateKey: string): string {
-  const [y, m, d] = dateKey.split("-").map(Number)
-  if (!y || !m || !d) return dateKey
-  const date = new Date(y, m - 1, d, 12)
-  const today = new Date()
-  today.setHours(12, 0, 0, 0)
-  if (date.getTime() === today.getTime()) return "Today"
-  const yesterday = new Date(today.getTime() - 24 * 3600 * 1000)
-  if (date.getTime() === yesterday.getTime()) return "Yesterday"
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  }).format(date)
-}
-
 function paceHistoryPoints(view: HealthViewModel | null): number[] {
   if (!view) return []
   return view.history
     .map((h) => h.paceOfAging)
     .filter((p): p is number => p != null && Number.isFinite(p))
-}
-
-const $topbar: ViewStyle = {
-  flexDirection: "row",
-  alignItems: "center",
-  justifyContent: "space-between",
-  paddingHorizontal: 16,
-  paddingVertical: 8,
-  gap: 10,
-}
-
-const $topRight: ViewStyle = {
-  flexDirection: "row",
-  alignItems: "center",
-  gap: 10,
 }
