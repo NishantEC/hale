@@ -1,29 +1,37 @@
-import { FC, useMemo } from "react"
+import { FC, useEffect, useMemo, useState } from "react"
 import { ScrollView, View, ViewStyle } from "react-native"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
 
 import { DateSwitcher } from "@/components/DateSwitcher"
-import { ContributorList } from "@/components/health/ContributorList"
+import { ComposeButton, type QuickLogAction } from "@/components/home/ComposeButton"
+import { DevicePill } from "@/components/home/DevicePill"
+import {
+  CollapsibleVitalsCard,
+  type DeltaDirection,
+  type VitalRow,
+  type VitalStatus,
+} from "@/components/health/CollapsibleVitalsCard"
 import { GlowScoreCard } from "@/components/health/GlowScoreCard"
 import { HealthspanCard } from "@/components/health/HealthspanCard"
 import { TrendCard } from "@/components/health/TrendCard"
-import { VitalsGrid, type VitalsGridItem } from "@/components/health/VitalsGrid"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
+import {
+  useBleBatteryLevel,
+  useBleConnectionState,
+  useBleIsCharging,
+} from "@/stores/bleStore"
 import { fetchHealthView, type HealthViewModel } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
-import { useEffect, useState } from "react"
 
 export const HealthScreen: FC = () => {
   const insets = useSafeAreaInsets()
   const { colors } = LOCAL_THEME
-  const {
-    selectedDate,
-    homeView,
-    goToPreviousDay,
-    goToNextDay,
-  } = useDashboard()
+  const { selectedDate, homeView, goToPreviousDay, goToNextDay } = useDashboard()
+  const batteryLevel = useBleBatteryLevel()
+  const isCharging = useBleIsCharging()
+  const connectionState = useBleConnectionState()
 
   const [healthView, setHealthView] = useState<HealthViewModel | null>(null)
 
@@ -51,8 +59,7 @@ export const HealthScreen: FC = () => {
     const score = total > 0 ? `${inRange}` : "--"
     const sub = total > 0 ? `/${total}` : undefined
     const verdict =
-      monitorsHealth?.verdict ??
-      (total === 0 ? "Calibrating — no vitals yet" : "")
+      monitorsHealth?.verdict ?? (total === 0 ? "Calibrating" : "")
     const tint =
       monitorsHealth?.state === "ok"
         ? colors.statusGreen
@@ -66,148 +73,148 @@ export const HealthScreen: FC = () => {
         ? "Wear the strap overnight to lock in your baseline. Vitals appear after the first night."
         : inRange === total
           ? "Every vital sits inside your personal range today. Carry on as normal."
-          : `${inRange} of ${total} vitals are inside your personal range. Tap to see which need attention.`
+          : `${inRange} of ${total} vitals are inside your personal range. Tap any row to drill in.`
     return { score, sub, verdict, tint, body }
   }, [monitorsHealth, colors])
 
-  const vitals = useMemo<VitalsGridItem[]>(() => {
+  const vitalRows = useMemo<VitalRow[]>(() => {
+    const rhrNum = toNumeric(activities?.restingHr)
+    const rhrBaseline = activities?.baselineRhr ?? null
+    const hrvNum = activities?.hrvMs ?? null
+    const respRate = activities?.respiratoryRate ?? null
+    const spo2Num = parsePercent(activities?.spo2)
+    const skinTempStr = activities?.skinTemp
+    const skinTempDelta = activities?.skinTempDelta
+    const skinTempNum = skinTempStr ? parseFloat(skinTempStr) : NaN
+    const sleepScore = sleepRing?.numericValue ?? null
+    const sleepBaseline = sleepRing?.sevenDayAverage ?? null
+    const stressNum = stressMonitor?.score ?? null
+    const stressZone = stressMonitor?.zone ?? null
+
     return [
-      tile(
+      makeVital(
         "rhr",
-        "RHR",
-        activities?.restingHr ?? "--",
-        activities?.baselineRhr != null ? `bpm · 30d ${Math.round(activities.baselineRhr)}` : "bpm",
-        colors.ringRecovery,
+        "Resting HR",
+        "bpm",
+        rhrNum != null ? `${Math.round(rhrNum)}` : "--",
+        rhrNum,
+        rhrBaseline,
+        rangeAroundBaseline(rhrBaseline, 10),
+        deltaArrow(rhrNum, rhrBaseline, 0, true),
+        rhrStatus(rhrNum, rhrBaseline),
       ),
-      tile(
+      makeVital(
         "hrv",
         "HRV",
-        activities?.hrvMs != null ? `${Math.round(activities.hrvMs)}` : "--",
         "ms",
-        colors.ringHrv ?? colors.statusGreen,
+        hrvNum != null ? `${Math.round(hrvNum)}` : "--",
+        hrvNum,
+        null,
+        null,
+        null,
+        hrvNum != null ? "ok" : "stale",
       ),
-      tile(
+      makeVital(
         "rr",
         "Respiratory",
-        activities?.respiratoryRate != null ? activities.respiratoryRate.toFixed(1) : "--",
         "br/min",
-        colors.ringSleep,
+        respRate != null ? respRate.toFixed(1) : "--",
+        respRate,
+        null,
+        { min: 10, max: 20 },
+        null,
+        respStatus(respRate),
       ),
-      tile("spo2", "SpO₂", activities?.spo2 ?? "--", undefined, colors.statusGreen),
-      tile(
+      makeVital(
+        "spo2",
+        "SpO₂",
+        "%",
+        spo2Num != null ? spo2Num.toFixed(1) : "--",
+        spo2Num,
+        null,
+        { min: 94, max: 99 },
+        null,
+        spo2Status(spo2Num),
+      ),
+      makeVital(
         "skintemp",
         "Skin Temp",
-        activities?.skinTemp ?? "--",
-        activities?.skinTempDelta && activities.skinTempDelta !== "--"
-          ? activities.skinTempDelta
-          : undefined,
-        colors.statusAmber,
+        "°C",
+        Number.isFinite(skinTempNum) ? skinTempNum.toFixed(1) : "--",
+        Number.isFinite(skinTempNum) ? skinTempNum : null,
+        null,
+        null,
+        skinTempDelta && skinTempDelta !== "--"
+          ? skinTempDeltaCaption(skinTempDelta)
+          : null,
+        skinTempStatus(skinTempDelta),
       ),
-      tile(
+      makeVital(
         "sleep",
         "Sleep",
-        sleepRing?.numericValue != null ? `${Math.round(sleepRing.numericValue)}` : "--",
-        sleepRing?.sevenDayAverage != null
-          ? `score · 7d ${Math.round(sleepRing.sevenDayAverage)}`
-          : "score",
-        colors.ringSleep,
+        "score",
+        sleepScore != null ? `${Math.round(sleepScore)}` : "--",
+        sleepScore,
+        sleepBaseline,
+        sleepBaseline != null ? { label: `7d ${Math.round(sleepBaseline)}` } : null,
+        deltaArrow(sleepScore, sleepBaseline, 0),
+        sleepStatus(sleepScore, sleepBaseline),
       ),
-      tile(
-        "recovery",
-        "Recovery 7d",
-        recoveryRing?.sevenDayAverage != null
-          ? `${Math.round(recoveryRing.sevenDayAverage)}`
-          : "--",
-        "avg",
-        colors.ringRecovery,
-      ),
-      tile(
+      makeVital(
         "stress",
         "Stress",
-        stressMonitor?.score != null ? `${Math.round(stressMonitor.score)}` : "--",
-        stressMonitor?.zone ?? "today",
-        stressMonitor?.zone === "High"
-          ? colors.statusRed
-          : stressMonitor?.zone === "Moderate"
-            ? colors.statusAmber
-            : colors.statusGreen,
-      ),
-    ]
-  }, [activities, sleepRing, recoveryRing, stressMonitor, colors])
-
-  const contributors7d = useMemo(() => {
-    if (!homeView) return []
-    return [
-      contributor(
-        "hrv-7d",
-        "HRV",
-        activities?.hrvMs,
+        stressZone ? `today · ${stressZone}` : "today",
+        stressNum != null ? `${Math.round(stressNum)}` : "--",
+        stressNum,
         null,
-        "ms",
-        7,
-      ),
-      contributor(
-        "rhr-7d",
-        "Resting HR",
-        toNumeric(activities?.restingHr),
-        activities?.baselineRhr ?? null,
-        "bpm",
-        7,
-      ),
-      contributor(
-        "sleep-7d",
-        "Sleep score",
-        sleepRing?.numericValue ?? null,
-        sleepRing?.sevenDayAverage ?? null,
-        "",
-        7,
-      ),
-      contributor(
-        "recovery-7d",
-        "Recovery",
-        recoveryRing?.numericValue ?? null,
-        recoveryRing?.sevenDayAverage ?? null,
-        "",
-        7,
+        null,
+        null,
+        stressMonitorStatus(stressZone),
       ),
     ]
-  }, [homeView, activities, sleepRing, recoveryRing])
-
-  const contributors30d = useMemo(() => {
-    if (!homeView) return []
-    return [
-      contributor(
-        "rhr-30d",
-        "Resting HR",
-        toNumeric(activities?.restingHr),
-        activities?.baselineRhr ?? null,
-        "bpm",
-        30,
-      ),
-      contributor(
-        "sleep-30d",
-        "Sleep score",
-        sleepRing?.numericValue ?? null,
-        sleepRing?.sevenDayAverage ?? null,
-        "",
-        30,
-      ),
-    ]
-  }, [homeView, activities, sleepRing])
+  }, [activities, sleepRing, stressMonitor])
 
   const noopAge = healthView?.current?.noopAge ?? null
   const chronoAge = healthView?.current?.chronologicalAge ?? null
   const ageDelta = noopAge != null && chronoAge != null ? noopAge - chronoAge : null
   const paceOfAging = healthView?.current?.paceOfAging ?? null
 
+  const handleQuickLog = (action: QuickLogAction) => {
+    switch (action) {
+      case "activity":
+        router.push("/strain-activity")
+        break
+      case "journal":
+        router.push({ pathname: "/journal-entry", params: { date: selectedDate } })
+        break
+      case "bedtime":
+        router.push("/sleep-planner")
+        break
+      case "session":
+        router.push("/strain-activity")
+        break
+    }
+  }
+
+  const batteryLabel = batteryLevel == null ? "—" : `${batteryLevel}%`
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]}>
-      <View style={$headerRow}>
+      <View style={$topbar}>
         <DateSwitcher
           title={formatTitleFor(selectedDate)}
           onPrevious={goToPreviousDay}
           onNext={goToNextDay}
         />
+        <View style={$topRight}>
+          <ComposeButton onSelect={handleQuickLog} />
+          <DevicePill
+            batteryLabel={batteryLabel}
+            isCharging={isCharging}
+            isConnected={connectionState === "ready"}
+            onPress={() => router.push("/device-settings")}
+          />
+        </View>
       </View>
       <ScrollView
         style={{ flex: 1 }}
@@ -228,10 +235,7 @@ export const HealthScreen: FC = () => {
           onPress={() => router.push("/health-monitor")}
         />
 
-        <VitalsGrid items={vitals} columns={3} />
-
-        <ContributorList title="vs last 7 days" items={contributors7d} />
-        <ContributorList title="vs last 30 days" items={contributors30d} />
+        <CollapsibleVitalsCard rows={vitalRows} defaultExpanded={false} />
 
         {noopAge != null ? (
           <HealthspanCard
@@ -271,75 +275,157 @@ export const HealthScreen: FC = () => {
         ) : null}
 
         <Text
-          text="Tap any tile to drill in. Vitals lock against your personal range after 14 nights of strap data."
-          style={{
-            color: colors.textMuted,
-            fontSize: 11,
-            paddingHorizontal: 4,
-            paddingTop: 4,
-          }}
+          text="Tap the vitals row to expand. Range bars lock against your personal range after 14 nights of strap data."
+          style={{ color: colors.textMuted, fontSize: 11, paddingHorizontal: 4, paddingTop: 4 }}
         />
       </ScrollView>
     </SafeAreaView>
   )
 }
 
-function tile(
-  key: string,
-  label: string,
-  value: string,
-  desc: string | undefined,
-  tint: string,
-): VitalsGridItem {
-  return { key, label, value, desc, tint }
-}
+type Range = { min: number; max: number } | { label: string } | null
 
-function contributor(
+function makeVital(
   key: string,
-  label: string,
-  current: number | null | undefined,
-  baseline: number | null,
+  name: string,
   unit: string,
-  windowDays: number,
-) {
-  if (current == null || !Number.isFinite(current)) {
-    return {
-      key,
-      label,
-      value: "--",
-      unit,
-      baseline: baseline != null ? `${windowDays}d ${Math.round(baseline)}` : "--",
-      deltaText: null,
-      direction: "flat" as const,
-    }
-  }
-  if (baseline == null) {
-    return {
-      key,
-      label,
-      value: formatNumeric(current),
-      unit,
-      baseline: "no baseline",
-      deltaText: null,
-      direction: "flat" as const,
-    }
-  }
-  const diff = current - baseline
-  const direction =
-    Math.abs(diff) < 0.5 ? ("flat" as const) : diff > 0 ? ("up" as const) : ("down" as const)
-  const arrow = direction === "up" ? "▲" : direction === "down" ? "▼" : "—"
-  const magnitude = Math.abs(diff)
-  const deltaText =
-    direction === "flat" ? `— ${windowDays}d` : `${arrow} ${magnitude.toFixed(magnitude >= 10 ? 0 : 1)}`
+  value: string,
+  current: number | null,
+  baseline: number | null,
+  range: Range,
+  deltaText: string | null,
+  status: VitalStatus,
+): VitalRow {
+  const computed = computeRangeFill(current, range)
+  const direction: DeltaDirection =
+    !deltaText || deltaText.startsWith("—")
+      ? "flat"
+      : deltaText.startsWith("▲") || deltaText.startsWith("+")
+        ? "up"
+        : "down"
   return {
     key,
-    label,
-    value: formatNumeric(current),
+    name,
     unit,
-    baseline: `${windowDays}d ${formatNumeric(baseline)}`,
+    value,
+    status,
+    rangeLabel: computed.label,
+    rangeFraction: computed.fraction,
+    fillStart: computed.fillStart,
+    fillEnd: computed.fillEnd,
     deltaText,
-    direction,
+    deltaDirection: direction,
   }
+}
+
+function computeRangeFill(
+  current: number | null,
+  range: Range,
+): {
+  label: string | null
+  fraction: number | null
+  fillStart: number
+  fillEnd: number
+} {
+  if (!range) return { label: null, fraction: null, fillStart: 0.2, fillEnd: 0.8 }
+  if ("label" in range) {
+    return { label: range.label, fraction: null, fillStart: 0.2, fillEnd: 0.8 }
+  }
+  const { min, max } = range
+  const lo = Math.min(min, max)
+  const hi = Math.max(min, max)
+  const span = hi - lo
+  const padded = span * 0.4
+  const axisLo = lo - padded
+  const axisHi = hi + padded
+  const axisSpan = axisHi - axisLo
+  const fillStart = (lo - axisLo) / axisSpan
+  const fillEnd = (hi - axisLo) / axisSpan
+  let fraction: number | null = null
+  if (current != null && Number.isFinite(current) && axisSpan > 0) {
+    fraction = (current - axisLo) / axisSpan
+  }
+  const label = `${formatRangeNum(lo)} – ${formatRangeNum(hi)}`
+  return { label, fraction, fillStart, fillEnd }
+}
+
+function formatRangeNum(n: number): string {
+  if (Math.abs(n) >= 100) return `${Math.round(n)}`
+  if (Math.abs(n) >= 10) return n.toFixed(0)
+  return n.toFixed(1)
+}
+
+function rangeAroundBaseline(baseline: number | null, halfSpan: number) {
+  if (baseline == null) return null
+  return { min: baseline - halfSpan, max: baseline + halfSpan }
+}
+
+function deltaArrow(
+  current: number | null,
+  baseline: number | null,
+  precision: number = 0,
+  invert: boolean = false,
+): string | null {
+  if (current == null || baseline == null) return null
+  const diff = current - baseline
+  if (Math.abs(diff) < 0.5) return "— 0"
+  const magnitude = Math.abs(diff).toFixed(precision)
+  const isPositive = invert ? diff < 0 : diff > 0
+  return `${isPositive ? "▲" : "▼"} ${magnitude}`
+}
+
+function rhrStatus(current: number | null, baseline: number | null): VitalStatus {
+  if (current == null) return "stale"
+  if (baseline == null) return "ok"
+  const diff = Math.abs(current - baseline)
+  if (diff > 12) return "alert"
+  if (diff > 6) return "warn"
+  return "ok"
+}
+
+function respStatus(rate: number | null): VitalStatus {
+  if (rate == null) return "stale"
+  if (rate < 9 || rate > 22) return "alert"
+  if (rate < 10 || rate > 20) return "warn"
+  return "ok"
+}
+
+function spo2Status(value: number | null): VitalStatus {
+  if (value == null) return "stale"
+  if (value < 92) return "alert"
+  if (value < 95) return "warn"
+  return "ok"
+}
+
+function skinTempStatus(deltaText: string | undefined): VitalStatus {
+  if (!deltaText || deltaText === "--") return "stale"
+  const n = parseFloat(deltaText)
+  if (!Number.isFinite(n)) return "ok"
+  if (Math.abs(n) > 0.5) return "warn"
+  return "ok"
+}
+
+function skinTempDeltaCaption(raw: string): string {
+  const n = parseFloat(raw)
+  if (!Number.isFinite(n)) return raw
+  return `${n > 0 ? "▲" : n < 0 ? "▼" : "—"} ${Math.abs(n).toFixed(2)}`
+}
+
+function sleepStatus(score: number | null, baseline: number | null): VitalStatus {
+  if (score == null) return "stale"
+  if (baseline == null) return "ok"
+  if (score < baseline - 15) return "alert"
+  if (score < baseline - 5) return "warn"
+  return "ok"
+}
+
+function stressMonitorStatus(
+  zone: "Calm" | "Moderate" | "High" | null | undefined,
+): VitalStatus {
+  if (zone == null) return "stale"
+  if (zone === "High") return "alert"
+  if (zone === "Moderate") return "warn"
+  return "ok"
 }
 
 function toNumeric(value: string | undefined): number | null {
@@ -348,11 +434,11 @@ function toNumeric(value: string | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-function formatNumeric(n: number): string {
-  if (!Number.isFinite(n)) return "--"
-  if (Math.abs(n) >= 100) return `${Math.round(n)}`
-  if (Math.abs(n) >= 10) return n.toFixed(1)
-  return n.toFixed(1)
+function parsePercent(value: string | undefined): number | null {
+  if (!value || value === "--") return null
+  const cleaned = value.replace("%", "")
+  const n = parseFloat(cleaned)
+  return Number.isFinite(n) ? n : null
 }
 
 function formatTitleFor(dateKey: string): string {
@@ -378,9 +464,17 @@ function paceHistoryPoints(view: HealthViewModel | null): number[] {
     .filter((p): p is number => p != null && Number.isFinite(p))
 }
 
-const $headerRow: ViewStyle = {
+const $topbar: ViewStyle = {
   flexDirection: "row",
-  justifyContent: "center",
+  alignItems: "center",
+  justifyContent: "space-between",
   paddingHorizontal: 16,
   paddingVertical: 8,
+  gap: 10,
+}
+
+const $topRight: ViewStyle = {
+  flexDirection: "row",
+  alignItems: "center",
+  gap: 10,
 }

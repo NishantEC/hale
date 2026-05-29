@@ -1,7 +1,5 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
-  ActionSheetIOS,
-  Platform,
   RefreshControl,
   StyleSheet,
   TextStyle,
@@ -10,7 +8,7 @@ import {
   View,
   ViewStyle,
 } from "react-native"
-import { Brain, Heartbeat, Lightning, Plus, Watch } from "phosphor-react-native"
+import { Brain, Heartbeat } from "phosphor-react-native"
 import { useNavigation } from "@react-navigation/native"
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from "react-native-gesture-handler"
 import Animated, {
@@ -29,6 +27,8 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { BlurHeader } from "@/components/BlurHeader"
 import { DateSwitcher } from "@/components/DateSwitcher"
 import { NativeDateSwitcher } from "@/components/NativeDateSwitcher"
+import { ComposeButton, type QuickLogAction } from "@/components/home/ComposeButton"
+import { DevicePill } from "@/components/home/DevicePill"
 import { HomeDateCalendar } from "@/components/home/HomeDateCalendar"
 import { MetricRingsRow } from "@/components/home/MetricRingsRow"
 import { MonitorCard } from "@/components/home/MonitorCard"
@@ -610,70 +610,6 @@ export const HomeScreen: FC = () => {
   )
 }
 
-type QuickLogAction = "activity" | "journal" | "bedtime" | "session"
-
-function ComposeButton({ onSelect }: { onSelect: (action: QuickLogAction) => void }) {
-  const colors = LOCAL_THEME.colors
-
-  const open = useCallback(() => {
-    const labels = ["Add activity", "Journal", "Bedtime", "Start session", "Cancel"]
-    const actions: QuickLogAction[] = ["activity", "journal", "bedtime", "session"]
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        {
-          options: labels,
-          cancelButtonIndex: 4,
-          userInterfaceStyle: "dark",
-        },
-        (idx) => {
-          if (idx >= 0 && idx < actions.length) onSelect(actions[idx])
-        },
-      )
-      return
-    }
-    onSelect("journal")
-  }, [onSelect])
-
-  return (
-    <TouchableOpacity
-      accessibilityRole="button"
-      accessibilityLabel="Quick log"
-      style={themed($composeButton)}
-      onPress={open}
-    >
-      <Plus size={18} color={colors.text} />
-    </TouchableOpacity>
-  )
-}
-
-function DevicePill({
-  batteryLabel,
-  isCharging,
-  isConnected,
-  onPress,
-}: {
-  batteryLabel: string
-  isCharging: boolean
-  isConnected: boolean
-  onPress: () => void
-}) {
-  const colors = LOCAL_THEME.colors
-
-  return (
-    <TouchableOpacity style={themed($devicePill)} onPress={onPress}>
-      <View style={themed($deviceIconWrap)}>
-        <Watch
-          size={18}
-          color={isConnected ? colors.text : colors.textDim}
-        />
-        {isCharging ? (
-          <Lightning size={9} color={colors.statusGreen} style={themed($chargeBolt)} />
-        ) : null}
-      </View>
-      <Text text={batteryLabel} size="xs" weight="bold" style={themed($devicePillText)} />
-    </TouchableOpacity>
-  )
-}
 
 function SkeletonBlock({ style }: { style?: ViewProps["style"] }) {
   const theme = LOCAL_THEME
@@ -758,46 +694,6 @@ const $topStripRight: ThemedStyle<ViewStyle> = () => ({
   alignItems: "center",
   flexDirection: "row",
   gap: 10,
-})
-
-const $composeButton: ThemedStyle<ViewStyle> = ({ colors }) => ({
-  alignItems: "center",
-  backgroundColor: colors.surfaceElevated,
-  borderRadius: 16,
-  height: 32,
-  justifyContent: "center",
-  width: 32,
-})
-
-const $devicePill: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  flexDirection: "row",
-  gap: 3,
-  minHeight: 32,
-  paddingHorizontal: 0,
-  paddingVertical: 0,
-})
-
-const $deviceIconWrap: ThemedStyle<ViewStyle> = () => ({
-  alignItems: "center",
-  height: 22,
-  justifyContent: "center",
-  position: "relative",
-  width: 22,
-})
-
-const $chargeBolt: ThemedStyle<TextStyle> = () => ({
-  position: "absolute",
-  right: -2,
-  top: -4,
-})
-
-const $devicePillText: ThemedStyle<TextStyle> = ({ colors }) => ({
-  color: colors.text,
-  fontSize: 18,
-  lineHeight: 22,
-  minWidth: 34,
-  textAlign: "center",
 })
 
 const $skeletonBlock: ThemedStyle<ViewStyle> = ({ colors }) => ({
