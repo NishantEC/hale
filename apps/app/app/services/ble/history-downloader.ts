@@ -3,6 +3,7 @@ import { parseHistoricalPacketBatch } from './history-parser';
 import { bleManager } from './ble-manager';
 import { CommandService } from './command-service';
 import { recordAckWrite, recordPersistFailure } from '../sync/syncTelemetry';
+import { readUint32LE, SENTINEL_NO_ADVANCE_TRIM } from './uint32';
 
 const DOWNLOAD_TIMEOUT_MS = 120000;
 // Idle-window before we declare the strap's historical stream done.
@@ -227,12 +228,35 @@ export class HistoryDownloader {
         this.chunksReceived++;
         this.emitProgress('receiving');
 
-        // ACK — trim value from data bytes
+        // ACK — trim value from data bytes (always read as uint32 LE)
         let trimValue = 0;
         if (packet.data.length >= 14) {
-          trimValue = (packet.data[10]) | (packet.data[11] << 8) | (packet.data[12] << 16) | ((packet.data[13] << 24) >>> 0);
+          trimValue = readUint32LE(packet.data, 10);
         } else if (packet.data.length >= 5) {
-          trimValue = (packet.data[1]) | (packet.data[2] << 8) | (packet.data[3] << 16) | ((packet.data[4] << 24) >>> 0);
+          trimValue = readUint32LE(packet.data, 1);
+        }
+
+        // Sentinel: strap signals "no advance" with 0xFFFFFFFF. Echoing it
+        // back tells the strap to discard its pending buffer (the strap
+        // reads the ack as trim=uint32 max). Persist anything we got in
+        // this batch but do NOT ack — the strap will resend on next pass.
+        if (trimValue === SENTINEL_NO_ADVANCE_TRIM) {
+          console.log(
+            '[HistoryDownloader] Sentinel trim (0xFFFFFFFF) — skipping ack;',
+            'batchRecords=', batchRecords.length,
+          );
+          if (batchRecords.length > 0 && this.persistBatch) {
+            this.persistChain = this.persistChain.then(() =>
+              this.persistBatch!(batchRecords).catch((err) => {
+                const msg = err instanceof Error ? err.message : String(err);
+                recordPersistFailure({
+                  at: Date.now(), source: 'persistAndAck',
+                  trimValue, batchSize: batchRecords.length, message: msg,
+                });
+              }),
+            );
+          }
+          return;
         }
 
         // Stuck-strap detectors (two flavors, either can trigger
