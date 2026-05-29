@@ -7,13 +7,13 @@ import { useFocusEffect } from "@react-navigation/native"
 import { DateSwitcher } from "@/components/DateSwitcher"
 import { ComposeButton, type QuickLogAction } from "@/components/home/ComposeButton"
 import { DevicePill } from "@/components/home/DevicePill"
+import { AuroraBackdrop, type AuroraState } from "@/components/health/AuroraBackdrop"
 import {
-  CollapsibleVitalsCard,
   type DeltaDirection,
   type VitalRow,
   type VitalStatus,
 } from "@/components/health/CollapsibleVitalsCard"
-import { GlowScoreCard } from "@/components/health/GlowScoreCard"
+import { HealthMonitorCard } from "@/components/health/HealthMonitorCard"
 import { HealthspanCard } from "@/components/health/HealthspanCard"
 import { TrendCard } from "@/components/health/TrendCard"
 import { Text } from "@/components/Text"
@@ -67,7 +67,6 @@ export const HealthScreen: FC = () => {
   const monitorsHealth = homeView?.monitors?.health
   const activities = homeView?.activities
   const sleepRing = homeView?.rings.sleep
-  const recoveryRing = homeView?.rings.recovery
   const stressMonitor = homeView?.monitors?.stress
 
   const hero = useMemo(() => {
@@ -75,14 +74,14 @@ export const HealthScreen: FC = () => {
     const total = monitorsHealth?.totalMetrics ?? 0
     const score = total > 0 ? `${inRange}` : "--"
     const sub = total > 0 ? `/${total}` : undefined
-    const verdict =
-      monitorsHealth?.verdict ?? (total === 0 ? "Calibrating" : "")
+    const verdict = monitorsHealth?.verdict ?? (total === 0 ? "Calibrating" : "")
+    const state: AuroraState = monitorsHealth?.state ?? "stale"
     const tint =
-      monitorsHealth?.state === "ok"
+      state === "ok"
         ? colors.statusGreen
-        : monitorsHealth?.state === "warn"
+        : state === "warn"
           ? colors.statusAmber
-          : monitorsHealth?.state === "alert"
+          : state === "alert"
             ? colors.statusRed
             : colors.textMuted
     const body =
@@ -90,8 +89,8 @@ export const HealthScreen: FC = () => {
         ? "Wear the strap overnight to lock in your baseline. Vitals appear after the first night."
         : inRange === total
           ? "Every vital sits inside your personal range today. Carry on as normal."
-          : `${inRange} of ${total} vitals are inside your personal range. Tap any row to drill in.`
-    return { score, sub, verdict, tint, body }
+          : `${inRange} of ${total} vitals are inside your personal range. Tap to expand and drill in.`
+    return { score, sub, verdict, tint, body, state }
   }, [monitorsHealth, colors])
 
   const vitalRows = useMemo<VitalRow[]>(() => {
@@ -130,6 +129,7 @@ export const HealthScreen: FC = () => {
         null,
         null,
         hrvNum != null ? "ok" : "stale",
+        () => router.push("/hrv-detail"),
       ),
       makeVital(
         "rr",
@@ -161,9 +161,7 @@ export const HealthScreen: FC = () => {
         Number.isFinite(skinTempNum) ? skinTempNum : null,
         null,
         null,
-        skinTempDelta && skinTempDelta !== "--"
-          ? skinTempDeltaCaption(skinTempDelta)
-          : null,
+        skinTempDelta && skinTempDelta !== "--" ? skinTempDeltaCaption(skinTempDelta) : null,
         skinTempStatus(skinTempDelta),
       ),
       makeVital(
@@ -176,6 +174,7 @@ export const HealthScreen: FC = () => {
         sleepBaseline != null ? { label: `7d ${Math.round(sleepBaseline)}` } : null,
         deltaArrow(sleepScore, sleepBaseline, 0),
         sleepStatus(sleepScore, sleepBaseline),
+        () => router.push({ pathname: "/sleep-detail", params: { date: selectedDate } }),
       ),
       makeVital(
         "stress",
@@ -187,9 +186,10 @@ export const HealthScreen: FC = () => {
         null,
         null,
         stressMonitorStatus(stressZone),
+        () => router.push("/stress-monitor"),
       ),
     ]
-  }, [activities, sleepRing, stressMonitor])
+  }, [activities, sleepRing, stressMonitor, selectedDate])
 
   const noopAge = healthView?.current?.noopAge ?? null
   const chronoAge = healthView?.current?.chronologicalAge ?? null
@@ -216,87 +216,88 @@ export const HealthScreen: FC = () => {
   const batteryLabel = batteryLevel == null ? "—" : `${batteryLevel}%`
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }} edges={["top"]}>
-      <View style={$topbar}>
-        <DateSwitcher
-          title={formatTitleFor(selectedDate)}
-          onPrevious={goToPreviousDay}
-          onNext={goToNextDay}
-        />
-        <View style={$topRight}>
-          <ComposeButton onSelect={handleQuickLog} />
-          <DevicePill
-            batteryLabel={batteryLabel}
-            isCharging={isCharging}
-            isConnected={connectionState === "ready"}
-            onPress={() => router.push("/device-settings")}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <AuroraBackdrop state={hero.state} background={colors.background} />
+      <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
+        <View style={$topbar}>
+          <DateSwitcher
+            title={formatTitleFor(selectedDate)}
+            onPrevious={goToPreviousDay}
+            onNext={goToNextDay}
           />
+          <View style={$topRight}>
+            <ComposeButton onSelect={handleQuickLog} />
+            <DevicePill
+              batteryLabel={batteryLabel}
+              isCharging={isCharging}
+              isConnected={connectionState === "ready"}
+              onPress={() => router.push("/device-settings")}
+            />
+          </View>
         </View>
-      </View>
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{
-          paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: insets.bottom + 100,
-          gap: 14,
-        }}
-      >
-        <GlowScoreCard
-          title="Health Monitor"
-          score={hero.score}
-          scoreSubscript={hero.sub}
-          verdict={hero.verdict}
-          body={hero.body}
-          tint={hero.tint}
-          onPress={() => router.push("/health-monitor")}
-        />
-
-        <CollapsibleVitalsCard rows={vitalRows} defaultExpanded={false} />
-
-        {noopAge != null ? (
-          <HealthspanCard
-            noopAge={noopAge.toFixed(1)}
-            chronologicalAge={chronoAge != null ? chronoAge.toFixed(1) : "--"}
-            deltaText={
-              ageDelta == null || Math.abs(ageDelta) < 0.05
-                ? "matching"
-                : `${ageDelta > 0 ? "+" : ""}${ageDelta.toFixed(1)} yr`
-            }
-            deltaDirection={
-              ageDelta == null || Math.abs(ageDelta) < 0.05
-                ? "even"
-                : ageDelta < 0
-                  ? "younger"
-                  : "older"
-            }
-            onPress={() => router.push("/healthspan")}
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 8,
+            paddingBottom: insets.bottom + 100,
+            gap: 14,
+          }}
+        >
+          <HealthMonitorCard
+            score={hero.score}
+            scoreSubscript={hero.sub}
+            verdict={hero.verdict}
+            body={hero.body}
+            tint={hero.tint}
+            rows={vitalRows}
+            defaultExpanded={false}
           />
-        ) : null}
 
-        {paceOfAging != null ? (
-          <TrendCard
-            title="Pace of Aging"
-            value={`${paceOfAging.toFixed(2)}×`}
-            caption={
-              paceOfAging < 1
-                ? "Below 1.0× — you're aging slower than the chronological clock."
-                : paceOfAging > 1
-                  ? "Above 1.0× — you're aging faster than the chronological clock."
-                  : "Even with the chronological clock."
-            }
-            points={paceHistoryPoints(healthView)}
-            tint={colors.ringRecovery}
-            onPress={() => router.push("/healthspan")}
+          {noopAge != null ? (
+            <HealthspanCard
+              noopAge={noopAge.toFixed(1)}
+              chronologicalAge={chronoAge != null ? chronoAge.toFixed(1) : "--"}
+              deltaText={
+                ageDelta == null || Math.abs(ageDelta) < 0.05
+                  ? "matching"
+                  : `${ageDelta > 0 ? "+" : ""}${ageDelta.toFixed(1)} yr`
+              }
+              deltaDirection={
+                ageDelta == null || Math.abs(ageDelta) < 0.05
+                  ? "even"
+                  : ageDelta < 0
+                    ? "younger"
+                    : "older"
+              }
+              onPress={() => router.push("/healthspan")}
+            />
+          ) : null}
+
+          {paceOfAging != null ? (
+            <TrendCard
+              title="Pace of Aging"
+              value={`${paceOfAging.toFixed(2)}×`}
+              caption={
+                paceOfAging < 1
+                  ? "Below 1.0× — you're aging slower than the chronological clock."
+                  : paceOfAging > 1
+                    ? "Above 1.0× — you're aging faster than the chronological clock."
+                    : "Even with the chronological clock."
+              }
+              points={paceHistoryPoints(healthView)}
+              tint={colors.ringRecovery}
+              onPress={() => router.push("/healthspan")}
+            />
+          ) : null}
+
+          <Text
+            text="Tap the Health Monitor card to expand. Range bars lock against your personal range after 14 nights of strap data."
+            style={{ color: colors.textMuted, fontSize: 11, paddingHorizontal: 4, paddingTop: 4 }}
           />
-        ) : null}
-
-        <Text
-          text="Tap the vitals row to expand. Range bars lock against your personal range after 14 nights of strap data."
-          style={{ color: colors.textMuted, fontSize: 11, paddingHorizontal: 4, paddingTop: 4 }}
-        />
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   )
 }
 
@@ -312,6 +313,7 @@ function makeVital(
   range: Range,
   deltaText: string | null,
   status: VitalStatus,
+  onPress?: () => void,
 ): VitalRow {
   const computed = computeRangeFill(current, range)
   const direction: DeltaDirection =
@@ -332,6 +334,7 @@ function makeVital(
     fillEnd: computed.fillEnd,
     deltaText,
     deltaDirection: direction,
+    onPress,
   }
 }
 
