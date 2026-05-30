@@ -34,7 +34,12 @@ import { MetricRingsRow } from "@/components/home/MetricRingsRow"
 import { MonitorCard } from "@/components/home/MonitorCard"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
 import { DayArcRibbon } from "@/components/home/DayArcRibbon"
-import { fetchCoverage, type CoverageKind } from "@/services/api/noopClient"
+import {
+  fetchCoverage,
+  fetchJournalEntries,
+  type CoverageKind,
+  type JournalEntryResponse,
+} from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import { getViewCache, setViewCache } from "@/services/db/repositories/viewCache"
 import { Shimmer } from "@/components/reactx/Shimmer"
@@ -142,6 +147,7 @@ export const HomeScreen: FC = () => {
     selectedDate.slice(0, 7),
   )
   const [coverageByDate, setCoverageByDate] = useState<Record<string, CoverageKind>>({})
+  const [journalEntries, setJournalEntries] = useState<JournalEntryResponse[]>([])
   const lastShownError = useRef<string | null>(null)
   const lastFocusRefreshAt = useRef(0)
 
@@ -154,6 +160,23 @@ export const HomeScreen: FC = () => {
       }
     }, [refreshDashboard]),
   )
+
+  // Pull journal entries for the selected day so they appear on the day
+  // tape alongside sleep / recovery / workout events. Soft-fail —
+  // missing entries shouldn't block the dashboard from rendering.
+  useEffect(() => {
+    let cancelled = false
+    fetchJournalEntries(selectedDate)
+      .then((res) => {
+        if (!cancelled) setJournalEntries(res.entries ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setJournalEntries([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedDate])
 
   // Fetch coverage for the visible month whenever the calendar is open or the
   // cursor changes. Local viewCache provides instant render; remote fetch
@@ -413,7 +436,7 @@ export const HomeScreen: FC = () => {
     () =>
       buildTodayTape({
         homeView,
-        journalEntries: [],
+        journalEntries,
         now: Date.now(),
         colors: {
           ringRecovery: colors.ringRecovery,
@@ -426,6 +449,7 @@ export const HomeScreen: FC = () => {
       }),
     [
       homeView,
+      journalEntries,
       selectedDate,
       colors.ringRecovery,
       colors.ringSleep,
@@ -467,6 +491,9 @@ export const HomeScreen: FC = () => {
         } else {
           navigateTo("StrainActivity", "strain-activity")
         }
+        break
+      case "journal":
+        navigateTo("JournalHistory", "journal-history")
         break
     }
   }

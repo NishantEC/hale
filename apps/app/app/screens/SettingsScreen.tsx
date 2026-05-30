@@ -15,7 +15,6 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import Constants from "expo-constants"
 import { router } from "expo-router"
 import {
-  BookOpen,
   Calendar,
   CaretRight,
   Clock,
@@ -505,9 +504,9 @@ export const SettingsScreen: FC = () => {
           />
         </Card>
 
-        {/* Insights & Journal — surfaces that don't have their own bottom-tab
-            entry. Insights is the placeholder calibration card; the journal
-            history is the full log of factor tags. */}
+        {/* Insights — placeholder calibration screen, lives here until the
+            correlator backend lands and earns a bottom-tab slot. Journal
+            history reaches in from the Home day tape, not from Settings. */}
         <SectionLabel>Insights</SectionLabel>
         <Card>
           <Row
@@ -515,13 +514,6 @@ export const SettingsScreen: FC = () => {
             label="Impact analysis"
             chevron
             onPress={() => router.push("/insights")}
-          />
-          <Divider />
-          <Row
-            icon={BookOpen}
-            label="Journal history"
-            chevron
-            onPress={() => router.push("/journal-history")}
           />
         </Card>
 
