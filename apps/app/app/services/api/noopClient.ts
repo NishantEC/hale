@@ -884,6 +884,17 @@ export async function apiPut(path: string, body: any, timeoutMs = REQUEST_TIMEOU
   }, timeoutMs);
 }
 
+export async function apiPatch(path: string, body: any, timeoutMs = REQUEST_TIMEOUT_MS) {
+  return requestJson(path, {
+    method: 'PATCH',
+    headers: withBaseHeaders({
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${sessionToken}`,
+    }),
+    body: JSON.stringify(body),
+  }, timeoutMs);
+}
+
 // Pipeline interfaces and functions
 
 export interface PipelineResults {
@@ -1380,6 +1391,8 @@ export async function fetchJournalEntries(date: string): Promise<{ entries: Jour
 
 export type InsightMetric = 'sleep' | 'recovery' | 'hrv' | 'strain';
 
+export type ImpactConfidence = 'low' | 'medium' | 'high';
+
 export interface FactorImpact {
   factorTag: string;
   daysWith: number;
@@ -1388,6 +1401,7 @@ export interface FactorImpact {
   meanWithout: number;
   delta: number;
   helps: boolean;
+  confidence: ImpactConfidence;
 }
 
 export interface MetricInsights {
@@ -1407,6 +1421,43 @@ export interface InsightsViewModel {
 
 export async function fetchInsights(windowDays: number = 30): Promise<InsightsViewModel> {
   return apiGet(`/journal/insights?windowDays=${windowDays}`);
+}
+
+export interface ServerPreferences {
+  notifications: {
+    recoveryDrop: boolean;
+    sleepBedtimeReminder: boolean;
+    morningSummary: boolean;
+    strapBatteryLow: boolean;
+    weeklyDigest: boolean;
+  };
+  goals: {
+    sleepTargetMinutes: number;
+    strainTargetDaily: number;
+    activeMinutesDaily: number;
+  };
+  metrics: {
+    showHealthspan: boolean;
+    showStress: boolean;
+    showHrv: boolean;
+    showRespiratoryRate: boolean;
+  };
+  journal: {
+    morningReminder: boolean;
+    eveningReminder: boolean;
+  };
+}
+
+export type ServerPreferencesPatch = {
+  [K in keyof ServerPreferences]?: Partial<ServerPreferences[K]>;
+};
+
+export async function fetchPreferences(): Promise<ServerPreferences> {
+  return apiGet(`/preferences`);
+}
+
+export async function patchPreferences(patch: ServerPreferencesPatch): Promise<ServerPreferences> {
+  return apiPatch(`/preferences`, patch);
 }
 
 // Telemetry ingestion

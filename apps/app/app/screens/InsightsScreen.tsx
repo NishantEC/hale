@@ -205,6 +205,7 @@ const MetricSection: FC<{ insights: MetricInsights }> = ({ insights }) => {
           delta={f.delta}
           daysWith={f.daysWith}
           helps={f.helps}
+          confidence={f.confidence}
           maxMagnitude={maxMagnitude}
         />
       ))}
@@ -217,8 +218,9 @@ const ImpactRow: FC<{
   delta: number
   daysWith: number
   helps: boolean
+  confidence: "low" | "medium" | "high"
   maxMagnitude: number
-}> = ({ tag, delta, daysWith, helps, maxMagnitude }) => {
+}> = ({ tag, delta, daysWith, helps, confidence, maxMagnitude }) => {
   const { colors } = LOCAL_THEME
   const factor = JOURNAL_FACTORS.find((j) => j.tag === tag)
   const label = factor?.label ?? tag
@@ -271,9 +273,14 @@ const ImpactRow: FC<{
           }}
         />
         <Text
-          text={`${daysWith}d`}
+          text={`${daysWith}d · ${confidence}`}
           style={{
-            color: colors.textMuted,
+            color:
+              confidence === "high"
+                ? colors.text
+                : confidence === "medium"
+                  ? colors.textDim
+                  : colors.textMuted,
             fontSize: 10,
             fontVariant: ["tabular-nums"],
           }}

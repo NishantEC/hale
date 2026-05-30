@@ -34,6 +34,10 @@ export default function AppLayout() {
       <Stack.Screen name="recovery-detail" />
       <Stack.Screen name="healthspan" />
       <Stack.Screen name="insights" />
+      <Stack.Screen name="settings-notifications" />
+      <Stack.Screen name="settings-goals" />
+      <Stack.Screen name="settings-integrations" />
+      <Stack.Screen name="settings-data-export" />
       <Stack.Screen
         name="journal-entry"
         options={{

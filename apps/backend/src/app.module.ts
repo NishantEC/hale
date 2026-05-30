@@ -7,6 +7,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { SleepModule } from './sleep/sleep.module.js';
 import { WellnessModule } from './wellness/wellness.module.js';
 import { JournalModule } from './journal/journal.module.js';
+import { PreferencesModule } from './preferences/preferences.module.js';
 import { PlansModule } from './plans/plans.module.js';
 import { DevicesModule } from './devices/devices.module.js';
 import { SyncModule } from './sync/sync.module.js';
@@ -27,6 +28,7 @@ import { LivenessModule } from './liveness/liveness.module.js';
     SleepModule,
     WellnessModule,
     JournalModule,
+    PreferencesModule,
     PlansModule,
     DevicesModule,
     SyncModule,

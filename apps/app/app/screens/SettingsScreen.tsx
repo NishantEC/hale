@@ -16,19 +16,23 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import Constants from "expo-constants"
 import { router } from "expo-router"
 import {
+  BellRinging,
   Calendar,
   CaretRight,
   Clock,
   Cpu,
   DeviceMobile,
+  DownloadSimple,
   FileText,
   Flask,
   Icon as PhosphorIconType,
   Info,
   Moon,
+  PlugsConnected,
   ShieldCheck,
   Sparkle,
   Sun,
+  Target,
   Watch,
 } from "phosphor-react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
@@ -489,29 +493,45 @@ export const SettingsScreen: FC = () => {
           ) : null}
         </Card>
 
-        {/* General */}
-        <SectionLabel>General</SectionLabel>
+        {/* Personalisation — server-backed sub-screens for the
+            preferences worth typing. Each gets its own screen because
+            cramming all of them into a single Settings ScrollView would
+            push About + Sign out off the bottom of the world. */}
+        <SectionLabel>Personalisation</SectionLabel>
         <Card>
           <Row
-            icon={FileText}
-            label="Privacy policy"
+            icon={BellRinging}
+            label="Notifications"
             chevron
-            onPress={() => Linking.openURL("https://noop.app/privacy").catch(() => {})}
+            onPress={() => router.push("/settings-notifications")}
           />
           <Divider />
           <Row
-            icon={ShieldCheck}
-            label="Terms of service"
+            icon={Target}
+            label="Goals"
             chevron
-            onPress={() => Linking.openURL("https://noop.app/terms").catch(() => {})}
+            onPress={() => router.push("/settings-goals")}
+          />
+          <Divider />
+          <Row
+            icon={PlugsConnected}
+            label="Integrations"
+            chevron
+            onPress={() => router.push("/settings-integrations")}
+          />
+          <Divider />
+          <Row
+            icon={DownloadSimple}
+            label="Data export"
+            chevron
+            onPress={() => router.push("/settings-data-export")}
           />
         </Card>
 
-        {/* Preferences — local-only toggles. Per master-plan §4.11 "Hide
-            metrics", this is the noop equivalent of Whoop's hide-metrics
-            settings. Each toggle persists via AsyncStorage; consumers read
-            it with usePreference(). */}
-        <SectionLabel>Preferences</SectionLabel>
+        {/* Local Healthspan toggle stays as a quick switch — convenient
+            for the most common hide-metrics action without drilling into
+            the metrics preferences sub-screen. */}
+        <SectionLabel>Quick toggles</SectionLabel>
         <Card>
           <View
             style={{
@@ -550,8 +570,7 @@ export const SettingsScreen: FC = () => {
         </Card>
 
         {/* Insights — placeholder calibration screen, lives here until the
-            correlator backend lands and earns a bottom-tab slot. Journal
-            history reaches in from the Home day tape, not from Settings. */}
+            correlator earns a bottom-tab slot. */}
         <SectionLabel>Insights</SectionLabel>
         <Card>
           <Row
@@ -559,6 +578,24 @@ export const SettingsScreen: FC = () => {
             label="Impact analysis"
             chevron
             onPress={() => router.push("/insights")}
+          />
+        </Card>
+
+        {/* Legal */}
+        <SectionLabel>Legal</SectionLabel>
+        <Card>
+          <Row
+            icon={FileText}
+            label="Privacy policy"
+            chevron
+            onPress={() => Linking.openURL("https://noop.app/privacy").catch(() => {})}
+          />
+          <Divider />
+          <Row
+            icon={ShieldCheck}
+            label="Terms of service"
+            chevron
+            onPress={() => Linking.openURL("https://noop.app/terms").catch(() => {})}
           />
         </Card>
 

@@ -47,6 +47,17 @@ export class JournalController {
     return this.journalService.buildInsights(req.user.userId, safeWindow);
   }
 
+  // Returns a JSON dump of the user's last N days of data (journal +
+  // daily scores + night features) suitable for the Settings → Export
+  // share-sheet. PDF generation is a future addition; JSON gives the
+  // user something they can take to a doctor or pipe into a spreadsheet.
+  @Get('export')
+  async export(@Req() req: any, @Query('windowDays') windowDays?: string) {
+    const days = windowDays ? Number.parseInt(windowDays, 10) : 90;
+    const safeWindow = Number.isFinite(days) && days > 0 ? Math.min(365, days) : 90;
+    return this.journalService.buildExport(req.user.userId, safeWindow);
+  }
+
   @Delete(':id')
   async remove(@Req() req: any, @Param('id') id: string) {
     const deleted = await this.journalService.remove(req.user.userId, id);

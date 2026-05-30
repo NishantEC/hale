@@ -8,6 +8,8 @@ import { DailyMetric } from '../wellness/entities/daily-metric.entity.js';
 
 export type InsightMetric = 'sleep' | 'recovery' | 'hrv' | 'strain';
 
+export type ImpactConfidence = 'low' | 'medium' | 'high';
+
 export interface FactorImpact {
   factorTag: string;
   daysWith: number;
@@ -16,6 +18,7 @@ export interface FactorImpact {
   meanWithout: number;
   delta: number;
   helps: boolean;
+  confidence: ImpactConfidence;
 }
 
 export interface MetricInsights {
@@ -54,6 +57,43 @@ export class JournalService {
     @InjectRepository(DailyMetric)
     private metricRepo: Repository<DailyMetric>,
   ) {}
+
+  async buildExport(userId: string, windowDays = 90): Promise<{
+    generatedAt: string;
+    windowDays: number;
+    journal: JournalEntry[];
+    dailyScores: DailyScore[];
+    nightFeatures: NightFeature[];
+    dailyMetrics: DailyMetric[];
+  }> {
+    const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000);
+    const [journal, dailyScores, nightFeatures, dailyMetrics] = await Promise.all([
+      this.repo.find({
+        where: { userId, timestamp: MoreThan(since) },
+        order: { timestamp: 'ASC' },
+      }),
+      this.scoreRepo.find({
+        where: { userId, dayDate: MoreThan(since) },
+        order: { dayDate: 'ASC' },
+      }),
+      this.nightRepo.find({
+        where: { userId, nightDate: MoreThan(since) },
+        order: { nightDate: 'ASC' },
+      }),
+      this.metricRepo.find({
+        where: { userId, dayDate: MoreThan(since) },
+        order: { dayDate: 'ASC' },
+      }),
+    ]);
+    return {
+      generatedAt: new Date().toISOString(),
+      windowDays,
+      journal,
+      dailyScores,
+      nightFeatures,
+      dailyMetrics,
+    };
+  }
 
   async create(userId: string, data: { factorTag: string; intensity: number; note?: string; timestamp?: string }): Promise<JournalEntry> {
     const entry = this.repo.create({
@@ -204,6 +244,13 @@ export class JournalService {
       // less meaningful — render as raw delta and let the UI decide framing.
       const helps = higherIsBetter ? delta > 0 : delta < 0;
 
+      // Sample-size-derived confidence. Honest enough for v1 — eventually
+      // upgrade to a real t-test / effect-size with CI, but for now bin by
+      // count so the UI can render a "high / medium / low" badge.
+      const minSamples = Math.min(withVals.length, withoutVals.length);
+      const confidence: ImpactConfidence =
+        minSamples >= 10 ? 'high' : minSamples >= 5 ? 'medium' : 'low';
+
       factors.push({
         factorTag: tag,
         daysWith: withVals.length,
@@ -212,10 +259,20 @@ export class JournalService {
         meanWithout: round1(meanWithout),
         delta: round1(delta),
         helps,
+        confidence,
       });
     }
 
-    factors.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    // Sort by confidence-weighted impact: |delta| × weight (high=1.0,
+    // medium=0.7, low=0.4). Surfaces high-confidence wins over barely-
+    // sampled high-delta noise.
+    const weightFor = (c: ImpactConfidence) =>
+      c === 'high' ? 1.0 : c === 'medium' ? 0.7 : 0.4;
+    factors.sort(
+      (a, b) =>
+        Math.abs(b.delta) * weightFor(b.confidence) -
+        Math.abs(a.delta) * weightFor(a.confidence),
+    );
 
     return {
       metric,
