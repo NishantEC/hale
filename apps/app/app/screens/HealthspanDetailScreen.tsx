@@ -202,14 +202,19 @@ const Header: FC<{
           >
             <Text style={[styles.dialogTitle, { color: colors.text }]}>About Healthspan</Text>
             <Text style={[styles.dialogBody, { color: colors.textDim }]}>
-              noop Age estimates how your behaviors are tracking against a healthy adult of your
-              chronological age. Each input (sleep, cardio, strength, RHR, VO₂max…) contributes
-              years above or below your chronological age based on published longevity research.
+              Healthspan estimates how your body is tracking against an average healthy person
+              your age. We blend a handful of signals — sleep, resting heart rate, cardio
+              fitness, strength habits — into a single number expressed as a "biological age".
               {"\n\n"}
-              Pace of Aging compares this week to last — 1.0× means you're aging at the chronological
-              clock. Lower is better.
+              The delta below the number is what matters. Negative means you're aging slower than
+              average; positive means faster. Either way, the score moves with your habits week
+              over week — it's not a verdict.
               {"\n\n"}
-              Not a medical assessment.
+              Pace of Aging answers a different question: at the current rate, how fast is your
+              biological age changing? 1.0× means you're aging at the chronological clock.
+              Below 1.0× = slower; above 1.0× = faster.
+              {"\n\n"}
+              Not a medical diagnosis. If anything here surprises you, talk to a doctor.
             </Text>
             <Pressable
               onPress={() => setInfoOpen(false)}
@@ -252,12 +257,12 @@ const OrbBlock: FC<{
 }> = ({ assessment, orbColors, accentColor, delta }) => {
   const colors = LOCAL_THEME.colors
   const deltaText = !assessment
-    ? "—"
+    ? "Calibrating · wear the strap"
     : Math.abs(delta) < 0.05
-      ? "matching your age"
+      ? "Tracking with your age"
       : delta < 0
-        ? `${Math.abs(delta).toFixed(1)} years younger`
-        : `${delta.toFixed(1)} years older`
+        ? `${Math.abs(delta).toFixed(1)} yr younger than ${assessment.chronologicalAge.toFixed(0)}`
+        : `${delta.toFixed(1)} yr older than ${assessment.chronologicalAge.toFixed(0)}`
 
   return (
     <View style={styles.orbWrap}>
@@ -335,13 +340,13 @@ const PaceBlock: FC<{ value: number | null; accentColor: string }> = ({ value, a
       </View>
       <View style={styles.paceAxis}>
         <View style={styles.paceEnd}>
-          <View style={[styles.paceDot, { borderColor: colors.textDim }]} />
-          <Text style={[styles.paceEndText, { color: colors.textDim }]}>Slow</Text>
+          <View style={[styles.paceDot, { borderColor: "#16A34A" }]} />
+          <Text style={[styles.paceEndText, { color: colors.textDim }]}>Aging slower</Text>
         </View>
-        <Text style={[styles.paceEndText, { color: colors.textDim }]}>1.0x</Text>
+        <Text style={[styles.paceEndText, { color: colors.textDim }]}>1.0× = even</Text>
         <View style={styles.paceEnd}>
-          <Text style={[styles.paceEndText, { color: colors.textDim }]}>Fast</Text>
-          <View style={[styles.paceDot, { backgroundColor: colors.textDim, borderColor: colors.textDim }]} />
+          <Text style={[styles.paceEndText, { color: colors.textDim }]}>Aging faster</Text>
+          <View style={[styles.paceDot, { backgroundColor: "#EA580C", borderColor: "#EA580C" }]} />
         </View>
       </View>
     </View>

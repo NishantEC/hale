@@ -605,9 +605,20 @@ export const HomeScreen: FC = () => {
                     icon={Heartbeat}
                     title="Health"
                     state={healthMonitor?.state ?? "stale"}
-                    score={String(healthMonitor?.inRangeCount ?? 0)}
-                    scoreSubscript={`/${healthMonitor?.totalMetrics ?? 4}`}
-                    verdict={healthMonitor?.verdict ?? "No recent data"}
+                    score={
+                      (healthMonitor?.totalMetrics ?? 0) > 0
+                        ? String(healthMonitor?.inRangeCount ?? 0)
+                        : "--"
+                    }
+                    scoreSubscript={
+                      (healthMonitor?.totalMetrics ?? 0) > 0
+                        ? `/${healthMonitor?.totalMetrics}`
+                        : undefined
+                    }
+                    verdict={
+                      healthMonitor?.verdict ??
+                      (connectionState === "ready" ? "Waiting on tonight's sleep" : "Strap offline")
+                    }
                     freshness={formatFreshness(healthMonitor?.lastReadingAt ?? null)}
                     tint={colors.ringRecovery}
                     onPress={() => navigateTo("HealthMonitor", "health-monitor")}
@@ -617,7 +628,10 @@ export const HomeScreen: FC = () => {
                     title="Stress"
                     state={stressMonitor?.state ?? "stale"}
                     score={stressMonitor?.score == null ? "--" : stressMonitor.score.toFixed(0)}
-                    verdict={stressMonitor?.zone ?? "No reading"}
+                    verdict={
+                      stressMonitor?.zone ??
+                      (connectionState === "ready" ? "Streaming…" : "Strap offline")
+                    }
                     freshness={formatFreshness(stressMonitor?.lastReadingAt ?? null)}
                     tint={colors.ringHrv}
                     onPress={() => navigateTo("StressMonitor", "stress-monitor")}

@@ -1104,14 +1104,17 @@ export class ViewsService {
             ? 'Check vitals'
             : 'Vitals concern';
 
-    const restingHR = baselineProfile?.restingHeartRate ?? null;
-    // Fall back to a generic 180bpm ceiling when the user's baseline doesn't
-    // carry an explicit maxHeartRate yet. Without this, every brand-new user
-    // (or anyone whose baseline didn't derive a max) sees an empty Stress
-    // monitor even when the strap is streaming HR data.
+    // Stress wants a personal RHR + maxHR. Brand-new users have neither yet
+    // — fall back to generic adult defaults (RHR 60, maxHR 180) so the
+    // Stress Monitor surfaces *some* signal on Day 1 instead of staying
+    // permanently blank until baseline-warmup completes after 5 nights.
+    // The mapping is intentionally loose; once the real baseline lands the
+    // numbers tighten automatically.
+    const rawRestingHR = baselineProfile?.restingHeartRate ?? null;
+    const restingHR = rawRestingHR != null && rawRestingHR > 0 ? rawRestingHR : 60;
     const maxHR =
       baselineProfile?.maxHeartRate ??
-      (restingHR != null && restingHR > 0 ? Math.max(180, Math.round(restingHR * 2.5)) : null);
+      Math.max(180, Math.round(restingHR * 2.8));
     const sleepStart = selectedDetection?.bedtime ?? null;
     const sleepEnd = selectedDetection?.wakeTime ?? null;
 

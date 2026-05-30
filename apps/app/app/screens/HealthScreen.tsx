@@ -76,7 +76,9 @@ export const HealthScreen: FC = () => {
     const total = monitorsHealth?.totalMetrics ?? 0
     const score = total > 0 ? `${inRange}` : "--"
     const sub = total > 0 ? `/${total}` : undefined
-    const verdict = monitorsHealth?.verdict ?? (total === 0 ? "Calibrating" : "")
+    const verdict =
+      monitorsHealth?.verdict ??
+      (total === 0 ? "Waiting on tonight's sleep" : "")
     const state: AuroraState = monitorsHealth?.state ?? "stale"
     const tint =
       state === "ok"
@@ -86,11 +88,14 @@ export const HealthScreen: FC = () => {
           : state === "alert"
             ? colors.statusRed
             : colors.textMuted
+    // Body explains the *reason* the score is empty so the user knows
+    // whether to act (sleep with the strap on) or just wait (the
+    // pipeline runs every 5 min in the background after a sleep window).
     const body =
       total === 0
-        ? "Wear the strap overnight to lock in your baseline. Vitals appear after the first night."
+        ? "Vitals lock in after the first full night of sleep with the strap on. Tonight's recording will populate this card by morning."
         : inRange === total
-          ? "Every vital sits inside your personal range today. Carry on as normal."
+          ? "Every vital sits inside your personal range today."
           : `${inRange} of ${total} vitals are inside your personal range. Tap to expand and drill in.`
     return { score, sub, verdict, tint, body, state }
   }, [monitorsHealth, colors])
