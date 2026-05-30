@@ -33,6 +33,7 @@ export default function AppLayout() {
       <Stack.Screen name="hrv-detail" />
       <Stack.Screen name="recovery-detail" />
       <Stack.Screen name="healthspan" />
+      <Stack.Screen name="insights" />
       <Stack.Screen
         name="journal-entry"
         options={{

@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import Constants from "expo-constants"
 import { router } from "expo-router"
 import {
+  BookOpen,
   Calendar,
   CaretRight,
   Clock,
@@ -26,6 +27,7 @@ import {
   Info,
   Moon,
   ShieldCheck,
+  Sparkle,
   Sun,
   Watch,
 } from "phosphor-react-native"
@@ -500,6 +502,26 @@ export const SettingsScreen: FC = () => {
             label="Terms of service"
             chevron
             onPress={() => Linking.openURL("https://noop.app/terms").catch(() => {})}
+          />
+        </Card>
+
+        {/* Insights & Journal — surfaces that don't have their own bottom-tab
+            entry. Insights is the placeholder calibration card; the journal
+            history is the full log of factor tags. */}
+        <SectionLabel>Insights</SectionLabel>
+        <Card>
+          <Row
+            icon={Sparkle}
+            label="Impact analysis"
+            chevron
+            onPress={() => router.push("/insights")}
+          />
+          <Divider />
+          <Row
+            icon={BookOpen}
+            label="Journal history"
+            chevron
+            onPress={() => router.push("/journal-history")}
           />
         </Card>
 
