@@ -20,6 +20,17 @@ const repoRoot = resolve(here, "..");
 //   research — community / web finding
 //   next — recommended next step
 const GLANCE = [
+  // ── Shipped (2026-05-30 home + health + tabs session) ───────
+  { tag: "shipped", title: "Home tab redesign", body: "Rings drop `%` suffix and gain numericValue + sevenDayAverage for ▲/▼ delta captions. Monitor cards carry freshness (`Xm ago`). Recovery ring → new RecoveryDetailScreen. Floating + → native ActionSheet quick-log. Spec: docs/superpowers/specs/2026-05-28-home-tab-redesign-design.md.", anchor: "secondary-screens" },
+  { tag: "shipped", title: "Health tab rewrite", body: "Aurora backdrop (Skia, monitor-state tinted) + unified HealthMonitorCard (hero + collapsible vitals table merged). 8 vitals (RHR/HRV/RR/SpO₂/Skin Temp/Sleep/Recovery 7d/Stress) with personal-range bars + ▲/▼ vs 7d. Healthspan demoted to a sub-card → /healthspan. Spec: docs/superpowers/specs/2026-05-29-health-tab-rewrite-design.md.", anchor: "secondary-screens" },
+  { tag: "shipped", title: "Backend monitors contract", body: "views.service builds real monitors.stress (24h todayStrip, timeInZone, score, zone) + monitors.health (lastReadingAt, inRangeCount). respiratoryRate exposed on activities. maxHR falls back to max(180, RHR×2.5) so stress works without an explicit baseline maxHeartRate. Deployed to Cloud Run.", anchor: "secondary-screens" },
+  { tag: "shipped", title: "Detail screens polish", body: "HRV / Strain drop duplicate charts. Stress Monitor fixed to 0-100 scale (was '/3'). Sleep Planner surfaces estimatedSleepHours / sleepReserveText / smartWakeStatusText. Health Monitor dead-nav to HrvDetail fixed.", anchor: "secondary-screens" },
+  { tag: "shipped", title: "Sleep detail decoupled + factor tags humanised", body: "Route date / dashboard date desync fixed (route date pushed to dashboard on mount). WhyPanel translates CAFFEINE_LATE → 'Caffeine after 2pm' and 19 other tags. Journal CTA links to /journal-entry.", anchor: "secondary-screens" },
+  { tag: "shipped", title: "Journal library 12 → 41 factors", body: "Nine categories (Substances / Food / Activity / Wellness / Sleep / Circadian / Health / Social / Context) per master plan §4.9. Entry screen rebuilt with category sections + 'Logged today' chip strip + LOCAL_THEME (was hardcoded light-only).", anchor: "secondary-screens" },
+  { tag: "shipped", title: "Journal entries on Home tape", body: "HomeScreen now fetches /journal?date=... and feeds the array into buildTodayTape, which already supported a 'journal' event type. Tap a journal entry in the tape → opens /journal-history. Drops the wrong-home Settings → Journal-history shortcut.", anchor: "secondary-screens" },
+  { tag: "shipped", title: "Insights placeholder", body: "New /insights route with calibration empty-state ('Log entries for N more nights'). Real correlator backend deferred until journal data accrues. Reachable from Settings → Insights.", anchor: "secondary-screens" },
+  { tag: "shipped", title: "AuroraBackdrop crash fix", body: "withRepeat animation was kicked off inside useMemo with no teardown — tab switches leaked the loop onto a discarded shared value and crashed intermittently. Moved to useEffect + cancelAnimation on cleanup.", anchor: "secondary-screens" },
+
   // ── Shipped (this session) ────────────────────────────────
   { tag: "shipped", title: "Battery 26% bug fixed", body: "Parser was reading a header byte (0x1A=26) as the value. Now uint16_le(data, 2) / 10, matching whoomp.js + OpenWhoop-2.", anchor: "current-state" },
   { tag: "shipped", title: "Battery event 3 + 63 parsed live", body: "Sub-second SOC + voltage + temp + icon level via unsolicited event push. No more 30s poll lag.", anchor: "current-state" },
@@ -220,6 +231,12 @@ Verified on evt 3 (29 B, payload-len=0x0014=20), evt 63 (37 B, payload-len=0x001
     path: "docs/code-review-session.md",
     fallback: "_Pending — code-reviewer agent output not yet written._",
   },
+  { id: "secondary-screens", title: "Secondary screens master plan", path: "docs/secondary-screens-master-plan-2026-05-28.md" },
+  { id: "competitor-screens", title: "Competitor patterns library", path: "docs/competitor-screens-research-2026-05-28.md" },
+  { id: "current-screens-audit", title: "Current screens audit (2026-05-28)", path: "docs/current-secondary-screens-audit-2026-05-28.md" },
+  { id: "user-journey", title: "User journey + feature graph", path: "docs/user-journey-and-feature-graph-2026-05-28.md" },
+  { id: "home-tab-redesign-spec", title: "Spec: Home tab redesign (2026-05-28)", path: "docs/superpowers/specs/2026-05-28-home-tab-redesign-design.md" },
+  { id: "health-tab-rewrite-spec", title: "Spec: Health tab rewrite (2026-05-29)", path: "docs/superpowers/specs/2026-05-29-health-tab-rewrite-design.md" },
   { id: "ble-protocol", title: "BLE protocol reference", path: "docs/whoop-ble-protocol-reference.md" },
   { id: "ble-patterns", title: "BLE patterns research (RN/Expo)", path: "docs/ble-patterns-research.md" },
   { id: "whoop-features", title: "WHOOP features deep dive", path: "research/whoop-features-deep-dive.md" },
