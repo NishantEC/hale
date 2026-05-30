@@ -1,9 +1,8 @@
 import { FC, useEffect, useRef } from "react"
-import { RefreshControl, View, ViewStyle, useWindowDimensions } from "react-native"
+import { RefreshControl, View, ViewStyle } from "react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
-import { InlineLineChart } from "@/components/InlineLineChart"
 import { LabsAccordion } from "@/components/LabsAccordion"
 import { MetricHero } from "@/components/MetricHero"
 import { ScreenHeader, SCREEN_HEADER_HEIGHT } from "@/components/ScreenHeader"
@@ -19,7 +18,6 @@ const RHR_TINT = "#f87171"
 
 export const HrvDetailScreen: FC = () => {
   const colors = LOCAL_THEME.colors
-  const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const {
     homeView,
@@ -48,8 +46,6 @@ export const HrvDetailScreen: FC = () => {
       lastShownError.current = null
     }
   }, [error, clearError])
-
-  const chartWidth = width - 48
 
   const formattedDate = (() => {
     const [year, month, day] = selectedDate.split("-").map(Number)
@@ -123,27 +119,6 @@ export const HrvDetailScreen: FC = () => {
           deltaUnit="ms"
           detail="Heart-rate variability measured during sleep. Higher generally indicates better autonomic recovery."
         />
-
-        {hrvTrendPoints.length ? (
-          <View style={{ padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
-            <Text
-              text="HRV · 7-night"
-              size="xxs"
-              style={{ color: colors.textDim, letterSpacing: 0.6, marginBottom: 8 }}
-            />
-            <InlineLineChart
-              points={
-                sleepView?.hrvTrend?.map((p) => ({
-                  timestamp: p.timestamp,
-                  value: p.value,
-                })) ?? []
-              }
-              width={chartWidth - 28}
-              height={120}
-              stroke={HRV_TINT}
-            />
-          </View>
-        ) : null}
 
         <View style={{ flexDirection: "row", gap: 8, marginTop: 6 }}>
           <VitalCard

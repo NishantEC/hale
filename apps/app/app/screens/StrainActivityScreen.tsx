@@ -1,5 +1,5 @@
 import { FC, useMemo, useRef } from "react"
-import { RefreshControl, View, ViewStyle, useWindowDimensions } from "react-native"
+import { RefreshControl, View, ViewStyle } from "react-native"
 import Animated, { useAnimatedScrollHandler, useSharedValue } from "react-native-reanimated"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
@@ -12,7 +12,6 @@ import {
   type DayTimelineBout,
 } from "@/components/activity"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
-import { InlineLineChart } from "@/components/InlineLineChart"
 import { LabsAccordion } from "@/components/LabsAccordion"
 import { MetricHero } from "@/components/MetricHero"
 import { ScreenHeader, SCREEN_HEADER_HEIGHT } from "@/components/ScreenHeader"
@@ -29,7 +28,6 @@ const STRESS_TINT = "#f87171"
 
 export const StrainActivityScreen: FC = () => {
   const colors = LOCAL_THEME.colors
-  const { width } = useWindowDimensions()
   const insets = useSafeAreaInsets()
   const {
     homeView,
@@ -56,8 +54,6 @@ export const StrainActivityScreen: FC = () => {
   } else if (!error) {
     lastShownError.current = null
   }
-
-  const chartWidth = width - 48
 
   const formattedDate = (() => {
     const [y, m, d] = selectedDate.split("-").map(Number)
@@ -166,7 +162,7 @@ export const StrainActivityScreen: FC = () => {
             badge={{ label: classification.label, tint: classification.tint }}
             delta={strainDelta}
             deltaUnit=""
-            detail={`${namedCount} named · ${candidateCount} candidate · ${offWristCount} off-wrist · ${activeMinutes} active min`}
+            detail={`${namedCount} workouts · ${candidateCount} pending · ${offWristCount} strap off · ${activeMinutes} active min`}
           />
         </View>
 
@@ -226,30 +222,6 @@ export const StrainActivityScreen: FC = () => {
             )
           })
         )}
-
-        {sevenDayStrain.length ? (
-          <View
-            style={{
-              marginTop: 24,
-              padding: 14,
-              backgroundColor: colors.surfaceCard,
-              borderRadius: 12,
-              marginHorizontal: 16,
-            }}
-          >
-            <Text
-              text="Strain · 7-day"
-              size="xxs"
-              style={{ color: colors.textDim, letterSpacing: 0.6, marginBottom: 8 }}
-            />
-            <InlineLineChart
-              points={homeView?.strainTrend ?? []}
-              width={chartWidth - 28}
-              height={120}
-              stroke={STRAIN_TINT}
-            />
-          </View>
-        ) : null}
 
         <View style={{ marginTop: 18, marginHorizontal: 16 }}>
           <View style={{ flexDirection: "row", gap: 8 }}>

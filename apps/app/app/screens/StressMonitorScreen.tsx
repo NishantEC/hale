@@ -36,7 +36,7 @@ export const StressMonitorScreen: FC = () => {
     return { fg: colors.statusStale, bg: "rgba(102,102,102,0.18)" }
   }, [zone, colors])
 
-  const cellsForStrip = stress?.todayStrip ?? new Array(12).fill(null)
+  const cellsForStrip = stress?.todayStrip ?? new Array(24).fill(null)
   const nowPercent = computeNowPercent()
 
   return (
@@ -54,7 +54,7 @@ export const StressMonitorScreen: FC = () => {
         <View style={[styles.hero, { backgroundColor: colors.surfaceCard }]}>
           <View style={styles.heroNumRow}>
             <Text
-              text={score == null ? "--" : score.toFixed(1)}
+              text={score == null ? "--" : `${Math.round(score)}`}
               style={{
                 color: tone.fg,
                 fontSize: 64,
@@ -65,7 +65,7 @@ export const StressMonitorScreen: FC = () => {
               }}
             />
             <Text
-              text="/ 3"
+              text="/ 100"
               style={{ color: colors.textMuted, fontSize: 18, fontWeight: "600", marginLeft: 6, marginBottom: 4 }}
             />
           </View>
@@ -91,14 +91,14 @@ export const StressMonitorScreen: FC = () => {
 
         <View>
           <Text
-            text="TODAY · 6 AM → NOW"
+            text="TODAY · 24H"
             style={{ color: colors.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 1.6, marginLeft: 4, marginBottom: 8 }}
           />
           <View style={[styles.stripCard, { backgroundColor: colors.surfaceCard }]}>
             <StressColorStrip
               cells={cellsForStrip}
               nowPercent={nowPercent}
-              axisLabels={["6 AM", "12 PM", "6 PM", "11 PM"]}
+              axisLabels={["12 AM", "6 AM", "12 PM", "6 PM", "11 PM"]}
               height={22}
             />
           </View>
@@ -110,11 +110,11 @@ export const StressMonitorScreen: FC = () => {
             style={{ color: colors.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 1.6, marginLeft: 4, marginBottom: 8 }}
           />
           <View style={[styles.zoneCard, { backgroundColor: colors.surfaceCard }]}>
-            <ZoneRow color={colors.ringHrv} name="Calm" range="0 – 0.9" mins={stress?.timeInZone.calm ?? 0} />
+            <ZoneRow color={colors.ringHrv} name="Calm" range="0 – 34" mins={stress?.timeInZone.calm ?? 0} />
             <View style={[styles.divider, { backgroundColor: colors.divider }]} />
-            <ZoneRow color={colors.statusAmber} name="Moderate" range="1.0 – 1.9" mins={stress?.timeInZone.moderate ?? 0} />
+            <ZoneRow color={colors.statusAmber} name="Moderate" range="35 – 64" mins={stress?.timeInZone.moderate ?? 0} />
             <View style={[styles.divider, { backgroundColor: colors.divider }]} />
-            <ZoneRow color={colors.statusRed} name="High" range="2.0 – 3.0" mins={stress?.timeInZone.high ?? 0} />
+            <ZoneRow color={colors.statusRed} name="High" range="65 – 100" mins={stress?.timeInZone.high ?? 0} />
           </View>
         </View>
 
@@ -130,11 +130,7 @@ export const StressMonitorScreen: FC = () => {
 function computeNowPercent(): number {
   const now = new Date()
   const minutes = now.getHours() * 60 + now.getMinutes()
-  const start = 6 * 60   // 6 AM
-  const end = 23 * 60    // 11 PM
-  if (minutes < start) return 0
-  if (minutes > end) return 100
-  return ((minutes - start) / (end - start)) * 100
+  return (minutes / (24 * 60)) * 100
 }
 
 type ZoneRowProps = { color: string; name: string; range: string; mins: number }

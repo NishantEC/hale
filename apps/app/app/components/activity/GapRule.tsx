@@ -25,12 +25,12 @@ export const GapRule: FC<Props> = ({ kind, startTime, endTime, source }) => {
   const colors = LOCAL_THEME.colors
   const v = visualForType(kind)
   const reason = source === "ChargingOn"
-    ? "charging"
+    ? "Charging"
     : source === "WristOff"
-    ? "strap off"
+    ? "Strap off"
     : kind === "No Data"
-    ? "no data"
-    : "off-wrist"
+    ? "Gap in tracking"
+    : "Strap off"
   return (
     <View style={styles.row}>
       <View style={[styles.iconWrap, { backgroundColor: v.backgroundHex }]}>

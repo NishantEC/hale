@@ -110,6 +110,40 @@ export const SleepPlannerScreen: FC = () => {
         </View>
       </View>
 
+      {/* Planner status strings from backend — surface them so the planner
+          isn't a silent black box. Each line is "--" if backend sent nothing. */}
+      {(sleepView.planner.smartWakeStatusText ||
+        sleepView.planner.sleepReserveText ||
+        sleepView.planner.estimatedSleepHours ||
+        sleepView.planner.alarmStatusText) ? (
+        <View style={themed($plannerStatusCard)}>
+          {sleepView.planner.estimatedSleepHours ? (
+            <PlannerStatusRow
+              label="Estimated sleep"
+              value={sleepView.planner.estimatedSleepHours}
+            />
+          ) : null}
+          {sleepView.planner.sleepReserveText ? (
+            <PlannerStatusRow
+              label="Sleep reserve"
+              value={sleepView.planner.sleepReserveText}
+            />
+          ) : null}
+          {sleepView.planner.smartWakeStatusText ? (
+            <PlannerStatusRow
+              label="Smart wake"
+              value={sleepView.planner.smartWakeStatusText}
+            />
+          ) : null}
+          {sleepView.planner.alarmStatusText ? (
+            <PlannerStatusRow
+              label="Alarm"
+              value={sleepView.planner.alarmStatusText}
+            />
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={themed($sectionStack)}>
         {/* Target Sleep stepper card */}
         <View style={themed($settingCard)}>
@@ -232,10 +266,15 @@ export const SleepPlannerScreen: FC = () => {
           </View>
         </View>
 
-        {/* Arm / Disarm action button */}
+        {/* Arm / Disarm action button — gated on strap online */}
         <TouchableOpacity
-          style={themed(strapAlarmArmed ? $btnDestructive : $btnPrimary)}
+          style={[
+            themed(strapAlarmArmed ? $btnDestructive : $btnPrimary),
+            !isConnected ? { opacity: 0.45 } : null,
+          ]}
+          disabled={!isConnected}
           onPress={() => {
+            if (!isConnected) return
             if (strapAlarmArmed) {
               disarmAlarm()
               Toast.show("Alarm disarmed", { type: "info", position: "top" })
@@ -246,7 +285,13 @@ export const SleepPlannerScreen: FC = () => {
           }}
         >
           <Text
-            text={strapAlarmArmed ? "Disarm Alarm" : "Arm Alarm"}
+            text={
+              !isConnected
+                ? "Strap offline"
+                : strapAlarmArmed
+                  ? "Disarm Alarm"
+                  : "Arm Alarm"
+            }
             size="xs"
             weight="semiBold"
             style={themed(strapAlarmArmed ? $btnDestructiveText : $btnPrimaryText)}
@@ -274,6 +319,27 @@ function StepButton({ label, onPress }: { label: string; onPress: () => void }) 
     <TouchableOpacity style={themed($stepBtn)} onPress={onPress}>
       <Text text={label} size="sm" weight="bold" style={themed($stepBtnText)} />
     </TouchableOpacity>
+  )
+}
+
+function PlannerStatusRow({ label, value }: { label: string; value: string }) {
+  const colors = LOCAL_THEME.colors
+  return (
+    <View style={themed($plannerStatusRow)}>
+      <Text
+        text={label.toUpperCase()}
+        size="xxs"
+        weight="bold"
+        style={themed($plannerStatusLabel)}
+      />
+      <Text
+        text={value}
+        size="xs"
+        weight="semiBold"
+        style={[themed($plannerStatusValue), { color: colors.text }]}
+        numberOfLines={2}
+      />
+    </View>
   )
 }
 
@@ -491,4 +557,33 @@ const $statusText: ThemedStyle<TextStyle> = ({ colors }) => ({
 const $muted: ThemedStyle<TextStyle> = ({ colors }) => ({
   color: colors.textDim,
   textAlign: "center",
+})
+
+const $plannerStatusCard: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  backgroundColor: colors.surfaceCard,
+  borderRadius: 14,
+  marginHorizontal: 20,
+  marginBottom: 16,
+  paddingHorizontal: 16,
+  paddingVertical: 4,
+})
+
+const $plannerStatusRow: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  alignItems: "center",
+  borderBottomColor: colors.divider ?? colors.separator,
+  borderBottomWidth: 1,
+  flexDirection: "row",
+  justifyContent: "space-between",
+  paddingVertical: 12,
+})
+
+const $plannerStatusLabel: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textDim,
+  letterSpacing: 1.2,
+})
+
+const $plannerStatusValue: ThemedStyle<TextStyle> = () => ({
+  flexShrink: 1,
+  maxWidth: "65%",
+  textAlign: "right",
 })

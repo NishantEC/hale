@@ -1,7 +1,7 @@
 import { FC, useCallback } from "react"
 import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { useNavigation } from "@react-navigation/native"
+import { router } from "expo-router"
 
 import {
   CaretLeft,
@@ -23,13 +23,12 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 
 export const HealthMonitorScreen: FC = () => {
   const { colors } = LOCAL_THEME
-  const navigation = useNavigation<any>()
   const { homeView } = useDashboard()
 
   const health = homeView?.monitors?.health
   const activities = homeView?.activities
 
-  const goBack = useCallback(() => navigation.goBack(), [navigation])
+  const goBack = useCallback(() => router.back(), [])
 
   const tone = {
     fg: colors.statusGreen,
@@ -89,7 +88,7 @@ export const HealthMonitorScreen: FC = () => {
             name="Heart rate variability"
             value={activities?.hrv ?? "--"}
             unit="ms"
-            onPress={() => navigation.navigate("HrvDetail" as never)}
+            onPress={() => router.push("/hrv-detail")}
           />
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
           <VitalRow

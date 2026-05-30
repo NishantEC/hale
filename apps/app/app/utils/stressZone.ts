@@ -2,8 +2,8 @@ export type StressZone = "Calm" | "Moderate" | "High"
 
 export function scoreToZone(score: number | null): StressZone | null {
   if (score == null) return null
-  if (score < 1) return "Calm"
-  if (score < 2) return "Moderate"
+  if (score < 35) return "Calm"
+  if (score < 65) return "Moderate"
   return "High"
 }
 
