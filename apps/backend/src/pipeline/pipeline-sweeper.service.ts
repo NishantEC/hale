@@ -52,8 +52,19 @@ export class PipelineSweeperService {
   // than their pipeline_state watermark. Runs every 5 min — the app no
   // longer needs to fire /pipeline/run after sync; if new raw data lands,
   // backend notices and runs the pipeline within ~5 min.
+  //
+  // Disable switch: set PIPELINE_AUTOTRIGGER_DISABLED=true on the Cloud Run
+  // service to skip the tick without removing the cron. Useful when the
+  // in-process pipeline tail is heap-pressured (sleep-detect runs in the
+  // Rust worker, but activity/sleep-stages/derived still run in-process and
+  // load ~45 days of raw rows). The app's explicit /pipeline/run path still
+  // works; only the periodic auto-trigger is gated.
   @Cron('*/5 * * * *')
   async autoTriggerStaleUsers(): Promise<void> {
+    if (process.env.PIPELINE_AUTOTRIGGER_DISABLED === 'true') {
+      this.logger.debug('auto-trigger: skipped (PIPELINE_AUTOTRIGGER_DISABLED=true)');
+      return;
+    }
     try {
       // SQL: find users where max(raw_sensor_records.updatedAt) >
       // pipeline_state.lastInputMaxUpdatedAt (or pipeline_state missing).
