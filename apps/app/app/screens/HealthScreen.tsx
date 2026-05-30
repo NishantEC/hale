@@ -25,6 +25,7 @@ import {
 } from "@/stores/bleStore"
 import { fetchHealthView, type HealthViewModel } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
+import { usePreference } from "@/utils/usePreferences"
 
 export const HealthScreen: FC = () => {
   const insets = useSafeAreaInsets()
@@ -33,6 +34,7 @@ export const HealthScreen: FC = () => {
   const batteryLevel = useBleBatteryLevel()
   const isCharging = useBleIsCharging()
   const connectionState = useBleConnectionState()
+  const { value: showHealthspan } = usePreference("showHealthspan")
 
   const [healthView, setHealthView] = useState<HealthViewModel | null>(null)
   const lastFocusRefreshAt = useRef(0)
@@ -254,7 +256,7 @@ export const HealthScreen: FC = () => {
             defaultExpanded={false}
           />
 
-          {noopAge != null ? (
+          {noopAge != null && showHealthspan ? (
             <HealthspanCard
               noopAge={noopAge.toFixed(1)}
               chronologicalAge={chronoAge != null ? chronoAge.toFixed(1) : "--"}
@@ -274,7 +276,7 @@ export const HealthScreen: FC = () => {
             />
           ) : null}
 
-          {paceOfAging != null ? (
+          {paceOfAging != null && showHealthspan ? (
             <TrendCard
               title="Pace of Aging"
               value={`${paceOfAging.toFixed(2)}×`}

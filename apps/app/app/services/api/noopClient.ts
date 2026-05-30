@@ -1378,6 +1378,37 @@ export async function fetchJournalEntries(date: string): Promise<{ entries: Jour
   return apiGet(`/journal?date=${encodeURIComponent(date)}`);
 }
 
+export type InsightMetric = 'sleep' | 'recovery' | 'hrv' | 'strain';
+
+export interface FactorImpact {
+  factorTag: string;
+  daysWith: number;
+  daysWithout: number;
+  meanWith: number;
+  meanWithout: number;
+  delta: number;
+  helps: boolean;
+}
+
+export interface MetricInsights {
+  metric: InsightMetric;
+  metricLabel: string;
+  sampleDays: number;
+  factors: FactorImpact[];
+}
+
+export interface InsightsViewModel {
+  windowDays: number;
+  totalDays: number;
+  hasEnoughData: boolean;
+  daysUntilReady: number;
+  insights: MetricInsights[];
+}
+
+export async function fetchInsights(windowDays: number = 30): Promise<InsightsViewModel> {
+  return apiGet(`/journal/insights?windowDays=${windowDays}`);
+}
+
 // Telemetry ingestion
 
 export async function ingestDeviceEvents(events: any[]): Promise<{ count: number }> {

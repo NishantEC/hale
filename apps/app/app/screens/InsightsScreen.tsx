@@ -1,28 +1,50 @@
-import { FC, useMemo } from "react"
-import { ScrollView, View, ViewStyle } from "react-native"
+import { FC, useEffect, useMemo, useState } from "react"
+import { RefreshControl, ScrollView, View, ViewStyle } from "react-native"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
-import { ChartBar, Lightning, Sparkle } from "phosphor-react-native"
 import { router } from "expo-router"
 
 import { Text } from "@/components/Text"
-import { useDashboard } from "@/context/DashboardContext"
+import { JOURNAL_FACTORS } from "@/constants/journalFactors"
+import {
+  fetchInsights,
+  type InsightsViewModel,
+  type MetricInsights,
+} from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
-
-const REQUIRED_NIGHTS = 14
 
 export const InsightsScreen: FC = () => {
   const { colors } = LOCAL_THEME
   const insets = useSafeAreaInsets()
-  const { homeView } = useDashboard()
+  const [view, setView] = useState<InsightsViewModel | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
 
-  // Use nightsUsed as a rough "days of data" proxy until the journal
-  // correlator backend lands. Once journals + 14 nights are recorded,
-  // this screen flips from calibrating → live insights.
-  const nightsUsed = useMemo(() => {
-    return (homeView as any)?.confidence?.nightsUsed ?? 0
-  }, [homeView])
-  const remaining = Math.max(0, REQUIRED_NIGHTS - nightsUsed)
-  const calibrating = remaining > 0
+  const load = async () => {
+    try {
+      const v = await fetchInsights(30)
+      setView(v)
+    } catch (e) {
+      console.warn("[insights] fetch failed", e)
+      setView(null)
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    load().finally(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const onRefresh = async () => {
+    setRefreshing(true)
+    await load()
+    setRefreshing(false)
+  }
 
   return (
     <SafeAreaView
@@ -36,6 +58,13 @@ export const InsightsScreen: FC = () => {
           paddingBottom: insets.bottom + 32,
           gap: 14,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.tint}
+          />
+        }
       >
         <Text
           text="INSIGHTS"
@@ -58,121 +87,199 @@ export const InsightsScreen: FC = () => {
           }}
         />
 
-        <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
-          <View style={$iconWrap}>
-            <Sparkle size={22} color={colors.tint} />
-          </View>
-          <Text
-            text={calibrating ? "Calibrating" : "Ready"}
-            style={{
-              color: colors.text,
-              fontSize: 16,
-              fontWeight: "700",
-              marginTop: 12,
-            }}
-          />
-          <Text
-            text={
-              calibrating
-                ? `Log entries for ${remaining} more night${
-                    remaining === 1 ? "" : "s"
-                  } to unlock impact analysis. The journal needs at least ${REQUIRED_NIGHTS} nights of data so we can tell signal from noise.`
-                : "Your data is ready for the impact analysis. Tap below to see what helped and what hurt your last 30 days of recovery, HRV, and sleep."
-            }
-            style={{
-              color: colors.textDim,
-              fontSize: 13,
-              fontWeight: "400",
-              lineHeight: 19,
-              marginTop: 6,
-            }}
-          />
-        </View>
-
-        <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
-          <View style={$iconWrap}>
-            <ChartBar size={22} color={colors.ringRecovery} />
-          </View>
-          <Text
-            text="What helped"
-            style={{
-              color: colors.text,
-              fontSize: 14,
-              fontWeight: "700",
-              marginTop: 10,
-            }}
-          />
-          <Text
-            text="Behaviours associated with higher recovery / HRV / sleep score. Each will show as a horizontal bar — magnitude on the right side of 0%."
-            style={{
-              color: colors.textMuted,
-              fontSize: 12,
-              fontWeight: "400",
-              lineHeight: 17,
-              marginTop: 4,
-            }}
-          />
-        </View>
-
-        <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
-          <View style={$iconWrap}>
-            <Lightning size={22} color={colors.statusRed} />
-          </View>
-          <Text
-            text="What hurt"
-            style={{
-              color: colors.text,
-              fontSize: 14,
-              fontWeight: "700",
-              marginTop: 10,
-            }}
-          />
-          <Text
-            text="Behaviours associated with lower recovery / HRV / sleep score. Bars anchor on the left side of 0%."
-            style={{
-              color: colors.textMuted,
-              fontSize: 12,
-              fontWeight: "400",
-              lineHeight: 17,
-              marginTop: 4,
-            }}
-          />
-        </View>
-
-        {calibrating ? (
-          <View
-            style={[
-              $card,
-              {
-                backgroundColor: colors.surfaceCard,
-                borderColor: colors.tint,
-                borderWidth: 1,
-              },
-            ]}
-          >
+        {loading && !view ? (
+          <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
             <Text
-              text="START A JOURNAL ENTRY"
+              text="Loading…"
+              style={{ color: colors.textDim, fontSize: 13 }}
+            />
+          </View>
+        ) : !view || !view.hasEnoughData ? (
+          <CalibratingCard
+            daysUntilReady={view?.daysUntilReady ?? 14}
+            totalDays={view?.totalDays ?? 0}
+          />
+        ) : view.insights.every((m) => m.factors.length === 0) ? (
+          <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
+            <Text
+              text="No correlations yet"
               style={{
-                color: colors.tint,
-                fontSize: 11,
+                color: colors.text,
+                fontSize: 15,
                 fontWeight: "700",
-                letterSpacing: 1.4,
+                marginBottom: 6,
               }}
-              onPress={() => router.push("/journal-entry")}
             />
             <Text
-              text="Tap to log how today felt — caffeine, workout, stress, alcohol, sleep prep. Every entry sharpens the correlator."
+              text={`Tracked ${view.totalDays} days over the last ${view.windowDays}, but no single factor has been logged on ≥3 separate days AND skipped on ≥3 separate days yet — the threshold the correlator needs to tell signal from noise. Keep logging.`}
               style={{
                 color: colors.textDim,
-                fontSize: 12,
-                lineHeight: 17,
-                marginTop: 6,
+                fontSize: 13,
+                lineHeight: 19,
               }}
             />
           </View>
-        ) : null}
+        ) : (
+          view.insights
+            .filter((m) => m.factors.length > 0)
+            .map((m) => <MetricSection key={m.metric} insights={m} />)
+        )}
       </ScrollView>
     </SafeAreaView>
+  )
+}
+
+const CalibratingCard: FC<{ daysUntilReady: number; totalDays: number }> = ({
+  daysUntilReady,
+  totalDays,
+}) => {
+  const { colors } = LOCAL_THEME
+  return (
+    <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
+      <Text
+        text="Calibrating"
+        style={{
+          color: colors.text,
+          fontSize: 16,
+          fontWeight: "700",
+        }}
+      />
+      <Text
+        text={`Tracked ${totalDays} day${totalDays === 1 ? "" : "s"}. ${daysUntilReady} more day${daysUntilReady === 1 ? "" : "s"} of data + journal entries before the correlator can tell signal from noise.`}
+        style={{
+          color: colors.textDim,
+          fontSize: 13,
+          fontWeight: "400",
+          lineHeight: 19,
+          marginTop: 6,
+        }}
+      />
+      <View style={{ marginTop: 14 }}>
+        <Text
+          text="START A JOURNAL ENTRY"
+          style={{
+            color: colors.tint,
+            fontSize: 11,
+            fontWeight: "700",
+            letterSpacing: 1.4,
+          }}
+          onPress={() => router.push("/journal-entry")}
+        />
+      </View>
+    </View>
+  )
+}
+
+const MetricSection: FC<{ insights: MetricInsights }> = ({ insights }) => {
+  const { colors } = LOCAL_THEME
+  const maxMagnitude = useMemo(() => {
+    let max = 0
+    for (const f of insights.factors) max = Math.max(max, Math.abs(f.delta))
+    return Math.max(0.1, max)
+  }, [insights.factors])
+
+  return (
+    <View style={[$card, { backgroundColor: colors.surfaceCard }]}>
+      <Text
+        text={insights.metricLabel.toUpperCase()}
+        style={{
+          color: colors.textDim,
+          fontSize: 11,
+          fontWeight: "700",
+          letterSpacing: 1.4,
+        }}
+      />
+      <Text
+        text={`What ${insights.metricLabel.toLowerCase()} responds to · ${insights.sampleDays} tracked days`}
+        style={{
+          color: colors.textMuted,
+          fontSize: 11,
+          marginTop: 2,
+          marginBottom: 14,
+        }}
+      />
+      {insights.factors.map((f) => (
+        <ImpactRow
+          key={f.factorTag}
+          tag={f.factorTag}
+          delta={f.delta}
+          daysWith={f.daysWith}
+          helps={f.helps}
+          maxMagnitude={maxMagnitude}
+        />
+      ))}
+    </View>
+  )
+}
+
+const ImpactRow: FC<{
+  tag: string
+  delta: number
+  daysWith: number
+  helps: boolean
+  maxMagnitude: number
+}> = ({ tag, delta, daysWith, helps, maxMagnitude }) => {
+  const { colors } = LOCAL_THEME
+  const factor = JOURNAL_FACTORS.find((j) => j.tag === tag)
+  const label = factor?.label ?? tag
+  const barColor = helps ? colors.statusGreen : colors.statusRed
+  const fraction = Math.min(1, Math.abs(delta) / maxMagnitude)
+  // Bars anchor on center axis: helps fills right, hurts fills left.
+  const halfWidthPct = fraction * 50
+
+  return (
+    <View style={$row}>
+      <Text
+        text={label}
+        style={{ color: colors.text, fontSize: 13, flex: 1 }}
+        numberOfLines={1}
+      />
+      <View style={$barTrackWrap}>
+        <View style={[$barCenterLine, { backgroundColor: colors.surfaceElevated }]} />
+        {delta >= 0 ? (
+          <View
+            style={[
+              $barFill,
+              {
+                backgroundColor: barColor,
+                left: "50%",
+                width: `${halfWidthPct}%`,
+              },
+            ]}
+          />
+        ) : (
+          <View
+            style={[
+              $barFill,
+              {
+                backgroundColor: barColor,
+                right: "50%",
+                width: `${halfWidthPct}%`,
+              },
+            ]}
+          />
+        )}
+      </View>
+      <View style={$rowRight}>
+        <Text
+          text={`${delta >= 0 ? "+" : ""}${delta}`}
+          style={{
+            color: barColor,
+            fontSize: 13,
+            fontWeight: "700",
+            fontVariant: ["tabular-nums"],
+          }}
+        />
+        <Text
+          text={`${daysWith}d`}
+          style={{
+            color: colors.textMuted,
+            fontSize: 10,
+            fontVariant: ["tabular-nums"],
+          }}
+        />
+      </View>
+    </View>
   )
 }
 
@@ -181,6 +288,37 @@ const $card: ViewStyle = {
   padding: 16,
 }
 
-const $iconWrap: ViewStyle = {
-  alignSelf: "flex-start",
+const $row: ViewStyle = {
+  flexDirection: "row",
+  alignItems: "center",
+  paddingVertical: 8,
+  gap: 10,
+}
+
+const $barTrackWrap: ViewStyle = {
+  flex: 1.5,
+  height: 18,
+  position: "relative",
+  justifyContent: "center",
+}
+
+const $barCenterLine: ViewStyle = {
+  position: "absolute",
+  left: "50%",
+  top: 4,
+  bottom: 4,
+  width: 1,
+}
+
+const $barFill: ViewStyle = {
+  position: "absolute",
+  top: 6,
+  bottom: 6,
+  borderRadius: 3,
+  opacity: 0.85,
+}
+
+const $rowRight: ViewStyle = {
+  width: 44,
+  alignItems: "flex-end",
 }

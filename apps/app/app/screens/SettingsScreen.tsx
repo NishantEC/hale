@@ -7,6 +7,7 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  Switch,
   TextStyle,
   View,
   ViewStyle,
@@ -41,6 +42,7 @@ import { ColorMode, useColorMode } from "@/context/ThemeContext"
 import { DateOfBirthSheet } from "@/components/DateOfBirthSheet"
 import { fetchProfile, updateProfile, type UserProfileData } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
+import { usePreference } from "@/utils/usePreferences"
 
 type IconName = PhosphorIconType
 
@@ -53,6 +55,7 @@ export const SettingsScreen: FC = () => {
   const deviceName = useBleDeviceName()
   const firmwareVersion = useBleFirmwareVersion()
   const { mode: colorMode, setMode: setColorMode } = useColorMode()
+  const { value: showHealthspan, setValue: setShowHealthspan } = usePreference("showHealthspan")
   const [now, setNow] = useState(Date.now())
   const [refreshing, setRefreshing] = useState(false)
   const [profile, setProfile] = useState<UserProfileData | null>(null)
@@ -502,6 +505,48 @@ export const SettingsScreen: FC = () => {
             chevron
             onPress={() => Linking.openURL("https://noop.app/terms").catch(() => {})}
           />
+        </Card>
+
+        {/* Preferences — local-only toggles. Per master-plan §4.11 "Hide
+            metrics", this is the noop equivalent of Whoop's hide-metrics
+            settings. Each toggle persists via AsyncStorage; consumers read
+            it with usePreference(). */}
+        <SectionLabel>Preferences</SectionLabel>
+        <Card>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 16,
+              paddingVertical: 14,
+            }}
+          >
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text
+                text="Show Healthspan"
+                style={{ color: colors.text, fontSize: 14, fontWeight: "600" }}
+              />
+              <Text
+                text="Noop age + Pace of Aging cards on the Health tab."
+                style={{
+                  color: colors.textDim,
+                  fontSize: 12,
+                  marginTop: 2,
+                }}
+              />
+            </View>
+            <Switch
+              value={showHealthspan}
+              onValueChange={(v) => {
+                setShowHealthspan(v).catch(() => undefined)
+              }}
+              thumbColor="#FFFFFF"
+              trackColor={{
+                false: colors.switchTrackOff,
+                true: colors.switchTrackOn ?? colors.tint,
+              }}
+            />
+          </View>
         </Card>
 
         {/* Insights — placeholder calibration screen, lives here until the

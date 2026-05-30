@@ -37,6 +37,16 @@ export class JournalController {
     return { entries };
   }
 
+  // Mean-delta correlator (master plan §4.10). Returns per-metric impact
+  // rows ranked by |delta|, with a calibrating flag when the user hasn't
+  // accumulated enough tracked days.
+  @Get('insights')
+  async insights(@Req() req: any, @Query('windowDays') windowDays?: string) {
+    const days = windowDays ? Number.parseInt(windowDays, 10) : 30;
+    const safeWindow = Number.isFinite(days) && days > 0 ? Math.min(180, days) : 30;
+    return this.journalService.buildInsights(req.user.userId, safeWindow);
+  }
+
   @Delete(':id')
   async remove(@Req() req: any, @Param('id') id: string) {
     const deleted = await this.journalService.remove(req.user.userId, id);
