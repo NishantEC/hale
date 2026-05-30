@@ -34,8 +34,23 @@ export const SleepDetailScreen: FC = () => {
     sleepView, isRefreshing, refreshDashboard, error, clearError, selectedDate, setSelectedDate,
   } = useDashboard()
 
-  const date: string = (route.params?.date as string) ?? selectedDate
+  const routeDate: string | undefined = route.params?.date as string | undefined
+  const date: string = routeDate ?? selectedDate
   const lastShownError = useRef<string | null>(null)
+
+  // Master-plan §4.5 bug: the title was driven by route.params.date but the
+  // body sourced from `sleepView` which tracks the dashboard's selectedDate.
+  // Tapping a sparkline point used to mutate selectedDate while the title
+  // stayed on the original route date → header / body desync. Push the route
+  // date into the dashboard on mount so the rest of the screen aligns.
+  useEffect(() => {
+    if (routeDate && routeDate !== selectedDate) {
+      setSelectedDate(routeDate)
+    }
+    // Intentionally only run when the route date changes, not when the
+    // dashboard date moves on its own from in-screen sparkline taps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeDate])
 
   const scrollY = useSharedValue(0)
   const onScroll = useAnimatedScrollHandler((event) => {
@@ -287,6 +302,21 @@ export const SleepDetailScreen: FC = () => {
           </View>
 
           <LabsAccordion rows={labsRows} />
+
+          {/* Journal CTA — write down how the night felt for the in-context date.
+              Reuses the existing /journal-entry route. */}
+          <TouchableOpacity
+            style={themed($journalCta)}
+            onPress={() => router.push({ pathname: "/journal-entry", params: { date } })}
+            activeOpacity={0.85}
+          >
+            <Text
+              text="Log how this night felt"
+              size="xs"
+              weight="semiBold"
+              style={themed($journalCtaText)}
+            />
+          </TouchableOpacity>
       </Animated.ScrollView>
     </View>
   )
@@ -326,4 +356,19 @@ const $emptyTitle: ThemedStyle<TextStyle> = ({ colors }) => ({
 const $mutedCenter: ThemedStyle<TextStyle> = ({ colors }) => ({
   color: colors.textMuted,
   textAlign: "center",
+})
+
+const $journalCta: ThemedStyle<ViewStyle> = ({ colors }) => ({
+  alignItems: "center",
+  backgroundColor: colors.surfaceCard,
+  borderColor: colors.surfaceCardBorder,
+  borderRadius: 14,
+  borderWidth: 1,
+  marginTop: 14,
+  paddingVertical: 16,
+})
+
+const $journalCtaText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
+  letterSpacing: 0.1,
 })
