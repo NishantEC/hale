@@ -15,6 +15,10 @@ on:
       - 'pnpm-lock.yaml'
   workflow_dispatch:
 
+concurrency:
+  group: ci-compute-engine-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   rust:
     runs-on: ubuntu-latest
@@ -41,7 +45,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/compute-engine
-      - run: cargo install cargo-audit --locked
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
       - run: cd apps/compute-engine && cargo audit --deny warnings --ignore RUSTSEC-2023-0071
 
   docker:
@@ -49,7 +55,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - run: docker build -t noop-compute-engine:ci apps/compute-engine
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/compute-engine
+          push: false
+          tags: noop-compute-engine:ci
+          cache-from: type=gha,scope=ce-docker
+          cache-to: type=gha,mode=max,scope=ce-docker
 
   fixture-parity:
     runs-on: ubuntu-latest

@@ -19,6 +19,10 @@ env:
   REGISTRY: us-central1-docker.pkg.dev/flashckard/noop
   VITE_API_BASE_URL: https://api.noop.enform.co
 
+concurrency:
+  group: deploy-inspector-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Build and Deploy Inspector
@@ -38,26 +42,34 @@ jobs:
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+          token_format: "access_token"
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      - name: Log in to Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGION }}-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
 
-      - name: Build Docker image
-        run: |
-          docker build \
-            -t ${{ env.REGISTRY }}/inspector:${{ github.sha }} \
-            -t ${{ env.REGISTRY }}/inspector:latest \
-            --build-arg VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }} \
-            -f apps/inspector/Dockerfile \
-            .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Push Docker image
-        run: |
-          docker push ${{ env.REGISTRY }}/inspector:${{ github.sha }}
-          docker push ${{ env.REGISTRY }}/inspector:latest
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/inspector/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/inspector:${{ github.sha }}
+            ${{ env.REGISTRY }}/inspector:latest
+          build-args: |
+            VITE_API_BASE_URL=${{ env.VITE_API_BASE_URL }}
+          cache-from: type=gha,scope=inspector
+          cache-to: type=gha,mode=max,scope=inspector
 
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
