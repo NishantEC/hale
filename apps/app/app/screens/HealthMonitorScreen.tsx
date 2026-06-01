@@ -1,25 +1,17 @@
-import { FC, useCallback } from "react"
+import { FC, useCallback, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router } from "expo-router"
 
-import {
-  CaretLeft,
-  Check,
-  ClockCountdown,
-  Drop,
-  Heartbeat,
-  Info,
-  Icon as PhosphorIcon,
-  Warning,
-  WarningOctagon,
-  WaveSine,
-  Wind,
-} from "phosphor-react-native"
+import { CaretLeft, Drop, Heartbeat, Info, Thermometer, WaveSine, Wind } from "phosphor-react-native"
 import { Text } from "@/components/Text"
 import { VitalRow } from "@/components/home/VitalRow"
+import { GlowScoreCard } from "@/components/health/GlowScoreCard"
+import { ContributorList } from "@/components/health/ContributorList"
 import { useDashboard } from "@/context/DashboardContext"
 import { LOCAL_THEME } from "@/utils/localTheme"
+import { InfoSheet } from "@/components/InfoSheet"
+import { buildVitalContributors } from "@/utils/healthVitals"
 
 export const HealthMonitorScreen: FC = () => {
   const { colors } = LOCAL_THEME
@@ -27,6 +19,7 @@ export const HealthMonitorScreen: FC = () => {
 
   const health = homeView?.monitors?.health
   const activities = homeView?.activities
+  const [infoOpen, setInfoOpen] = useState(false)
 
   const goBack = useCallback(() => router.back(), [])
 
@@ -45,14 +38,17 @@ export const HealthMonitorScreen: FC = () => {
     tone.bg = "rgba(102,102,102,0.18)"
   }
 
-  const HeroIcon: PhosphorIcon =
-    health?.state === "warn"
-      ? Warning
-      : health?.state === "alert"
-        ? WarningOctagon
-        : health?.state === "stale"
-          ? ClockCountdown
-          : Check
+  const vitals = health?.vitals ?? []
+  const baselineReady = health?.baselineReady ?? false
+  const heroBody = !health
+    ? "Connect the strap to populate your vitals."
+    : !baselineReady
+      ? "Calibrating — HRV and resting-HR ranges lock in after about five nights of sleep tracking."
+      : (health.totalMetrics ?? 0) === 0
+        ? "No readings yet today. Wear the strap to populate your vitals."
+        : `${health.inRangeCount} of ${health.totalMetrics} vitals are inside your typical range.`
+  const contributors7 = buildVitalContributors(vitals, "avg7d")
+  const contributors30 = buildVitalContributors(vitals, "avg30d")
 
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.screenBackground }]} edges={["top"]}>
@@ -62,23 +58,20 @@ export const HealthMonitorScreen: FC = () => {
           <Text text="Health Monitor" style={{ color: colors.text, fontSize: 16, fontWeight: "700" }} />
         </Pressable>
         <View style={{ flex: 1 }} />
-        <Info size={20} color={colors.textDim} />
+        <Pressable onPress={() => setInfoOpen(true)} hitSlop={12}>
+          <Info size={20} color={colors.textDim} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
-        <View style={[styles.hero, { backgroundColor: colors.surfaceCard }]}>
-          <View style={[styles.heroTile, { backgroundColor: tone.bg }]}>
-            <HeroIcon size={28} color={tone.fg} weight="fill" />
-          </View>
-          <Text
-            text={health?.verdict ?? "--"}
-            style={{ color: tone.fg, fontSize: 22, fontWeight: "800", letterSpacing: -0.4, marginTop: 10 }}
-          />
-          <Text
-            text={`${health?.inRangeCount ?? 0} of ${health?.totalMetrics ?? 4} metrics`}
-            style={{ color: colors.textDim, fontSize: 12, marginTop: 4 }}
-          />
-        </View>
+        <GlowScoreCard
+          title="Health Monitor"
+          score={`${health?.inRangeCount ?? 0}`}
+          scoreSubscript={`of ${health?.totalMetrics ?? 5}`}
+          verdict={health?.verdict ?? "No data yet"}
+          body={heroBody}
+          tint={tone.fg}
+        />
 
         <View style={[styles.list, { backgroundColor: colors.surfaceCard }]}>
           <VitalRow
@@ -105,7 +98,7 @@ export const HealthMonitorScreen: FC = () => {
             iconColor={colors.ringSleep}
             label="RR"
             name="Respiratory rate"
-            value="--"
+            value={activities?.respiratoryRate != null ? activities.respiratoryRate.toFixed(1) : "--"}
             unit="/min"
           />
           <View style={[styles.divider, { backgroundColor: colors.divider }]} />
@@ -117,13 +110,38 @@ export const HealthMonitorScreen: FC = () => {
             value={(activities?.spo2 ?? "--").replace("%", "")}
             unit="%"
           />
+          <View style={[styles.divider, { backgroundColor: colors.divider }]} />
+          <VitalRow
+            icon={Thermometer}
+            iconColor={colors.statusAmber}
+            label="Skin Temp"
+            name="Skin temperature (Δ vs baseline)"
+            value={activities?.skinTempDelta ? activities.skinTempDelta.replace("C", "") : "--"}
+            unit="°C"
+          />
         </View>
+        {contributors7.length > 0 ? (
+          <ContributorList title="vs last 7 days" items={contributors7} />
+        ) : null}
+        {contributors30.length > 0 ? (
+          <ContributorList title="vs last 30 days" items={contributors30} />
+        ) : null}
 
         <Text
-          text="Each metric is compared to your personal 14-day baseline."
+          text="Vitals compare against your personal baseline once it warms up. Respiratory rate and blood oxygen use standard clinical ranges."
           style={{ color: colors.textMuted, fontSize: 11, textAlign: "center", paddingHorizontal: 24 }}
         />
       </ScrollView>
+      <InfoSheet
+        visible={infoOpen}
+        onClose={() => setInfoOpen(false)}
+        title="How the Health Monitor works"
+        paragraphs={[
+          "Each vital is compared to your personal baseline — HRV and resting heart rate — or to a normal clinical range: respiratory rate 10–20 /min and blood oxygen at or above 95%.",
+          "The count shows how many vitals sit inside range today. Your HRV and resting-HR ranges lock in after about five nights of strap data.",
+          "This is a wellness signal, not a medical diagnosis.",
+        ]}
+      />
     </SafeAreaView>
   )
 }

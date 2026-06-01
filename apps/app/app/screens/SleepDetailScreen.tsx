@@ -14,6 +14,7 @@ import { useRoute } from "@react-navigation/native"
 import { router } from "expo-router"
 
 import { HypnogramChart } from "@/components/HypnogramChart"
+import { InlineLineChart } from "@/components/InlineLineChart"
 import { LabsAccordion } from "@/components/LabsAccordion"
 import { ScreenHeader, SCREEN_HEADER_HEIGHT } from "@/components/ScreenHeader"
 import { SleepHero } from "@/components/SleepHero"
@@ -203,6 +204,12 @@ export const SleepDetailScreen: FC = () => {
     { label: "Sleep Consistency", value: lookupMetric("Consistency") },
   ]
 
+  const targetHours = sleepView.durationTrend.targetHours
+  const gotHours = durationMinutes / 60
+  const gotFraction = targetHours > 0 ? Math.min(1, gotHours / targetHours) : 0
+  const needFillColor =
+    gotFraction >= 0.9 ? colors.statusGreen : gotFraction >= 0.75 ? colors.statusAmber : colors.statusRed
+
   const alarmRightAction = (
     <TouchableOpacity onPress={onPressAlarm} hitSlop={12} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
       <Alarm size={18} color={colors.text} />
@@ -236,6 +243,46 @@ export const SleepDetailScreen: FC = () => {
             detail=""
           />
 
+          {targetHours > 0 ? (
+            <View style={{ marginTop: 14, padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 8 }}>
+                <Text text="SLEEP NEEDED VS GOT" style={{ color: colors.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 1.6 }} />
+                <Text text={`${gotHours.toFixed(1)}h / ${targetHours.toFixed(1)}h`} style={{ color: colors.text, fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] }} />
+              </View>
+              <View style={{ height: 10, borderRadius: 5, backgroundColor: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                <View style={{ height: 10, borderRadius: 5, width: `${Math.round(gotFraction * 100)}%`, backgroundColor: needFillColor }} />
+              </View>
+              <Text
+                text={gotHours >= targetHours ? "You met your sleep need." : `${(targetHours - gotHours).toFixed(1)}h short of your need.`}
+                style={{ color: colors.textMuted, fontSize: 11, marginTop: 6 }}
+              />
+            </View>
+          ) : null}
+
+          {sleepView.stageRows.length > 0 ? (
+            <View style={{ marginTop: 14, padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
+              <Text
+                text="SLEEP ARCHITECTURE"
+                style={{ color: colors.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 1.6, marginBottom: 8 }}
+              />
+              <View style={{ flexDirection: "row", height: 14, borderRadius: 7, overflow: "hidden" }}>
+                {sleepView.stageRows.map((s) => (
+                  <View key={s.id} style={{ flex: Math.max(0.001, s.percent), backgroundColor: s.color }} />
+                ))}
+              </View>
+              {sleepView.stageRows.map((s) => (
+                <View key={s.id} style={{ flexDirection: "row", alignItems: "center", marginTop: 8 }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: s.color, marginRight: 8 }} />
+                  <Text text={s.label} style={{ flex: 1, color: colors.textDim, fontSize: 13 }} />
+                  <Text
+                    text={`${s.durationFormatted} · ${Math.round(s.percent)}%`}
+                    style={{ color: colors.text, fontSize: 12, fontWeight: "600", fontVariant: ["tabular-nums"] }}
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           {sleepView?.epochTimeline.length ? (
             <HypnogramChart
               epochs={sleepView.epochTimeline}
@@ -243,6 +290,26 @@ export const SleepDetailScreen: FC = () => {
               bedtimeLabel={localBedtimeLabel}
               wakeTimeLabel={localWakeTimeLabel}
             />
+          ) : null}
+
+          {sleepView.hrChart.samples.length > 1 ? (
+            <View style={{ marginTop: 22, padding: 14, backgroundColor: colors.surfaceCard, borderRadius: 12 }}>
+              <Text
+                text="HEART RATE · OVERNIGHT"
+                style={{ color: colors.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 1.6, marginBottom: 8 }}
+              />
+              <InlineLineChart
+                points={sleepView.hrChart.samples}
+                width={chartWidth - 28}
+                height={110}
+                stroke={colors.ringStrain}
+                emptyLabel="No overnight heart rate"
+              />
+              <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
+                <Text text={localBedtimeLabel} style={{ color: colors.textMuted, fontSize: 10 }} />
+                <Text text={localWakeTimeLabel} style={{ color: colors.textMuted, fontSize: 10 }} />
+              </View>
+            </View>
           ) : null}
 
           <WhyPanel

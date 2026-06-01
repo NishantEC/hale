@@ -1,4 +1,6 @@
 import { ViewsService } from './views.service';
+import type { Repository } from 'typeorm';
+import type { RawSensorRecord } from '../pipeline/entities/raw-sensor-record.entity';
 
 function repo(rows: any[] = [], one: any = null) {
   const qbChain: any = {
@@ -121,6 +123,16 @@ describe('ViewsService sleep view date selection', () => {
     expect(view.monitors.stress.state).toBe('stale');
     expect(view.monitors.stress.score).toBeNull();
     expect(view.monitors.stress.todayStrip).toHaveLength(24);
+    // Health monitor exposes the 5-vital dual-baseline contract + calibration flag.
+    expect(view.monitors.health.vitals).toHaveLength(5);
+    expect(view.monitors.health.baselineReady).toBe(false);
+    expect(view.monitors.health.vitals.map((v) => v.key)).toEqual([
+      'hrv',
+      'rhr',
+      'rr',
+      'spo2',
+      'skinTemp',
+    ]);
   });
 
   it('builds trend summaries with week-over-week comparisons when at least 8 nights exist', async () => {
@@ -378,5 +390,73 @@ describe('ViewsService.getCoverage', () => {
     const svc = makeService(rawSensorRepoMock([]));
     const out = await svc.getCoverage('u', '2026-05', '2026-05', 'Asia/Kolkata');
     expect(out.days).toEqual([]);
+  });
+});
+
+describe('ViewsService monitors timeInZone', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-05-12T21:00:00.000Z'));
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function rawSensorWithHr(
+    latest: { t: Date } | null,
+    hrRows: Array<{ hr: string; t: Date }>,
+  ): Repository<RawSensorRecord> {
+    const chain = {
+      select: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      getRawOne: jest.fn().mockResolvedValue(latest),
+      getRawMany: jest.fn().mockResolvedValue(hrRows),
+    };
+    // Mock boundary: a jest double can't implement the full Repository surface.
+    return {
+      createQueryBuilder: jest.fn(() => chain),
+    } as unknown as Repository<RawSensorRecord>;
+  }
+
+  it('reports stress time-in-zone in minutes, collapsing sub-minute samples', async () => {
+    // Six daytime samples, two per wall-clock minute across three minutes, all
+    // in the calm band. Counting samples would give 6; minutes gives 3.
+    const mk = (iso: string) => ({ hr: '80', t: new Date(iso) });
+    const hrRows = [
+      mk('2026-05-12T19:00:05.000Z'),
+      mk('2026-05-12T19:00:35.000Z'),
+      mk('2026-05-12T19:01:05.000Z'),
+      mk('2026-05-12T19:01:35.000Z'),
+      mk('2026-05-12T19:02:05.000Z'),
+      mk('2026-05-12T19:02:35.000Z'),
+    ];
+    const service = new ViewsService(
+      repo([]),
+      repo([]),
+      repo([]),
+      repo([]),
+      repo([]),
+      repo([], null),
+      repo([]),
+      repo([], null),
+      repo([]),
+      repo([]),
+      rawSensorWithHr({ t: new Date('2026-05-12T19:02:35.000Z') }, hrRows),
+    );
+
+    const view = await service.getHomeView(
+      'user-1',
+      '2026-05-12',
+      'America/Los_Angeles',
+    );
+
+    // 3 distinct minutes, not 6 samples.
+    expect(view.monitors.stress.timeInZone.calm).toBe(3);
+    expect(view.monitors.stress.timeInZone.moderate).toBe(0);
+    expect(view.monitors.stress.timeInZone.high).toBe(0);
   });
 });

@@ -312,6 +312,9 @@ export class ViewsService {
       selectedMetric,
       selectedFeature,
       selectedDetection,
+      selectedKey: data.selectedKey,
+      nightFeatures: data.nightFeatures,
+      dailyMetrics: data.dailyMetrics,
     });
 
     const topInsightTitle = selectedScore?.recommendation ?? 'Steady';
@@ -417,6 +420,12 @@ export class ViewsService {
             strain: a.strainScore.toFixed(1),
             intensity: a.intensity,
             time: a.startTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            id: a.id,
+            startTime: a.startTime.toISOString(),
+            endTime: a.endTime.toISOString(),
+            durationMinutes: Math.round(a.durationMinutes),
+            heartRateAvg: Math.round(a.heartRateAvg),
+            source: a.source,
           })),
         totalActiveMinutes: (() => {
           // Active minutes counts only real movement.
@@ -1025,6 +1034,9 @@ export class ViewsService {
     selectedMetric: DailyMetric | null;
     selectedFeature: NightFeature | null;
     selectedDetection: SleepDetection | null;
+    selectedKey: string;
+    nightFeatures: NightFeature[];
+    dailyMetrics: DailyMetric[];
   }) {
     const {
       userId,
@@ -1035,6 +1047,9 @@ export class ViewsService {
       selectedMetric,
       selectedFeature,
       selectedDetection,
+      selectedKey,
+      nightFeatures,
+      dailyMetrics,
     } = input;
 
     const latest = await this.rawSensorRepo
@@ -1082,6 +1097,10 @@ export class ViewsService {
     if (selectedMetric?.spo2Average != null) {
       totalMetrics++;
       if (selectedMetric.spo2Average >= 95) inRangeCount++;
+    }
+    if (selectedMetric?.skinTempDeltaCelsius != null) {
+      totalMetrics++;
+      if (Math.abs(selectedMetric.skinTempDeltaCelsius) <= 1) inRangeCount++;
     }
 
     const healthState: MonitorState =
@@ -1139,6 +1158,11 @@ export class ViewsService {
 
       const bucketScores: number[][] = Array.from({ length: 24 }, () => []);
       const allScores: number[] = [];
+      // timeInZone is reported in MINUTES (StressMonitor renders it via
+      // fmtMins). raw_sensor_records arrive at ~1 Hz, so counting raw samples
+      // would inflate the totals ~60x. Collapse to one mean per wall-clock
+      // minute and tally minutes instead.
+      const minuteMeans = new Map<number, { sum: number; n: number }>();
 
       for (const row of rows) {
         const hr = Number(row.hr);
@@ -1162,9 +1186,22 @@ export class ViewsService {
         bucketScores[hour].push(stress);
         allScores.push(stress);
 
-        if (stress < 35) timeInZone.calm++;
-        else if (stress < 65) timeInZone.moderate++;
-        else timeInZone.high++;
+        const minuteKey = Math.floor(ts.getTime() / 60000);
+        const minuteAgg = minuteMeans.get(minuteKey);
+        if (minuteAgg) {
+          minuteAgg.sum += stress;
+          minuteAgg.n += 1;
+        } else {
+          minuteMeans.set(minuteKey, { sum: stress, n: 1 });
+        }
+      }
+
+      // One minute in a zone == one tally, classified by the minute's mean.
+      for (const agg of minuteMeans.values()) {
+        const minuteStress = agg.sum / agg.n;
+        if (minuteStress < 35) timeInZone.calm += 1;
+        else if (minuteStress < 65) timeInZone.moderate += 1;
+        else timeInZone.high += 1;
       }
 
       todayStrip = bucketScores.map((scores) =>
@@ -1182,6 +1219,66 @@ export class ViewsService {
       }
     }
 
+    // Per-vital today + trailing 7d/30d means for the dual-baseline
+    // contributor sections (vs last 7 days / vs last 30 days).
+    const vitals = [
+      {
+        key: 'hrv',
+        label: 'HRV',
+        unit: 'ms',
+        today:
+          selectedFeature?.rmssd != null && selectedFeature.rmssd > 0
+            ? Math.round(selectedFeature.rmssd)
+            : null,
+        avg7d: this.trailingAverageBefore(nightFeatures, (f) => f.nightDate, selectedKey, timeZone, (f) => (f.rmssd > 0 ? f.rmssd : null), 7),
+        avg30d: this.trailingAverageBefore(nightFeatures, (f) => f.nightDate, selectedKey, timeZone, (f) => (f.rmssd > 0 ? f.rmssd : null), 30),
+      },
+      {
+        key: 'rhr',
+        label: 'Resting HR',
+        unit: 'bpm',
+        today:
+          selectedFeature?.restingHeartRate != null && selectedFeature.restingHeartRate > 0
+            ? Math.round(selectedFeature.restingHeartRate)
+            : null,
+        avg7d: this.trailingAverageBefore(nightFeatures, (f) => f.nightDate, selectedKey, timeZone, (f) => (f.restingHeartRate > 0 ? f.restingHeartRate : null), 7),
+        avg30d: this.trailingAverageBefore(nightFeatures, (f) => f.nightDate, selectedKey, timeZone, (f) => (f.restingHeartRate > 0 ? f.restingHeartRate : null), 30),
+      },
+      {
+        key: 'rr',
+        label: 'Respiratory Rate',
+        unit: '/min',
+        today:
+          selectedFeature?.respiratoryRate != null && selectedFeature.respiratoryRate > 0
+            ? Math.round(selectedFeature.respiratoryRate * 10) / 10
+            : null,
+        avg7d: this.trailingAverageBefore(nightFeatures, (f) => f.nightDate, selectedKey, timeZone, (f) => (f.respiratoryRate > 0 ? f.respiratoryRate : null), 7),
+        avg30d: this.trailingAverageBefore(nightFeatures, (f) => f.nightDate, selectedKey, timeZone, (f) => (f.respiratoryRate > 0 ? f.respiratoryRate : null), 30),
+      },
+      {
+        key: 'spo2',
+        label: 'Blood Oxygen',
+        unit: '%',
+        today:
+          selectedMetric?.spo2Average != null
+            ? Math.round(selectedMetric.spo2Average * 10) / 10
+            : null,
+        avg7d: this.trailingAverageBefore(dailyMetrics, (m) => m.dayDate, selectedKey, timeZone, (m) => m.spo2Average ?? null, 7),
+        avg30d: this.trailingAverageBefore(dailyMetrics, (m) => m.dayDate, selectedKey, timeZone, (m) => m.spo2Average ?? null, 30),
+      },
+      {
+        key: 'skinTemp',
+        label: 'Skin Temp Δ',
+        unit: '°C',
+        today:
+          selectedMetric?.skinTempDeltaCelsius != null
+            ? Math.round(selectedMetric.skinTempDeltaCelsius * 100) / 100
+            : null,
+        avg7d: this.trailingAverageBefore(dailyMetrics, (m) => m.dayDate, selectedKey, timeZone, (m) => m.skinTempDeltaCelsius ?? null, 7),
+        avg30d: this.trailingAverageBefore(dailyMetrics, (m) => m.dayDate, selectedKey, timeZone, (m) => m.skinTempDeltaCelsius ?? null, 30),
+      },
+    ];
+
     return {
       health: {
         state: healthState,
@@ -1190,6 +1287,8 @@ export class ViewsService {
         totalMetrics,
         staleSinceMs,
         lastReadingAt,
+        baselineReady,
+        vitals,
       },
       stress: {
         state: stressState,
@@ -1220,6 +1319,29 @@ export class ViewsService {
     if (!candidates.length) return null;
     candidates.sort((a, b) => (a.dayKey < b.dayKey ? 1 : -1));
     const window = candidates.slice(0, 7);
+    const sum = window.reduce((acc, c) => acc + c.value, 0);
+    return Number((sum / window.length).toFixed(2));
+  }
+
+  private trailingAverageBefore<T>(
+    items: T[],
+    getDate: (item: T) => Date,
+    selectedKey: string,
+    timeZone: string | undefined,
+    extract: (item: T) => number | null | undefined,
+    days: number,
+  ): number | null {
+    const candidates: { dayKey: string; value: number }[] = [];
+    for (const item of items) {
+      const itemKey = this.dayKey(getDate(item), timeZone);
+      if (itemKey >= selectedKey) continue;
+      const value = extract(item);
+      if (value == null || !Number.isFinite(value)) continue;
+      candidates.push({ dayKey: itemKey, value });
+    }
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => (a.dayKey < b.dayKey ? 1 : -1));
+    const window = candidates.slice(0, days);
     const sum = window.reduce((acc, c) => acc + c.value, 0);
     return Number((sum / window.length).toFixed(2));
   }
@@ -1797,6 +1919,7 @@ export class ViewsService {
         durationMinutes: Math.round(a.durationMinutes),
         intensity: a.intensity,
         heartRateAvg: Math.round(a.heartRateAvg),
+        heartRateMax: Math.round(a.heartRateMax),
         strainScore: Math.round(a.strainScore * 10) / 10,
         confidence: Math.round(a.confidence * 100) / 100,
       }));

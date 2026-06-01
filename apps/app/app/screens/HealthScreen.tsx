@@ -1,5 +1,5 @@
 import { FC, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ScrollView, View, ViewStyle } from "react-native"
+import { Pressable, ScrollView, View, ViewStyle } from "react-native"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
 import { useFocusEffect } from "@react-navigation/native"
@@ -16,6 +16,9 @@ import {
 import { HealthMonitorCard } from "@/components/health/HealthMonitorCard"
 import { HealthspanCard } from "@/components/health/HealthspanCard"
 import { TrendCard } from "@/components/health/TrendCard"
+import { ContributorList } from "@/components/health/ContributorList"
+import { Info } from "phosphor-react-native"
+import { InfoSheet } from "@/components/InfoSheet"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
 import {
@@ -26,6 +29,7 @@ import {
 import { fetchHealthView, type HealthViewModel } from "@/services/api/noopClient"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { usePreference } from "@/utils/usePreferences"
+import { buildVitalContributors } from "@/utils/healthVitals"
 
 export const HealthScreen: FC = () => {
   const insets = useSafeAreaInsets()
@@ -37,6 +41,7 @@ export const HealthScreen: FC = () => {
   const { value: showHealthspan } = usePreference("showHealthspan")
 
   const [healthView, setHealthView] = useState<HealthViewModel | null>(null)
+  const [infoOpen, setInfoOpen] = useState(false)
   const lastFocusRefreshAt = useRef(0)
 
   const reloadHealthView = useCallback(() => {
@@ -70,6 +75,9 @@ export const HealthScreen: FC = () => {
   const activities = homeView?.activities
   const sleepRing = homeView?.rings.sleep
   const stressMonitor = homeView?.monitors?.stress
+  const healthVitals = monitorsHealth?.vitals ?? []
+  const contributors7 = buildVitalContributors(healthVitals, "avg7d")
+  const contributors30 = buildVitalContributors(healthVitals, "avg30d")
 
   const hero = useMemo(() => {
     const inRange = monitorsHealth?.inRangeCount ?? 0
@@ -234,6 +242,9 @@ export const HealthScreen: FC = () => {
           />
           <View style={$topRight}>
             <ComposeButton onSelect={handleQuickLog} />
+            <Pressable onPress={() => setInfoOpen(true)} hitSlop={10} style={{ padding: 4 }}>
+              <Info size={20} color={colors.textDim} />
+            </Pressable>
             <DevicePill
               batteryLabel={batteryLabel}
               isCharging={isCharging}
@@ -260,6 +271,13 @@ export const HealthScreen: FC = () => {
             rows={vitalRows}
             defaultExpanded={false}
           />
+
+          {contributors7.length > 0 ? (
+            <ContributorList title="vs last 7 days" items={contributors7} />
+          ) : null}
+          {contributors30.length > 0 ? (
+            <ContributorList title="vs last 30 days" items={contributors30} />
+          ) : null}
 
           {noopAge != null && showHealthspan ? (
             <HealthspanCard
@@ -303,6 +321,16 @@ export const HealthScreen: FC = () => {
             style={{ color: colors.textMuted, fontSize: 11, paddingHorizontal: 4, paddingTop: 4 }}
           />
         </ScrollView>
+        <InfoSheet
+          visible={infoOpen}
+          onClose={() => setInfoOpen(false)}
+          title="What is Healthspan?"
+          paragraphs={[
+            "Healthspan estimates your biological age from your wearable trends — resting heart rate, HRV, sleep quality, respiratory rate and more — against population norms for your chronological age.",
+            "noop Age below your real age means your vitals look younger than the calendar; above means older. Pace of Aging shows whether you're trending faster or slower than the chronological clock (1.0× = on pace).",
+            "It needs a couple of weeks of nights to stabilise, and it's a wellness estimate — not a medical assessment.",
+          ]}
+        />
       </SafeAreaView>
     </View>
   )

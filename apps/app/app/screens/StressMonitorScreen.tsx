@@ -1,4 +1,4 @@
-import { FC, useCallback, useMemo } from "react"
+import { FC, useCallback, useMemo, useState } from "react"
 import { Pressable, ScrollView, StyleSheet, View, ViewStyle } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { useNavigation } from "@react-navigation/native"
@@ -9,6 +9,9 @@ import { StressColorStrip } from "@/components/home/StressColorStrip"
 import { useDashboard } from "@/context/DashboardContext"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { scoreToZone } from "@/utils/stressZone"
+import { InfoSheet } from "@/components/InfoSheet"
+import { HalfArcGauge } from "@/components/HalfArcGauge"
+import { ContributorList, type ContributorItem } from "@/components/health/ContributorList"
 
 function fmtMins(mins: number): string {
   if (mins <= 0) return "0m"
@@ -28,6 +31,7 @@ export const StressMonitorScreen: FC = () => {
   const zone = stress?.zone ?? scoreToZone(score)
 
   const goBack = useCallback(() => navigation.goBack(), [navigation])
+  const [infoOpen, setInfoOpen] = useState(false)
 
   const tone = useMemo(() => {
     if (zone === "Moderate") return { fg: colors.statusAmber, bg: "rgba(255,164,43,0.18)" }
@@ -39,6 +43,50 @@ export const StressMonitorScreen: FC = () => {
   const cellsForStrip = stress?.todayStrip ?? new Array(24).fill(null)
   const nowPercent = computeNowPercent()
 
+  const stripValues = (stress?.todayStrip ?? []).filter((c): c is number => c != null)
+  const peak = stripValues.length ? Math.max(...stripValues) : null
+  const trend = (homeView?.stressTrend ?? [])
+    .map((p) => p.value)
+    .filter((v): v is number => v != null)
+    .slice(-7)
+  const avg7d = trend.length ? trend.reduce((a, b) => a + b, 0) / trend.length : null
+  const avgDelta = score != null && avg7d != null ? score - avg7d : null
+  const contributors: ContributorItem[] = [
+    {
+      key: "avg",
+      label: "Today avg",
+      value: score != null ? `${Math.round(score)}` : "--",
+      baseline: avg7d != null ? `${Math.round(avg7d)}` : "—",
+      deltaText: avgDelta != null ? `${avgDelta >= 0 ? "+" : ""}${Math.round(avgDelta)}` : null,
+      direction: avgDelta == null || Math.abs(avgDelta) < 1 ? "flat" : avgDelta < 0 ? "up" : "down",
+    },
+    {
+      key: "peak",
+      label: "Today peak",
+      value: peak != null ? `${Math.round(peak)}` : "--",
+      baseline: "—",
+      deltaText: null,
+      direction: "flat",
+    },
+    {
+      key: "recovery",
+      label: "Recovery",
+      value: homeView?.rings.recovery.value ?? "--",
+      unit: "%",
+      baseline: "—",
+      deltaText: null,
+      direction: "flat",
+    },
+    {
+      key: "sleep",
+      label: "Sleep score",
+      value: homeView?.rings.sleep.value ?? "--",
+      baseline: "—",
+      deltaText: null,
+      direction: "flat",
+    },
+  ]
+
   return (
     <SafeAreaView style={[styles.screen, { backgroundColor: colors.screenBackground }]} edges={["top"]}>
       <View style={styles.navBar}>
@@ -47,28 +95,22 @@ export const StressMonitorScreen: FC = () => {
           <Text text="Stress Monitor" style={{ color: colors.text, fontSize: 16, fontWeight: "700" }} />
         </Pressable>
         <View style={{ flex: 1 }} />
-        <Info size={20} color={colors.textDim} />
+        <Pressable onPress={() => setInfoOpen(true)} hitSlop={12}>
+          <Info size={20} color={colors.textDim} />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={{ padding: 16, gap: 14 }}>
         <View style={[styles.hero, { backgroundColor: colors.surfaceCard }]}>
-          <View style={styles.heroNumRow}>
-            <Text
-              text={score == null ? "--" : `${Math.round(score)}`}
-              style={{
-                color: tone.fg,
-                fontSize: 64,
-                fontWeight: "800",
-                letterSpacing: -3,
-                lineHeight: 64,
-                fontVariant: ["tabular-nums"],
-              }}
-            />
-            <Text
-              text="/ 100"
-              style={{ color: colors.textMuted, fontSize: 18, fontWeight: "600", marginLeft: 6, marginBottom: 4 }}
-            />
-          </View>
+          <HalfArcGauge
+            value={score}
+            tint={tone.fg}
+            bands={[
+              { from: 0, to: 35, color: colors.ringHrv },
+              { from: 35, to: 65, color: colors.statusAmber },
+              { from: 65, to: 100, color: colors.statusRed },
+            ]}
+          />
           <Text
             text={(zone ?? "Stale").toUpperCase()}
             style={{
@@ -117,12 +159,23 @@ export const StressMonitorScreen: FC = () => {
             <ZoneRow color={colors.statusRed} name="High" range="65 – 100" mins={stress?.timeInZone.high ?? 0} />
           </View>
         </View>
+        <ContributorList title="today" items={contributors} />
 
         <Text
           text="Based on HRV + heart rate against your 14-day baseline."
           style={{ color: colors.textMuted, fontSize: 11, textAlign: "center", paddingHorizontal: 24 }}
         />
       </ScrollView>
+      <InfoSheet
+        visible={infoOpen}
+        onClose={() => setInfoOpen(false)}
+        title="How stress is measured"
+        paragraphs={[
+          "Your stress score (0–100) estimates autonomic load from heart rate relative to your resting and maximum heart rate during waking hours.",
+          "A higher heart rate for your personal range pushes the score up. Time-in-zone tallies the minutes you spent Calm (0–34), Moderate (35–64), or High (65–100) today.",
+          "Sleep is excluded so overnight recovery doesn't dilute your daytime reading.",
+        ]}
+      />
     </SafeAreaView>
   )
 }

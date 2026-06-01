@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, NotFoundException, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/auth.guard.js';
 import { ActivityService } from './activity.service.js';
 
@@ -28,6 +28,13 @@ export class ActivityController {
         source: a.source,
       })),
     };
+  }
+
+  @Get(':id')
+  async getOne(@Req() req: any, @Param('id') id: string) {
+    const bout = await this.activityService.getBoutDetail(req.user.userId, id);
+    if (!bout) throw new NotFoundException('Activity not found');
+    return bout;
   }
 
   @Post()

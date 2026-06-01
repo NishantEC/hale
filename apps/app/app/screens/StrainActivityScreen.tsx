@@ -13,7 +13,7 @@ import {
 } from "@/components/activity"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
 import { LabsAccordion } from "@/components/LabsAccordion"
-import { MetricHero } from "@/components/MetricHero"
+import { HalfArcGauge } from "@/components/HalfArcGauge"
 import { ScreenHeader, SCREEN_HEADER_HEIGHT } from "@/components/ScreenHeader"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
@@ -155,14 +155,32 @@ export const StrainActivityScreen: FC = () => {
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
-        <View style={{ paddingHorizontal: 16 }}>
-          <MetricHero
-            value={validStrain ? strainNumeric.toFixed(1) : "--"}
-            valueDetail="0 – 21 scale"
-            badge={{ label: classification.label, tint: classification.tint }}
-            delta={strainDelta}
-            deltaUnit=""
-            detail={`${namedCount} workouts · ${candidateCount} pending · ${offWristCount} strap off · ${activeMinutes} active min`}
+        <View style={{ paddingHorizontal: 16, alignItems: "center" }}>
+          <HalfArcGauge
+            value={validStrain ? (strainNumeric / 21) * 100 : null}
+            display={validStrain ? strainNumeric.toFixed(1) : "--"}
+            tint={classification.tint}
+            bands={[
+              { from: 0, to: 47.6, color: "#4ade80" },
+              { from: 47.6, to: 66.7, color: "#fbbf24" },
+              { from: 66.7, to: 85.7, color: "#ffa42b" },
+              { from: 85.7, to: 100, color: "#f87171" },
+            ]}
+          />
+          <Text
+            text={classification.label.toUpperCase()}
+            style={{ color: classification.tint, fontSize: 13, fontWeight: "700", letterSpacing: 1.6, marginTop: -6 }}
+          />
+          <Text text="0 – 21 strain" style={{ color: colors.textMuted, fontSize: 11, marginTop: 4 }} />
+          {strainDelta ? (
+            <Text
+              text={`${strainDelta} vs 7-day avg`}
+              style={{ color: colors.textDim, fontSize: 12, marginTop: 4 }}
+            />
+          ) : null}
+          <Text
+            text={`${namedCount} workouts · ${candidateCount} pending · ${offWristCount} strap off · ${activeMinutes} active min`}
+            style={{ color: colors.textMuted, fontSize: 11, marginTop: 6, textAlign: "center" }}
           />
         </View>
 

@@ -116,6 +116,15 @@ export type HomeMetricRing = {
 
 export type MonitorState = "ok" | "warn" | "alert" | "stale"
 
+export interface HealthVital {
+  key: string
+  label: string
+  unit: string
+  today: number | null
+  avg7d: number | null
+  avg30d: number | null
+}
+
 export interface HealthMonitorSummary {
   state: MonitorState
   verdict: string
@@ -123,6 +132,8 @@ export interface HealthMonitorSummary {
   totalMetrics: number
   staleSinceMs: number | null
   lastReadingAt: string | null
+  baselineReady?: boolean
+  vitals?: HealthVital[]
 }
 
 export interface StressMonitorSummary {

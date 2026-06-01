@@ -20,6 +20,9 @@ const repoRoot = resolve(here, "..");
 //   research — community / web finding
 //   next — recommended next step
 const GLANCE = [
+  // ── Re-audit + data-support pass (2026-05-31) ───────────────
+  { tag: "decision", title: "Secondary screens re-audit (05-31)", body: "Ground-truth re-audit vs §4 targets. Plan ~70% shipped; structural+data layer done (every screen exists, reachable, data-backed). Remaining = §3 design-depth (gauges, dual-baseline lists, day-picker on detail screens) + product-gated (Inspector demote, AI-coach CTAs, Share-PDF, Journal model). The 05-28 'duplicate charts on HRV/Strain' finding is already resolved. Full punch-list: docs/secondary-screens-status-2026-05-31.md.", anchor: "secondary-screens-status" },
+  { tag: "shipped", title: "Backend data-support pass (05-31)", body: "timeInZone now in minutes (was per-sample, ~60× inflated). activityFeed exposes id/startTime/endTime/durationMinutes/heartRateAvg/source; pending cards expose heartRateMax. New GET /activities/:id (hrCurve + 5-zone time + motion) makes BoutDetailScreen fully work. HealthMonitor RR reads activities.respiratoryRate. 6 new backend tests; 113 pass.", anchor: "secondary-screens-status" },
   // ── Shipped (2026-05-30 home + health + tabs session) ───────
   { tag: "shipped", title: "Home tab redesign", body: "Rings drop `%` suffix and gain numericValue + sevenDayAverage for ▲/▼ delta captions. Monitor cards carry freshness (`Xm ago`). Recovery ring → new RecoveryDetailScreen. Floating + → native ActionSheet quick-log. Spec: docs/superpowers/specs/2026-05-28-home-tab-redesign-design.md.", anchor: "secondary-screens" },
   { tag: "shipped", title: "Health tab rewrite", body: "Aurora backdrop (Skia, monitor-state tinted) + unified HealthMonitorCard (hero + collapsible vitals table merged). 8 vitals (RHR/HRV/RR/SpO₂/Skin Temp/Sleep/Recovery 7d/Stress) with personal-range bars + ▲/▼ vs 7d. Healthspan demoted to a sub-card → /healthspan. Spec: docs/superpowers/specs/2026-05-29-health-tab-rewrite-design.md.", anchor: "secondary-screens" },
@@ -234,6 +237,7 @@ Verified on evt 3 (29 B, payload-len=0x0014=20), evt 63 (37 B, payload-len=0x001
   { id: "secondary-screens", title: "Secondary screens master plan", path: "docs/secondary-screens-master-plan-2026-05-28.md" },
   { id: "competitor-screens", title: "Competitor patterns library", path: "docs/competitor-screens-research-2026-05-28.md" },
   { id: "current-screens-audit", title: "Current screens audit (2026-05-28)", path: "docs/current-secondary-screens-audit-2026-05-28.md" },
+  { id: "secondary-screens-status", title: "Secondary screens status + punch-list (2026-05-31)", path: "docs/secondary-screens-status-2026-05-31.md" },
   { id: "user-journey", title: "User journey + feature graph", path: "docs/user-journey-and-feature-graph-2026-05-28.md" },
   { id: "home-tab-redesign-spec", title: "Spec: Home tab redesign (2026-05-28)", path: "docs/superpowers/specs/2026-05-28-home-tab-redesign-design.md" },
   { id: "health-tab-rewrite-spec", title: "Spec: Health tab rewrite (2026-05-29)", path: "docs/superpowers/specs/2026-05-29-health-tab-rewrite-design.md" },
