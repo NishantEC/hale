@@ -84,7 +84,7 @@ export class ViewsController {
   @Get('trends')
   async trends(@Req() req: any, @Query('days') days?: string) {
     try {
-      const n = days ? Math.min(Math.max(parseInt(days, 10) || 30, 7), 90) : 30;
+      const n = days ? Math.min(Math.max(parseInt(days, 10) || 30, 7), 365) : 30;
       return await this.viewsService.getTrendsView(req.user.userId, n);
     } catch (e) {
       this.logger.error(`trends view failed: ${e.message}`, e.stack);

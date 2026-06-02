@@ -30,6 +30,7 @@ export const StressMonitorScreen: FC = () => {
   const score = stress?.score ?? null
   const zone = stress?.zone ?? scoreToZone(score)
 
+  const [selectedCell, setSelectedCell] = useState<number | null>(null)
   const goBack = useCallback(() => navigation.goBack(), [navigation])
   const [infoOpen, setInfoOpen] = useState(false)
 
@@ -42,6 +43,9 @@ export const StressMonitorScreen: FC = () => {
 
   const cellsForStrip = stress?.todayStrip ?? new Array(24).fill(null)
   const nowPercent = computeNowPercent()
+  const selectedValue = selectedCell != null ? cellsForStrip[selectedCell] ?? null : null
+  const selectedHourLabel =
+    selectedCell != null ? `${selectedCell % 12 || 12} ${selectedCell < 12 ? "AM" : "PM"}` : null
 
   const stripValues = (stress?.todayStrip ?? []).filter((c): c is number => c != null)
   const peak = stripValues.length ? Math.max(...stripValues) : null
@@ -137,11 +141,24 @@ export const StressMonitorScreen: FC = () => {
             style={{ color: colors.textDim, fontSize: 10, fontWeight: "700", letterSpacing: 1.6, marginLeft: 4, marginBottom: 8 }}
           />
           <View style={[styles.stripCard, { backgroundColor: colors.surfaceCard }]}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <Text text={selectedHourLabel ?? "Tap to inspect"} style={{ color: colors.textDim, fontSize: 12, fontWeight: "600" }} />
+              {selectedValue != null ? (
+                <Text
+                  text={`${Math.round(selectedValue)} · ${scoreToZone(selectedValue)}`}
+                  style={{ color: colors.text, fontSize: 13, fontWeight: "700", fontVariant: ["tabular-nums"] }}
+                />
+              ) : selectedCell != null ? (
+                <Text text="no reading" style={{ color: colors.textMuted, fontSize: 12 }} />
+              ) : null}
+            </View>
             <StressColorStrip
               cells={cellsForStrip}
               nowPercent={nowPercent}
               axisLabels={["12 AM", "6 AM", "12 PM", "6 PM", "11 PM"]}
               height={22}
+              onSelectCell={setSelectedCell}
+              selectedIndex={selectedCell}
             />
           </View>
         </View>

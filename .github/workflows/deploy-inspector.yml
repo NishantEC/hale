@@ -2,14 +2,8 @@ name: Deploy Inspector
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "apps/inspector/**"
-      - "packages/**"
-      - "pnpm-lock.yaml"
-      - "package.json"
-      - "turbo.json"
-      - ".github/workflows/deploy-inspector.yml"
+    tags:
+      - "inspector-v*"
   workflow_dispatch:
 
 env:

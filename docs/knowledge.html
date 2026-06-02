@@ -361,7 +361,7 @@
   <main>
     <header class="page">
       <h1>noop · knowledge dashboard</h1>
-      <p class="meta">Last built: 2026-06-01T04:29:08.370Z · single-file, open directly in any browser.</p>
+      <p class="meta">Last built: 2026-06-02T08:44:15.106Z · single-file, open directly in any browser.</p>
     </header>
 
     <section class="glance" id="glance">
@@ -5641,14 +5641,15 @@ CTAs, Share-PDF, Journal checklist model).
 Shipped + verified this session (app `tsc` clean; backend 113 tests pass):
 - **Wave 1** — dead info-ⓘ CTAs on Stress/Health Monitor → reusable `InfoSheet`.
 - **Health Monitor (§4.4)** — `GlowScoreCard` hero + calibration body; 5th vital (Skin Temp); dual-baseline `ContributorList`s (vs 7d / vs 30d). Backend: skin-temp in the in-range count, `baselineReady` flag, per-vital `vitals[]` (today + trailing 7d/30d) via new `trailingAverageBefore`.
-- **Stress Monitor (§4.3)** — new reusable `HalfArcGauge` (banded arc + needle) + `ContributorList` (Today avg vs 7d, peak, recovery, sleep).
+- **Stress Monitor (§4.3)** — `HalfArcGauge` (banded arc + needle) + `ContributorList` (Today avg vs 7d, peak, recovery, sleep) + tap-to-read 24h scrubber on the strip.
 - **Strain detail (§4.6)** — 0-21 Borg zone-gauge hero (reuses `HalfArcGauge`) with named bands.
 - **Health tab (§4.2)** — dual-baseline `ContributorList`s powered by the new backend `vitals` contract.
 - **Sleep detail (§4.5)** — HR-over-night line chart (`hrChart`), needed-vs-got bar (`durationTrend.targetHours`), and sleep-architecture stacked bar (`stageRows`). Frontend-only; data was already supplied.
 - Shared `utils/healthVitals.ts` (`buildVitalContributors`) reused by Health Monitor + Health tab.
 - **Health tab explainer (§4.2)** — "What is Healthspan?" info-ⓘ → `InfoSheet`.
+- **HRV detail (§4.7)** — 1W/1M/3M/1Y trend toggle (`InlineLineChart`), reference frames (vs 7-night / 30-night / personal best), drivers list from the Insights HRV correlations, "Why HRV matters" explainer. Reused `fetchTrendsView`/`fetchInsights`; only backend change was raising the `/views/trends` days cap 90→365. Extracted shared `utils/factorLabels.ts` (`humanizeFactorTag`); WhyPanel refactored onto it.
 
-Still open in Wave 2: HRV detail (D/W/M/Y + drivers — needs NEW backend multi-range trends + correlations); Stress 24h scrubber + coaching card; Health-tab extra trend cards (Cardio Fitness / Body Battery — need new metrics).
+Still open in Wave 2: Health-tab extra trend cards (Cardio Fitness / Body Battery) and a Stress coaching card — both need NEW pipeline metrics that don't exist yet.
 
 Wave 3 remains product-gated: Inspector demotion, AI-coach CTAs, Share-PDF, Journal model.
 </script>

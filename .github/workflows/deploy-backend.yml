@@ -2,14 +2,8 @@ name: Deploy Backend
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "apps/backend/**"
-      - "packages/**"
-      - "pnpm-lock.yaml"
-      - "package.json"
-      - "turbo.json"
-      - ".github/workflows/deploy-backend.yml"
+    tags:
+      - "backend-v*"
   workflow_dispatch:
 
 env:

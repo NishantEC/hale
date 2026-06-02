@@ -2,14 +2,8 @@ name: Deploy Pipeline Worker
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "apps/compute-engine/src/bin/worker.rs"
-      - "apps/compute-engine/src/**"
-      - "apps/compute-engine/Cargo.toml"
-      - "apps/compute-engine/Cargo.lock"
-      - "apps/compute-engine/Dockerfile.worker"
-      - ".github/workflows/deploy-pipeline-worker.yml"
+    tags:
+      - "worker-v*"
   workflow_dispatch:
 
 env:
