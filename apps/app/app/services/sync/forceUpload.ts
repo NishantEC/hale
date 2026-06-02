@@ -17,7 +17,7 @@ import {
 import { backfillUnsyncedRawSensorRecords } from "../db/repositories/rawSensorRecord"
 import { markUploaded } from "../db/repositories/mirrorSync"
 
-export const FORCE_UPLOAD_BATCH_SIZE = 25
+export const FORCE_UPLOAD_BATCH_SIZE = 500
 export const FORCE_UPLOAD_BACKFILL_LIMIT = 5000
 // 4 min — leaves a 1 min cushion under the 5 min drain-lock TTL so the loop
 // aborts before the lock can expire under another holder.
