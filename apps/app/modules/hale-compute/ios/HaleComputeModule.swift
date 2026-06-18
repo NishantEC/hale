@@ -2,12 +2,12 @@ import ExpoModulesCore
 
 // Expo module that exposes the on-device derived-metrics compute to JS.
 // The actual work is the UniFFI-generated `computeDerivedMetricsDayJson`
-// (free function from noop_compute_engine.swift), which calls into the Rust
+// (free function from hale_compute_engine.swift), which calls into the Rust
 // core compiled for iOS — the same code the backend runs, so output matches
 // the server for identical input.
-public class NoopComputeModule: Module {
+public class HaleComputeModule: Module {
   public func definition() -> ModuleDefinition {
-    Name("NoopCompute")
+    Name("HaleCompute")
 
     // Synchronous: the compute is sub-second and callers may want it inline.
     // UniFFI maps the Rust `Result<String, ComputeFfiError>` to a Swift throw,

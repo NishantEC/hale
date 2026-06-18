@@ -3,7 +3,7 @@
 //! is the property that lets the device author derived metrics that match the
 //! server bit-for-bit (the basis for shadow-mode parity before cutover).
 
-use noop_compute_engine::{
+use hale_compute_engine::{
     derived_metrics::compute_derived_metrics,
     ffi::compute_derived_metrics_day_json,
     types::{ComputeDerivedMetricsDayRequestV1, PersistedDailyMetricV1},

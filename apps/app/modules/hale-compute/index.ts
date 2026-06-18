@@ -1,6 +1,6 @@
 import { requireNativeModule } from "expo-modules-core";
 
-type NoopComputeNativeModule = {
+type HaleComputeNativeModule = {
   /**
    * Run one day's derived-metrics compute on-device using the same Rust core
    * the backend runs (compiled for iOS, bridged via UniFFI). `requestJson` is a
@@ -20,14 +20,14 @@ type NoopComputeNativeModule = {
   computeFullDayJson(requestJson: string): string;
 };
 
-const NoopCompute = requireNativeModule<NoopComputeNativeModule>("NoopCompute");
+const HaleCompute = requireNativeModule<HaleComputeNativeModule>("HaleCompute");
 
 export function computeDerivedMetricsDayJson(requestJson: string): string {
-  return NoopCompute.computeDerivedMetricsDayJson(requestJson);
+  return HaleCompute.computeDerivedMetricsDayJson(requestJson);
 }
 
 export function computeFullDayJson(requestJson: string): string {
-  return NoopCompute.computeFullDayJson(requestJson);
+  return HaleCompute.computeFullDayJson(requestJson);
 }
 
-export default NoopCompute;
+export default HaleCompute;

@@ -547,7 +547,7 @@ export const SettingsScreen: FC = () => {
                 style={{ color: colors.text, fontSize: 14, fontWeight: "600" }}
               />
               <Text
-                text="Noop age + Pace of Aging cards on the Health tab."
+                text="Hale age + Pace of Aging cards on the Health tab."
                 style={{
                   color: colors.textDim,
                   fontSize: 12,
@@ -645,7 +645,7 @@ export const SettingsScreen: FC = () => {
         </Pressable>
 
         <Text
-          text={`NOOP · ${versionLabel}`}
+          text={`HALE · ${versionLabel}`}
           style={{
             color: colors.textMuted,
             fontSize: 11,

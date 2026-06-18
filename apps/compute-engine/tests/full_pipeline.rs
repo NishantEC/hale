@@ -1,6 +1,6 @@
 //! Tests for the full on-device pipeline orchestrator.
 
-use noop_compute_engine::{
+use hale_compute_engine::{
     derived_metrics::compute_derived_metrics,
     full_pipeline::{FullDayInput, FullDayOutput, compute_full_day},
     types::{
@@ -137,7 +137,7 @@ fn full_day_json_round_trip() {
         time_zone: "UTC".to_string(),
     };
     let input_json = serde_json::to_string(&input).unwrap();
-    let output_json = noop_compute_engine::ffi::compute_full_day_json(&input_json)
+    let output_json = hale_compute_engine::ffi::compute_full_day_json(&input_json)
         .expect("FFI entrypoint should succeed on empty input");
     let output: FullDayOutput =
         serde_json::from_str(&output_json).expect("output should deserialize back");
@@ -225,7 +225,7 @@ fn prior_night_features_feed_baseline() {
 /// the `Window` (full-series) count, because the night slice is a subset.
 #[test]
 fn reference_night_desat_scope_leq_window() {
-    use noop_compute_engine::types::DesaturationScope;
+    use hale_compute_engine::types::DesaturationScope;
 
     let req = load_first_fixture();
 

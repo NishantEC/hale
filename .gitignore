@@ -73,4 +73,4 @@ out
 # module (~44 MB binaries each). Regenerate from apps/compute-engine — never
 # committed.
 /apps/compute-engine/bindings/
-apps/app/modules/noop-compute/ios/NoopComputeFFI.xcframework/
+apps/app/modules/hale-compute/ios/HaleComputeFFI.xcframework/

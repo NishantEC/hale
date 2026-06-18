@@ -446,6 +446,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "hale-compute-engine"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "criterion",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uniffi",
+]
+
+[[package]]
 name = "half"
 version = "2.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -584,19 +597,6 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
-]
-
-[[package]]
-name = "noop-compute-engine"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "chrono-tz",
- "criterion",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "uniffi",
 ]
 
 [[package]]

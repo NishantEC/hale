@@ -81,7 +81,7 @@ export const LogsCard: FC = () => {
       await Sharing.shareAsync(path, {
         UTI: "public.plain-text",
         mimeType: "text/plain",
-        dialogTitle: "Export noop log",
+        dialogTitle: "Export Hale log",
       })
     } catch (err) {
       console.warn("[LogsCard] export failed", err)

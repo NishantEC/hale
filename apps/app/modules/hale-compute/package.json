@@ -1,0 +1,7 @@
+{
+  "name": "hale-compute",
+  "version": "1.0.0",
+  "description": "On-device derived-metrics compute (Hale Rust core via UniFFI)",
+  "main": "index.ts",
+  "private": true
+}

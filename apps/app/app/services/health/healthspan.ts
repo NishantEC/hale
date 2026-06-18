@@ -246,7 +246,7 @@ export function coachingFor(
       title: "Steady and Healthy",
       body:
         noopAgeYounger > 0
-          ? `Your noop Age is ${noopAgeYounger.toFixed(1)} years younger and your Pace of Aging is slow. You're doing well — continue your current habits to maintain this trajectory.`
+          ? `Your Hale Age is ${noopAgeYounger.toFixed(1)} years younger and your Pace of Aging is slow. You're doing well — continue your current habits to maintain this trajectory.`
           : "Your Pace of Aging is slow. Keep doing what you're doing — the trend is on your side.",
     }
   }

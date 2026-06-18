@@ -329,7 +329,7 @@ export const HealthScreen: FC = () => {
           title="What is Healthspan?"
           paragraphs={[
             "Healthspan estimates your biological age from your wearable trends — resting heart rate, HRV, sleep quality, respiratory rate and more — against population norms for your chronological age.",
-            "noop Age below your real age means your vitals look younger than the calendar; above means older. Pace of Aging shows whether you're trending faster or slower than the chronological clock (1.0× = on pace).",
+            "Hale Age below your real age means your vitals look younger than the calendar; above means older. Pace of Aging shows whether you're trending faster or slower than the chronological clock (1.0× = on pace).",
             "It needs a couple of weeks of nights to stabilise, and it's a wellness estimate — not a medical assessment.",
           ]}
         />

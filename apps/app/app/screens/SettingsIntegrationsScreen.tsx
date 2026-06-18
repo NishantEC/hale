@@ -72,7 +72,7 @@ export const SettingsIntegrationsScreen: FC = () => {
         }}
       >
         <Text
-          text="External health + lifestyle sources noop can pull from or write to."
+          text="External health + lifestyle sources Hale can pull from or write to."
           style={{ color: colors.textMuted, fontSize: 12, lineHeight: 17, paddingHorizontal: 4 }}
         />
 

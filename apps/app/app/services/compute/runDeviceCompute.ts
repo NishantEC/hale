@@ -17,7 +17,7 @@ const DAY_MS = 86_400_000
 function nativeComputeFullDayJson(requestJson: string): string {
   // Lazy require so a missing/unlinked native module can't crash import.
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const mod = require("../../../modules/noop-compute") as {
+  const mod = require("../../../modules/hale-compute") as {
     computeFullDayJson: (requestJson: string) => string
   }
   return mod.computeFullDayJson(requestJson)

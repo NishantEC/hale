@@ -1,11 +1,11 @@
 {
-  "name": "noop",
-  "slug": "noop",
-  "scheme": "noop",
+  "name": "Hale",
+  "slug": "hale",
+  "scheme": "hale",
   "version": "1.0.0",
   "orientation": "portrait",
   "userInterfaceStyle": "automatic",
-  "icon": "./assets/logo/noop-icon-light.png",
+  "icon": "./assets/logo/hale-icon-light.png",
   "updates": {
     "fallbackToCacheTimeout": 0
   },
@@ -15,11 +15,11 @@
     "**/*"
   ],
   "android": {
-    "icon": "./assets/logo/noop-icon-android.png",
+    "icon": "./assets/logo/hale-icon-android.png",
     "package": "com.app",
     "adaptiveIcon": {
-      "foregroundImage": "./assets/logo/noop-icon-android-foreground.png",
-      "backgroundImage": "./assets/logo/noop-icon-android-background.png"
+      "foregroundImage": "./assets/logo/hale-icon-android-foreground.png",
+      "backgroundImage": "./assets/logo/hale-icon-android-background.png"
     },
     "allowBackup": false,
     "edgeToEdgeEnabled": true,
@@ -36,18 +36,18 @@
   },
   "ios": {
     "icon": {
-      "light": "./assets/logo/noop-icon-light.png",
-      "dark": "./assets/logo/noop-icon-dark.png",
-      "tinted": "./assets/logo/noop-icon-tinted.png"
+      "light": "./assets/logo/hale-icon-light.png",
+      "dark": "./assets/logo/hale-icon-dark.png",
+      "tinted": "./assets/logo/hale-icon-tinted.png"
     },
     "supportsTablet": false,
-    "bundleIdentifier": "com.noopbase.noop.app",
+    "bundleIdentifier": "com.hale.app",
     "infoPlist": {
-      "NSBluetoothAlwaysUsageDescription": "Noop uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date.",
-      "NSBluetoothPeripheralUsageDescription": "Noop uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date.",
-      "NSHealthShareUsageDescription": "Noop reads steps, workouts, heart rate, sleep, and other Apple Health data so it can blend Apple Watch and iPhone signals with your WHOOP recovery and strain.",
-      "NSHealthUpdateUsageDescription": "Noop writes recovery, strain, sleep stages, and workout data back to Apple Health so other apps can use them.",
-      "NSMotionUsageDescription": "Noop reads iPhone barometer and motion data to detect hill climbs, stair climbing, and other altitude-aware activities the WHOOP strap can't see.",
+      "NSBluetoothAlwaysUsageDescription": "Hale uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date.",
+      "NSBluetoothPeripheralUsageDescription": "Hale uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date.",
+      "NSHealthShareUsageDescription": "Hale reads steps, workouts, heart rate, sleep, and other Apple Health data so it can blend Apple Watch and iPhone signals with your WHOOP recovery and strain.",
+      "NSHealthUpdateUsageDescription": "Hale writes recovery, strain, sleep stages, and workout data back to Apple Health so other apps can use them.",
+      "NSMotionUsageDescription": "Hale reads iPhone barometer and motion data to detect hill climbs, stair climbing, and other altitude-aware activities the WHOOP strap can't see.",
       "UIBackgroundModes": ["bluetooth-central", "processing"],
       "NSSupportsLiveActivities": true,
       "NSSupportsLiveActivitiesFrequentUpdates": true
@@ -69,18 +69,18 @@
           "peripheral",
           "central"
         ],
-        "bluetoothAlwaysPermission": "Noop uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date."
+        "bluetoothAlwaysPermission": "Hale uses Bluetooth to keep your WHOOP strap synced in the background so sleep and recovery data are always up to date."
       }
     ],
     [
       "expo-splash-screen",
       {
-        "image": "./assets/logo/noop-splash-light.png",
+        "image": "./assets/logo/hale-splash-light.png",
         "imageWidth": 220,
         "resizeMode": "contain",
         "backgroundColor": "#fafafa",
         "dark": {
-          "image": "./assets/logo/noop-splash-dark.png",
+          "image": "./assets/logo/hale-splash-dark.png",
           "backgroundColor": "#09090b"
         }
       }
@@ -97,8 +97,8 @@
     [
       "@kingstinct/react-native-healthkit",
       {
-        "NSHealthShareUsageDescription": "Noop reads steps, workouts, heart rate, sleep, and other Apple Health data so it can blend Apple Watch and iPhone signals with your WHOOP recovery and strain.",
-        "NSHealthUpdateUsageDescription": "Noop writes recovery, strain, sleep stages, and workout data back to Apple Health so other apps can use them.",
+        "NSHealthShareUsageDescription": "Hale reads steps, workouts, heart rate, sleep, and other Apple Health data so it can blend Apple Watch and iPhone signals with your WHOOP recovery and strain.",
+        "NSHealthUpdateUsageDescription": "Hale writes recovery, strain, sleep stages, and workout data back to Apple Health so other apps can use them.",
         "background": true
       }
     ],

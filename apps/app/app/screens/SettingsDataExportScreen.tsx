@@ -22,7 +22,7 @@ export const SettingsDataExportScreen: FC = () => {
     try {
       const dump = await buildLocalExport(openDatabase(), windowDays)
       const json = JSON.stringify(dump, null, 2)
-      const fileName = `noop-export-${windowDays}d-${new Date().toISOString().slice(0, 10)}.json`
+      const fileName = `hale-export-${windowDays}d-${new Date().toISOString().slice(0, 10)}.json`
       const fileUri = `${FileSystem.cacheDirectory}${fileName}`
       await FileSystem.writeAsStringAsync(fileUri, json, {
         encoding: FileSystem.EncodingType.UTF8,
@@ -31,7 +31,7 @@ export const SettingsDataExportScreen: FC = () => {
       if (canShare) {
         await Sharing.shareAsync(fileUri, {
           mimeType: "application/json",
-          dialogTitle: `noop export · ${windowDays} days`,
+          dialogTitle: `Hale export · ${windowDays} days`,
           UTI: "public.json",
         })
       } else {
@@ -66,7 +66,7 @@ export const SettingsDataExportScreen: FC = () => {
         }}
       >
         <Text
-          text="Download your noop data as JSON. Contains daily scores, night features, daily metrics, and journal entries for the chosen window. Suitable for piping into a spreadsheet or sharing with a clinician."
+          text="Download your Hale data as JSON. Contains daily scores, night features, daily metrics, and journal entries for the chosen window. Suitable for piping into a spreadsheet or sharing with a clinician."
           style={{ color: colors.textMuted, fontSize: 12, lineHeight: 17, paddingHorizontal: 4 }}
         />
 

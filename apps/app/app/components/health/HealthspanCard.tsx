@@ -32,7 +32,7 @@ export const HealthspanCard: FC<Props> = ({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel={`Healthspan, noop age ${noopAge}, chronological ${chronologicalAge}`}
+      accessibilityLabel={`Healthspan, Hale age ${noopAge}, chronological ${chronologicalAge}`}
       style={({ pressed }) => [
         $card,
         { backgroundColor: colors.surfaceCard },

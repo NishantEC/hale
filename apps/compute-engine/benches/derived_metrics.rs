@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use noop_compute_engine::{
+use hale_compute_engine::{
     derived_metrics::compute_derived_metrics, types::ComputeDerivedMetricsDayRequestV1,
 };
 

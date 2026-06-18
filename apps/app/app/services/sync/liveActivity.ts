@@ -53,7 +53,7 @@ const nativeStart = native?.startActivity
 const nativeUpdate = native?.updateActivity
 const nativeStop = native?.stopActivity
 
-const DEEP_LINK = "noop://sync"
+const DEEP_LINK = "hale://sync"
 
 export type SyncActivityPayload = {
   title: string

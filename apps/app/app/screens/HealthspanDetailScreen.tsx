@@ -291,7 +291,7 @@ const OrbBlock: FC<{
           <Text style={[styles.orbNum, { color: colors.text }]}>
             {assessment ? assessment.noopAge.toFixed(1) : "—"}
           </Text>
-          <Text style={[styles.orbLabel, { color: colors.textDim }]}>NOOP AGE</Text>
+          <Text style={[styles.orbLabel, { color: colors.textDim }]}>HALE AGE</Text>
           <Text style={[styles.orbDelta, { color: accentColor }]}>{deltaText}</Text>
         </View>
       </View>

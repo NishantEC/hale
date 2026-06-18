@@ -1,26 +1,26 @@
-# noop logo masters
+# Hale logo masters
 
-SVG masters for the noop app icon. 1024×1024 viewBox, optically
+SVG masters for the Hale app icon. 1024×1024 viewBox, optically
 centered italic N at weight 500.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `noop-icon-light.svg` | Light appearance — charcoal N on `#fafafa` |
-| `noop-icon-dark.svg`  | Dark appearance — `#fafafa` N on `#09090b` |
-| `noop-icon-tinted.svg` | Tinted appearance — white N on `#09090b`; iOS 18 tints the white from the user's wallpaper |
+| `hale-icon-light.svg` | Light appearance — charcoal N on `#fafafa` |
+| `hale-icon-dark.svg`  | Dark appearance — `#fafafa` N on `#09090b` |
+| `hale-icon-tinted.svg` | Tinted appearance — white N on `#09090b`; iOS 18 tints the white from the user's wallpaper |
 
 All three share identical glyph geometry — only the palette changes.
 
 ## Using these with Apple Icon Composer
 
 1. Open **Icon Composer** (ships with Xcode 16+).
-2. **File → New** → name it `noop` → save inside the project.
+2. **File → New** → name it `hale` → save inside the project.
 3. In the layers panel on the left, you'll see three slots: **Light**,
    **Dark**, **Tinted**.
 4. Drag the matching SVG onto each slot.
-5. **File → Export…** → choose the `apps/app/ios/noop/Images.xcassets/`
+5. **File → Export…** → choose the `apps/app/ios/hale/Images.xcassets/`
    directory. Icon Composer writes a `.icon` bundle that Xcode picks up
    on the next build.
 
@@ -44,7 +44,7 @@ against font availability, convert the `<text>` element to an outlined
 # Inkscape:  Path → Object to Path
 ```
 
-Save the outlined version alongside as `noop-icon-*.outlined.svg`.
+Save the outlined version alongside as `hale-icon-*.outlined.svg`.
 
 ## Color tokens
 

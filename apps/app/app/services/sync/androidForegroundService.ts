@@ -12,7 +12,7 @@ const TASK_INTERVAL_MS = 30_000
 
 const options = {
   taskName: "noop-strap-sync",
-  taskTitle: "Noop is syncing your strap",
+  taskTitle: "Hale is syncing your strap",
   taskDesc: "Keeping your sleep and recovery data up to date",
   taskIcon: { name: "ic_launcher", type: "mipmap" },
   linkingURI: "app://",

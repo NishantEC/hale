@@ -1,7 +1,7 @@
-# noop
+# Hale
 
 A local-first, open-source health and recovery tracker for the **WHOOP 4.0**
-strap. noop talks to the strap directly over Bluetooth, decodes its sensor
+strap. Hale talks to the strap directly over Bluetooth, decodes its sensor
 stream, and computes sleep, recovery, strain, and related metrics **entirely
 on-device** — no account, no cloud, no subscription, no server.
 
@@ -48,11 +48,11 @@ npx expo run:ios --device "<your-device-udid>" --configuration Release
 ### Native compute module (iOS)
 
 The on-device compute lives in `apps/compute-engine` (Rust). Its iOS bindings —
-the UniFFI-generated Swift glue and the `NoopComputeFFI.xcframework` (a ~44 MB
+the UniFFI-generated Swift glue and the `HaleComputeFFI.xcframework` (a ~44 MB
 prebuilt static library) — are **generated build artifacts and are not
 committed to the repo**. Generate them from the `apps/compute-engine` crate via
 UniFFI before your first iOS build; the output is consumed from
-`apps/app/modules/noop-compute/ios/`.
+`apps/app/modules/hale-compute/ios/`.
 
 ## License
 

@@ -1,5 +1,5 @@
 use chrono::{DateTime, SecondsFormat, Utc};
-use noop_compute_engine::calendar::{add_days_to_date_key, calendar_day_bounds, calendar_day_key};
+use hale_compute_engine::calendar::{add_days_to_date_key, calendar_day_bounds, calendar_day_key};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
