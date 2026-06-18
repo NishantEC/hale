@@ -1,17 +1,23 @@
+import * as schema from "../../app/services/db/schema"
 import { setActiveUserId } from "../../app/services/db/session"
 import {
   insertDeviceEvent,
   insertRealtimeSample,
   insertConsoleLog,
 } from "../../app/services/db/repositories/telemetry"
-import { queueDepth } from "../../app/services/db/repositories/outboundQueue"
+import type { NoopDatabase } from "../../app/services/db"
 import { makeTestDb } from "./helpers"
+
+// Bridge the better-sqlite3 test driver to the op-sqlite production type.
+function testDb(): NoopDatabase {
+  return makeTestDb() as unknown as NoopDatabase
+}
 
 describe("telemetry repositories", () => {
   beforeEach(() => setActiveUserId("u"))
 
-  it("each insert enqueues an uplink", async () => {
-    const db = makeTestDb() as any
+  it("each insert writes a local mirror row (serverless: no outbound forwarding)", async () => {
+    const db = testDb()
     await insertDeviceEvent(db, {
       id: "e1",
       deviceId: "d1",
@@ -38,6 +44,11 @@ describe("telemetry repositories", () => {
       metadata: null,
       capturedAt: 1000,
     })
-    expect(await queueDepth(db)).toBe(3)
+
+    expect(await db.select().from(schema.deviceEvents)).toHaveLength(1)
+    expect(await db.select().from(schema.realtimeSamples)).toHaveLength(1)
+    expect(await db.select().from(schema.consoleLogs)).toHaveLength(1)
+    // Nothing is forwarded to a server, so the outbound queue stays empty.
+    expect(await db.select().from(schema.outboundQueue)).toHaveLength(0)
   })
 })

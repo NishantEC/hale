@@ -1,7 +1,6 @@
-import { HistoricalRecord } from '../ble/packet-types';
 import { recordApiFailure, type ApiFailureKind } from '../sync/syncTelemetry';
 
-const DEFAULT_BASE_URL = 'https://api.noop.enform.co';
+const DEFAULT_BASE_URL = 'http://localhost:3009';
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   process.env.EXPO_PUBLIC_BACKEND_URL ||
@@ -49,12 +48,7 @@ function releaseRequestSlot(): void {
 // request can easily push past 20s. Bumped per-endpoint so fast CRUD paths
 // still surface stalls quickly.
 const VIEW_TIMEOUT_MS = 45000;
-// Bulk uploads (HealthKit batches, raw record ingest) ship up to a few MB of
-// JSON and gate on a server-side insert. 60s leaves room for backpressure
-// without hiding genuinely broken endpoints.
-const BULK_UPLOAD_TIMEOUT_MS = 60000;
 const PIPELINE_TIMEOUT_MS = 300000;
-export const INSPECTOR_WEB_URL = process.env.EXPO_PUBLIC_INSPECTOR_URL || 'https://noop.enform.co';
 
 let sessionToken: string | null = null;
 
@@ -370,155 +364,6 @@ export interface SleepPlanInput {
   smartWakeEnabled: boolean;
 }
 
-export interface DebugOverview {
-  selectedDate: string;
-  selectedDateTitle: string;
-  selectedDateSubtitle: string;
-  selectedNightDate: string | null;
-  selectionMode: 'exactMatch' | 'fallbackToLatestCompletedNight' | 'noNightAvailable';
-  selectionReason: string;
-  counts: {
-    rawRecordCount: number;
-    sleepDetectionCount: number;
-    sleepStageCount: number;
-    dailyScoreCount: number;
-    dailyMetricCount: number;
-    selectedDayRawRecordCount: number;
-  };
-  earliestRawTimestamp: string | null;
-  latestRawTimestamp: string | null;
-  // When the newest raw_sensor_record row was upserted on the backend. This
-  // can be fresh (~minutes ago) while latestRawTimestamp is stale (days ago)
-  // when the drainer is filling earlier-strap-time gaps. LiveMonitor uses the
-  // skew between the two to tell "actually silent" from "catching up backlog."
-  latestRawUpdatedAt: string | null;
-  latestSyncMetadata: {
-    lastRawRecordAt: string | null;
-    lastSleepPlanUpdateAt: string | null;
-    plannerConfigured: boolean;
-  };
-  selectedEntities: {
-    detectionId: string | null;
-    stageId: string | null;
-    featureId: string | null;
-    epochTimelineCount: number;
-  };
-  lastPipelineRunStatus: string;
-  viewSummary: {
-    home: {
-      title: string;
-      headline: string;
-      recommendation: string;
-    };
-    sleep: {
-      title: string;
-      isEmpty: boolean;
-      bedtime: string;
-      wakeTime: string;
-    };
-  };
-  latestSignalSampleAt: string | null;
-  recentNights: Array<{
-    nightDate: string;
-    hasDetection: boolean;
-    rawRecordCount: number;
-  }>;
-  todayCoverageMinutes: number;
-}
-
-export interface DebugSleepNight {
-  selectedDate: string;
-  selectedNightDate: string | null;
-  selectionMode: 'exactMatch' | 'fallbackToLatestCompletedNight' | 'noNightAvailable';
-  selectionReason: string;
-  selectedDetection: {
-    id: string;
-    nightDate: string;
-    bedtime: string | null;
-    wakeTime: string | null;
-    durationHours: number;
-    interruptionCount: number;
-    continuity: number;
-    regularity: number;
-    validCoverage: number;
-    confidence: number;
-  } | null;
-  selectedStage: {
-    id: string;
-    nightDate: string;
-    remMinutes: number;
-    coreMinutes: number;
-    deepMinutes: number;
-    awakeMinutes: number;
-    unknownMinutes: number;
-    confidence: number;
-    source: string;
-    epochMinutes: number;
-  } | null;
-  selectedNightFeature: {
-    id: string;
-    nightDate: string;
-    restingHeartRate: number;
-    rmssd: number;
-    sdnn: number;
-    respiratoryRate: number;
-    continuity: number;
-    regularity: number;
-    validCoverage: number;
-    confidenceRaw: number;
-    sleepEstimateHours: number;
-    sourceBlend: string;
-  } | null;
-  stageTotals: {
-    remMinutes: number;
-    lightMinutes: number;
-    deepMinutes: number;
-    awakeMinutes: number;
-    unknownMinutes: number;
-  } | null;
-  epochTimelineCount: number;
-  epochTimeline: Array<{
-    timestamp: string;
-    stage: string;
-  }>;
-}
-
-export interface DebugRawRecords {
-  selectedDate: string;
-  startTimestamp: string;
-  endTimestamp: string;
-  count: number;
-  rows: Array<{
-    id: string;
-    timestamp: string;
-    heartRate: number;
-    rrAverageMs: number | null;
-    skinContact: boolean | null;
-    gravityMagnitude: number | null;
-    gravityX: number | null;
-    gravityY: number | null;
-    gravityZ: number | null;
-    respRateRaw: number | null;
-    spo2Red: number | null;
-    spo2IR: number | null;
-    skinTempRaw: number | null;
-  }>;
-}
-
-export interface DebugPipelineResults {
-  rawRecordCount: number;
-  earliestRawTimestamp: string | null;
-  latestRawTimestamp: string | null;
-  results: PipelineResults;
-}
-
-export interface DebugViewsRecompute {
-  selectedDate: string;
-  homeView: HomeViewModel;
-  sleepView: SleepViewModel;
-  overview: DebugOverview;
-}
-
 function clearSession() {
   sessionToken = null
   sessionClearedCallback?.()
@@ -808,65 +653,6 @@ export function isTransientApiError(err: unknown): boolean {
   return false;
 }
 
-export class AuthError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly code: string | null,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'AuthError';
-  }
-}
-
-async function readAuthErrorBody(res: Response): Promise<{ code: string | null; message: string }> {
-  try {
-    const data = (await res.json()) as { code?: string; message?: string };
-    return {
-      code: data.code ?? null,
-      message: data.message ?? `HTTP ${res.status}`,
-    };
-  } catch {
-    return { code: null, message: `HTTP ${res.status}` };
-  }
-}
-
-export async function register(email: string, password: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/api/auth/sign-up/email`, {
-    method: 'POST',
-    headers: withBaseHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ email, password, name: email }),
-  })
-  if (!res.ok) {
-    const { code, message } = await readAuthErrorBody(res)
-    throw new AuthError(res.status, code, message)
-  }
-  const data = await res.json()
-  if (!data?.token) {
-    throw new AuthError(res.status, 'NO_TOKEN', 'Sign-up succeeded but the server returned no token.')
-  }
-  sessionToken = data.token
-  return data.token
-}
-
-export async function login(email: string, password: string): Promise<string> {
-  const res = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
-    method: 'POST',
-    headers: withBaseHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ email, password }),
-  })
-  if (!res.ok) {
-    const { code, message } = await readAuthErrorBody(res)
-    throw new AuthError(res.status, code, message)
-  }
-  const data = await res.json()
-  if (!data?.token) {
-    throw new AuthError(res.status, 'NO_TOKEN', 'Sign-in succeeded but the server returned no token.')
-  }
-  sessionToken = data.token
-  return data.token
-}
-
 export async function apiGet(path: string, timeoutMs = REQUEST_TIMEOUT_MS) {
   return requestJson(path, {
     headers: withBaseHeaders({ Authorization: `Bearer ${sessionToken}` }),
@@ -876,28 +662,6 @@ export async function apiGet(path: string, timeoutMs = REQUEST_TIMEOUT_MS) {
 export async function apiPost(path: string, body: any, timeoutMs = REQUEST_TIMEOUT_MS) {
   return requestJson(path, {
     method: 'POST',
-    headers: withBaseHeaders({
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sessionToken}`,
-    }),
-    body: JSON.stringify(body),
-  }, timeoutMs);
-}
-
-export async function apiPut(path: string, body: any, timeoutMs = REQUEST_TIMEOUT_MS) {
-  return requestJson(path, {
-    method: 'PUT',
-    headers: withBaseHeaders({
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sessionToken}`,
-    }),
-    body: JSON.stringify(body),
-  }, timeoutMs);
-}
-
-export async function apiPatch(path: string, body: any, timeoutMs = REQUEST_TIMEOUT_MS) {
-  return requestJson(path, {
-    method: 'PATCH',
     headers: withBaseHeaders({
       'Content-Type': 'application/json',
       Authorization: `Bearer ${sessionToken}`,
@@ -918,60 +682,6 @@ export interface PipelineResults {
   sleepPlan: any | null;
   typicalRanges: any | null;
   journalCorrelations: any[];
-}
-
-export async function ingestHistoricalRecords(records: HistoricalRecord[]): Promise<{ signalSamples: number; sensorRecords: number }> {
-  const BATCH_SIZE = 500;
-  let totalSignal = 0;
-  let totalSensor = 0;
-
-  for (let i = 0; i < records.length; i += BATCH_SIZE) {
-    const batch = records.slice(i, i + BATCH_SIZE);
-    const payload = {
-      signalSamples: batch.map(r => ({
-        timestamp: r.timestamp.toISOString(),
-        source: "strap-history",
-        heartRate: r.heartRate,
-        ibiMs: r.rrIntervals.length > 0
-          ? r.rrIntervals.reduce((a, b) => a + b, 0) / r.rrIntervals.length
-          : null,
-        motionScore: null,
-        qualityScore: r.skinContact ? 1 : 0,
-      })),
-      historicalSensorRecords: batch.map(r => {
-        const hasGravity = r.gravityX != null && r.gravityY != null && r.gravityZ != null;
-        return {
-          timestamp: r.timestamp.toISOString(),
-          heartRate: r.heartRate,
-          rrAverageMs: r.rrIntervals.length > 0
-            ? r.rrIntervals.reduce((a, b) => a + b, 0) / r.rrIntervals.length
-            : null,
-          spo2Red: r.spo2Red,
-          spo2IR: r.spo2IR,
-          skinTempRaw: r.skinTempRaw,
-          gravityMagnitude: hasGravity
-            ? Math.sqrt(r.gravityX! ** 2 + r.gravityY! ** 2 + r.gravityZ! ** 2)
-            : null,
-          gravityX: r.gravityX,
-          gravityY: r.gravityY,
-          gravityZ: r.gravityZ,
-          respRateRaw: r.respRateRaw,
-          skinContact: r.skinContact,
-          ppgGreen: r.ppgGreen,
-          ppgRedIr: r.ppgRedIr,
-          ambientLight: r.ambientLight,
-          ledDrive1: r.ledDrive1,
-          ledDrive2: r.ledDrive2,
-          signalQuality: r.signalQuality,
-        };
-      }),
-    };
-    const result = await apiPost('/pipeline/ingest', payload, BULK_UPLOAD_TIMEOUT_MS);
-    totalSignal += result?.signalSamples ?? 0;
-    totalSensor += result?.sensorRecords ?? 0;
-  }
-
-  return { signalSamples: totalSignal, sensorRecords: totalSensor };
 }
 
 export type PipelineRunStatus = 'queued' | 'running' | 'succeeded' | 'failed';
@@ -1077,30 +787,6 @@ export async function runPipeline(): Promise<{ ok: boolean; computed: any }> {
   };
 }
 
-export async function fetchResults(): Promise<PipelineResults> {
-  return apiGet('/pipeline/results', VIEW_TIMEOUT_MS);
-}
-
-export async function fetchHomeView(date: string): Promise<HomeViewModel> {
-  return apiGet(
-    withDeviceTimeZone(`/views/home?date=${encodeURIComponent(date)}`),
-    VIEW_TIMEOUT_MS,
-  );
-}
-
-export async function confirmActivity(
-  id: string,
-  confirmedType?: string,
-): Promise<{ ok: boolean }> {
-  return apiPost(`/activities/${encodeURIComponent(id)}/confirm`, {
-    confirmedType,
-  });
-}
-
-export async function dismissActivity(id: string): Promise<{ ok: boolean }> {
-  return apiPost(`/activities/${encodeURIComponent(id)}/dismiss`, {});
-}
-
 export interface ActivityBoutDetail {
   id: string;
   startTime: string;
@@ -1117,28 +803,6 @@ export interface ActivityBoutDetail {
   zonePercents: number[];
   zoneMinutes: number[];
   motionIntensity?: number[];
-}
-
-export async function fetchActivityBout(id: string): Promise<ActivityBoutDetail> {
-  return apiGet(`/activities/${encodeURIComponent(id)}`);
-}
-
-export async function deleteActivity(id: string): Promise<{ ok: boolean }> {
-  return requestJson(
-    `/activities/${encodeURIComponent(id)}`,
-    {
-      method: "DELETE",
-      headers: withBaseHeaders({ Authorization: `Bearer ${sessionToken}` }),
-    },
-    REQUEST_TIMEOUT_MS,
-  );
-}
-
-export async function fetchSleepView(date: string): Promise<SleepViewModel> {
-  return apiGet(
-    withDeviceTimeZone(`/views/sleep?date=${encodeURIComponent(date)}`),
-    VIEW_TIMEOUT_MS,
-  );
 }
 
 export interface TrendsViewModel {
@@ -1161,26 +825,10 @@ export interface TrendsViewModel {
   };
 }
 
-export async function fetchTrendsView(days: number = 30): Promise<TrendsViewModel> {
-  return apiGet(`/views/trends?days=${days}`, VIEW_TIMEOUT_MS);
-}
-
 export type CoverageKind = 'full' | 'partial' | 'none';
 
 export interface CoverageResponse {
   days: Array<{ date: string; coverage: CoverageKind }>;
-}
-
-export async function fetchCoverage(
-  fromMonth: string,
-  toMonth: string,
-): Promise<CoverageResponse> {
-  return apiGet(
-    withDeviceTimeZone(
-      `/views/coverage?from=${encodeURIComponent(fromMonth)}&to=${encodeURIComponent(toMonth)}`,
-    ),
-    VIEW_TIMEOUT_MS,
-  );
 }
 
 export interface HealthContributor {
@@ -1222,157 +870,6 @@ export interface HealthViewModel {
   needsDateOfBirth: boolean;
 }
 
-export async function fetchHealthView(week?: string): Promise<HealthViewModel> {
-  const qs = week ? `?week=${encodeURIComponent(week)}` : '';
-  return apiGet(`/views/health${qs}`, VIEW_TIMEOUT_MS);
-}
-
-export async function fetchProfile(): Promise<UserProfileData> {
-  return apiGet('/profile');
-}
-
-export async function updateProfile(patch: Partial<UserProfileData>): Promise<UserProfileData> {
-  return apiPut('/profile', patch);
-}
-
-export async function updateSleepPlan(input: SleepPlanInput): Promise<{ ok: boolean; sleepView: SleepViewModel }> {
-  return apiPut('/views/sleep-plan', input);
-}
-
-export interface HealthkitSyncPayload {
-  summaries?: Array<{
-    dayDate: string;
-    steps?: number | null;
-    activeEnergyKcal?: number | null;
-    exerciseMinutes?: number | null;
-    standMinutes?: number | null;
-    walkingDistanceMeters?: number | null;
-    flightsClimbed?: number | null;
-    restingHeartRate?: number | null;
-    hrvSdnnMs?: number | null;
-    oxygenSaturationAverage?: number | null;
-    respiratoryRateAverage?: number | null;
-  }>;
-  workouts?: Array<{
-    uuid: string;
-    activityName: string;
-    startDate: string;
-    endDate: string;
-    durationMinutes: number;
-    totalEnergyKcal?: number | null;
-    totalDistanceMeters?: number | null;
-    averageHeartRate?: number | null;
-    source?: string | null;
-  }>;
-}
-
-export async function pushHealthkitSync(
-  payload: HealthkitSyncPayload,
-): Promise<{ ok: boolean; summariesUpserted: number; workoutsUpserted: number }> {
-  return apiPost('/healthkit/sync', payload, BULK_UPLOAD_TIMEOUT_MS);
-}
-
-export interface BarometerSamplePayload {
-  samples: Array<{
-    timestamp: string;
-    pressureHpa: number;
-    relativeAltitudeMeters: number | null;
-  }>;
-}
-
-export async function pushBarometerSamples(
-  payload: BarometerSamplePayload,
-): Promise<{ ok: boolean; inserted: number }> {
-  return apiPost('/healthkit/barometer', payload, BULK_UPLOAD_TIMEOUT_MS);
-}
-
-export interface MotionActivityPayload {
-  samples: Array<{
-    timestamp: string;
-    activity: 'stationary' | 'walking' | 'running' | 'automotive' | 'cycling' | 'unknown';
-    confidence: 'low' | 'medium' | 'high';
-  }>;
-}
-
-export async function pushMotionActivity(
-  payload: MotionActivityPayload,
-): Promise<{ ok: boolean; inserted: number }> {
-  return apiPost('/healthkit/motion-activity', payload, BULK_UPLOAD_TIMEOUT_MS);
-}
-
-export async function fetchDebugOverview(date: string): Promise<DebugOverview> {
-  return apiGet(
-    withDeviceTimeZone(`/debug/overview?date=${encodeURIComponent(date)}`),
-    VIEW_TIMEOUT_MS,
-  );
-}
-
-export async function fetchDebugRawRecords(date: string, limit = 120): Promise<DebugRawRecords> {
-  return apiGet(
-    withDeviceTimeZone(`/debug/raw-records?date=${encodeURIComponent(date)}&limit=${limit}`),
-    VIEW_TIMEOUT_MS,
-  );
-}
-
-export async function fetchDebugSleepNight(date: string): Promise<DebugSleepNight> {
-  return apiGet(
-    withDeviceTimeZone(`/debug/sleep-night?date=${encodeURIComponent(date)}`),
-    VIEW_TIMEOUT_MS,
-  );
-}
-
-export async function fetchDebugPipelineResults(): Promise<DebugPipelineResults> {
-  return apiGet('/debug/pipeline-results', VIEW_TIMEOUT_MS);
-}
-
-export async function runDebugPipeline(date: string): Promise<{
-  runResult:
-    | { ok: boolean; computed: Record<string, number>; skipped?: undefined }
-    | { ok: boolean; skipped: 'no-new-input'; computed?: undefined };
-  overview: DebugOverview;
-}> {
-  return apiPost(
-    withDeviceTimeZone(`/debug/pipeline/run?date=${encodeURIComponent(date)}`),
-    {},
-    PIPELINE_TIMEOUT_MS,
-  );
-}
-
-export type DebugHourlyCoverage = {
-  hours: number
-  generatedAt: string
-  series: Array<{ hourStartUtc: string; rows: number }>
-}
-
-export async function fetchDebugHourlyCoverage(hours = 12): Promise<DebugHourlyCoverage> {
-  return apiGet(`/debug/hourly-coverage?hours=${hours}`, VIEW_TIMEOUT_MS)
-}
-
-export async function fetchDebugPipelineRuns(limit = 30): Promise<{
-  count: number;
-  stageMedians: Record<string, number>;
-  runs: Array<{
-    id: string;
-    startedAt: string;
-    durationMs: number;
-    skipped: boolean;
-    stages: Record<string, number> | null;
-    detections: number;
-    sleepStages: number;
-    features: number;
-  }>;
-}> {
-  return apiGet(`/debug/pipeline-runs?limit=${limit}`, VIEW_TIMEOUT_MS);
-}
-
-export async function recomputeDebugViews(date: string): Promise<DebugViewsRecompute> {
-  return apiPost(
-    withDeviceTimeZone(`/debug/views/recompute?date=${encodeURIComponent(date)}`),
-    {},
-    VIEW_TIMEOUT_MS,
-  );
-}
-
 // Journal CRUD
 
 export interface JournalEntryResponse {
@@ -1382,22 +879,6 @@ export interface JournalEntryResponse {
   note: string;
   timestamp: string;
   createdAt: string;
-}
-
-export async function createJournalEntry(entry: {
-  factorTag: string;
-  intensity: number;
-  note?: string;
-  timestamp?: string;
-}): Promise<JournalEntryResponse> {
-  return apiPost('/journal', {
-    ...entry,
-    timestamp: entry.timestamp ?? new Date().toISOString(),
-  });
-}
-
-export async function fetchJournalEntries(date: string): Promise<{ entries: JournalEntryResponse[] }> {
-  return apiGet(`/journal?date=${encodeURIComponent(date)}`);
 }
 
 export type InsightMetric = 'sleep' | 'recovery' | 'hrv' | 'strain';
@@ -1430,60 +911,3 @@ export interface InsightsViewModel {
   insights: MetricInsights[];
 }
 
-export async function fetchInsights(windowDays: number = 30): Promise<InsightsViewModel> {
-  return apiGet(`/journal/insights?windowDays=${windowDays}`);
-}
-
-export interface ServerPreferences {
-  notifications: {
-    recoveryDrop: boolean;
-    sleepBedtimeReminder: boolean;
-    morningSummary: boolean;
-    strapBatteryLow: boolean;
-    weeklyDigest: boolean;
-  };
-  goals: {
-    sleepTargetMinutes: number;
-    strainTargetDaily: number;
-    activeMinutesDaily: number;
-  };
-  metrics: {
-    showHealthspan: boolean;
-    showStress: boolean;
-    showHrv: boolean;
-    showRespiratoryRate: boolean;
-  };
-  journal: {
-    morningReminder: boolean;
-    eveningReminder: boolean;
-  };
-}
-
-export type ServerPreferencesPatch = {
-  [K in keyof ServerPreferences]?: Partial<ServerPreferences[K]>;
-};
-
-export async function fetchPreferences(): Promise<ServerPreferences> {
-  return apiGet(`/preferences`);
-}
-
-export async function patchPreferences(patch: ServerPreferencesPatch): Promise<ServerPreferences> {
-  return apiPatch(`/preferences`, patch);
-}
-
-// Telemetry ingestion
-
-export async function ingestDeviceEvents(events: any[]): Promise<{ count: number }> {
-  return apiPost('/telemetry/events', { events });
-}
-
-export async function ingestRealtimeSamples(samples: any[]): Promise<{ count: number }> {
-  return apiPost('/telemetry/realtime', { samples });
-}
-
-export async function deleteJournalEntry(id: string): Promise<{ ok: boolean }> {
-  return requestJson(`/journal/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-    headers: withBaseHeaders({ Authorization: `Bearer ${sessionToken}` }),
-  });
-}

@@ -13,8 +13,8 @@ struct Fixture {
 
 #[test]
 fn golden_parity() {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../backend/.fixtures/compute-engine-golden");
+    let dir =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/compute-engine-golden");
     let mut total = 0;
     let mut failed: Vec<String> = vec![];
     for entry in fs::read_dir(&dir).unwrap() {

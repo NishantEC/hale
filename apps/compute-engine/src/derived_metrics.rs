@@ -19,7 +19,7 @@ use crate::math::{
     strain::strain_score,
     stress::stress_points,
 };
-use crate::types::{ComputeDerivedMetricsDayRequestV1, PersistedDailyMetricV1};
+use crate::types::{ComputeDerivedMetricsDayRequestV1, DesaturationScope, PersistedDailyMetricV1};
 
 #[derive(Debug, Error)]
 pub enum ComputeError {
@@ -136,9 +136,35 @@ pub fn compute_derived_metrics(
             sleep_consistency_score_from_night_features(&req.night_features, reference_date)
         });
 
-    // Advanced metrics
-    let desat = if spo2_series.len() >= 30 {
-        detect_desaturation_events(&spo2_series)
+    // Advanced metrics — scope SpO₂ input for desaturation detection.
+    let desat_input = match req.desaturation_scope {
+        DesaturationScope::ReferenceNight => {
+            // Use the most recent detection with a valid [bedtime, wake_time)
+            // window — the reference day's own night may not exist yet, so the
+            // latest completed night is the relevant one (mirrors how recovery
+            // uses the latest detection). Degenerate rows (bedtime == wake_time,
+            // e.g. a midnight-fallback) are skipped. If that night's SpO₂ slice
+            // is too thin (its window falls outside the loaded raw window), fall
+            // back to the calendar-day window so the metric stays non-degenerate.
+            let night = req
+                .sleep_detections
+                .iter()
+                .filter(|d| d.wake_time > d.bedtime)
+                .max_by_key(|d| d.night_date);
+            let night_slice: &[_] = match night {
+                Some(det) => slice_by_timestamp(&spo2_series, det.bedtime, det.wake_time),
+                None => &[],
+            };
+            if night_slice.len() >= 30 {
+                night_slice
+            } else {
+                slice_by_timestamp(&spo2_series, day_start, day_end)
+            }
+        }
+        DesaturationScope::Window => spo2_series.as_slice(),
+    };
+    let desat = if desat_input.len() >= 30 {
+        detect_desaturation_events(desat_input)
     } else {
         None
     };

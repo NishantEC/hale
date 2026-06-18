@@ -16,7 +16,6 @@ import { buildEvents, EventsCard } from "@/components/Inspector/EventsCard"
 import { AckResponsesCard } from "@/components/Inspector/AckResponsesCard"
 import { DbSnapshotCard } from "@/components/Inspector/DbSnapshotCard"
 import { ExpertActions } from "@/components/Inspector/ExpertActions"
-import { LocalVsBackendCard } from "@/components/Inspector/LocalVsBackendCard"
 import { HealthStrip } from "@/components/Inspector/HealthStrip"
 import { LogsCard } from "@/components/Inspector/LogsCard"
 import { SyncProgressCard } from "@/components/Inspector/SyncProgressCard"
@@ -25,41 +24,26 @@ import { Text } from "@/components/Text"
 import { useBle } from "@/context/BleContext"
 import { useSyncIsRunning } from "@/stores/syncStore"
 import { useDashboard } from "@/context/DashboardContext"
-import { useOutboundQueueStats } from "@/hooks/useOutboundQueueStats"
-import {
-  apiPost,
-  DebugOverview,
-  fetchDebugOverview,
-  fetchDebugPipelineRuns,
-  INSPECTOR_WEB_URL,
-  runDebugPipeline,
-} from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
-import { purgeOutboundQueue } from "@/services/db/repositories/outboundQueue"
+import { peekActiveUserId } from "@/services/db/session"
+import { getRawCoverageForDay } from "@/services/db/repositories/rawSensorRecord"
+import { runDeviceComputeForDay } from "@/services/compute/runDeviceCompute"
 import {
   DEFAULT_INTERVAL_MS,
   getContinuousSyncStats,
 } from "@/services/sync/continuousSyncDaemon"
-import { runForceUpload } from "@/services/sync/forceUpload"
 import {
   getSyncTelemetry,
   recordPipelineRun,
   subscribeSyncTelemetry,
 } from "@/services/sync/syncTelemetry"
 import { LOCAL_THEME } from "@/utils/localTheme"
-import { openLinkInBrowser } from "@/utils/openLinkInBrowser"
 
 // Earliest timestamp confirmed in the GetDataRange response (offset 35
 // of the 69-byte payload): 2026-05-05 23:25:47 UTC. The strap reports
 // data on flash back to this point, so this is the rewind target until
 // we have a date picker.
 const REWIND_TARGET_UNIX_TS = 1778025947
-
-function tsMs(iso: string | null | undefined): number | null {
-  if (!iso) return null
-  const t = new Date(iso).getTime()
-  return Number.isNaN(t) ? null : t
-}
 
 export const DebugInspectorScreen: FC = () => {
   const { colors } = LOCAL_THEME
@@ -76,10 +60,12 @@ export const DebugInspectorScreen: FC = () => {
     whoopsiInitThenForceTrim,
   } = ble
 
-  const queueStats = useOutboundQueueStats()
   const { expert, handleLongPress } = useExpertMode()
 
-  const [overview, setOverview] = useState<DebugOverview | null>(null)
+  const [coverage, setCoverage] = useState<{
+    latestTimestampMs: number | null
+    coverageMinutes: number
+  }>({ latestTimestampMs: null, coverageMinutes: 0 })
   const [error, setError] = useState<string | null>(null)
   const [banner, setBanner] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -108,17 +94,14 @@ export const DebugInspectorScreen: FC = () => {
     setIsLoading(true)
     setError(null)
     try {
-      const nextOverview = await fetchDebugOverview(selectedDate)
-      setOverview(nextOverview)
-    } catch (nextError: any) {
-      setError(nextError?.message || "Failed to load sync inspector data.")
+      const db = openDatabase()
+      const [y, m, d] = selectedDate.split("-").map(Number)
+      const dayStartMs = new Date(y, m - 1, d).getTime()
+      setCoverage(await getRawCoverageForDay(db, dayStartMs))
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to load inspector data.")
     } finally {
       setIsLoading(false)
-    }
-    try {
-      await fetchDebugPipelineRuns(1)
-    } catch {
-      /* swallow */
     }
   }, [selectedDate])
 
@@ -134,71 +117,29 @@ export const DebugInspectorScreen: FC = () => {
     setBanner("Mobile sync completed.")
   }, [refreshDashboard, refreshInspector, syncNow])
 
-  const handleClearQueue = useCallback(async () => {
-    try {
-      const db = openDatabase()
-      const purged = await purgeOutboundQueue(db)
-      setBanner(`Cleared ${purged} queue rows.`)
-      await refreshInspector()
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to clear queue")
-    }
-  }, [refreshInspector])
-
-  const handleForceUpload = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
-    setBanner(null)
-    try {
-      const db = openDatabase()
-      const result = await runForceUpload(db, {
-        post: (tableName, payloads) =>
-          apiPost(`/pipeline/ingest-table`, { tableName, rows: payloads }, 60_000),
-        onProgress: (progress) => {
-          setBanner(
-            `Uploading ${progress.tableName} (${progress.batchSize})… ${progress.uploaded}/${progress.total}`,
-          )
-        },
-      })
-      if (result.depthAfter === 0 && result.uploaded === 0 && !result.error) {
-        setBanner("Queue empty — nothing to upload.")
-      } else if (result.error) {
-        setError(`Upload failed after ${result.uploaded}: ${result.error}`)
-      } else {
-        const resurrectedBit = result.resurrected > 0 ? ` (resurrected ${result.resurrected})` : ""
-        setBanner(
-          `Uploaded ${result.uploaded}. ${result.depthAfter} queued. ${result.deadCount} dead${resurrectedBit}.`,
-        )
-      }
-    } catch (err: any) {
-      setError(err?.message ?? "Upload failed")
-    } finally {
-      setIsLoading(false)
-      await refreshInspector()
-    }
-  }, [refreshInspector])
-
   const handleRunPipeline = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     const started = Date.now()
     try {
-      const result = await runDebugPipeline(selectedDate)
-      recordPipelineRun(started, Date.now() - started)
-      const computed = result.runResult?.computed
-      if (computed) {
-        setBanner(
-          `Pipeline reran. Detections ${computed.sleepDetections ?? 0}, stages ${computed.sleepStages ?? 0}.`,
-        )
-      } else if (result.runResult?.skipped) {
-        setBanner("Pipeline skipped — no new input.")
-      } else {
-        setBanner("Pipeline finished.")
+      const userId = peekActiveUserId()
+      if (!userId) {
+        setError("No active user — cannot run compute.")
+        return
       }
+      const db = openDatabase()
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      const ok = await runDeviceComputeForDay(db, userId, selectedDate, tz)
+      recordPipelineRun(started, Date.now() - started)
+      setBanner(
+        ok
+          ? "Local compute reran for the selected day."
+          : "No input to compute for the selected day.",
+      )
       await refreshDashboard()
       await refreshInspector()
-    } catch (nextError: any) {
-      setError(nextError?.message || "Pipeline rerun failed.")
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Local compute failed.")
     } finally {
       setIsLoading(false)
     }
@@ -325,19 +266,8 @@ export const DebugInspectorScreen: FC = () => {
     },
   })
 
-  const coveragePercent =
-    overview?.todayCoverageMinutes != null
-      ? Math.min(100, Math.max(0, (overview.todayCoverageMinutes / 1440) * 100))
-      : 0
-
-  const lastSyncAt = tsMs(overview?.latestRawUpdatedAt ?? null)
-  const lastStreamAt = tsMs(overview?.latestSignalSampleAt ?? null)
-
-  // Treat 2+ apiFailures within last 5 min as "consecutive" for chip purposes.
-  const consecutiveApiFailures = (() => {
-    const recent = telemetry.apiFailures.filter((f) => nowMs - f.at < 5 * 60_000)
-    return recent.length
-  })()
+  const coveragePercent = Math.min(100, Math.max(0, (coverage.coverageMinutes / 1440) * 100))
+  const lastStreamAt = coverage.latestTimestampMs
 
   const strapConn: "ready" | "connecting" | "disconnected" =
     ble.connectionState === "ready"
@@ -420,13 +350,6 @@ export const DebugInspectorScreen: FC = () => {
             nowMs,
             appErrorsLast5min: 0,
           }}
-          backend={{
-            queueDepth: queueStats.depth ?? 0,
-            queueDead: queueStats.deadCount ?? 0,
-            lastSyncAt,
-            consecutiveApiFailures,
-            nowMs,
-          }}
           coveragePercent={coveragePercent}
           onTapPhone={() => setDrilldownOpen((v) => !v)}
         />
@@ -459,24 +382,18 @@ export const DebugInspectorScreen: FC = () => {
 
         <ActionsRow
           isSyncing={isSyncing}
-          queueDepth={queueStats.depth ?? 0}
           onSync={handleSync}
           onRefresh={() => void refreshInspector()}
-          onClearQueue={handleClearQueue}
-          onForceUpload={handleForceUpload}
         />
 
         {expert ? <AckResponsesCard /> : null}
 
         {expert ? <DbSnapshotCard /> : null}
 
-        {expert ? <LocalVsBackendCard /> : null}
-
         {expert ? (
           <ExpertActions
             onProbeRange={handleProbeDataRange}
             onRunPipeline={handleRunPipeline}
-            onOpenWebInspector={() => openLinkInBrowser(INSPECTOR_WEB_URL)}
             onRewindTs={() => handleRewind("ts")}
             onRewindAck={() => handleRewind("ack")}
             onRewindBare={() => handleRewind("bare")}
@@ -488,7 +405,7 @@ export const DebugInspectorScreen: FC = () => {
           />
         ) : null}
 
-        {isLoading && !overview ? (
+        {isLoading && lastStreamAt === null ? (
           <View style={{ paddingVertical: 14, alignItems: "center" }}>
             <ActivityIndicator color={colors.tint} />
           </View>

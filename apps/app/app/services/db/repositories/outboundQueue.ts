@@ -42,37 +42,12 @@ function newId(): string {
 
 // Tx-scoped enqueue. Use this when you're already inside a withWrite()
 // callback; it composes with other tx writes into one COMMIT.
-export async function enqueueOutboundTx(tx: WriteTx, input: EnqueueInput): Promise<void> {
-  const payloadStr = JSON.stringify(input.payload)
-  const insert = tx.insert(outboundQueue).values({
-    id: newId(),
-    tableName: input.tableName,
-    rowId: input.rowId,
-    payload: payloadStr,
-    attempts: 0,
-    lastAttemptAt: null,
-    lastError: null,
-    createdAt: Date.now(),
-    nextAttemptAt: 0,
-  })
-  if (input.preserveRetryState) {
-    // Backfill path: keep existing attempts/backoff so a permanently-failing
-    // row doesn't reset its retry counter every pre-loop backfill tick.
-    await insert.onConflictDoNothing({
-      target: [outboundQueue.tableName, outboundQueue.rowId],
-    })
-  } else {
-    await insert.onConflictDoUpdate({
-      target: [outboundQueue.tableName, outboundQueue.rowId],
-      set: {
-        payload: payloadStr,
-        attempts: 0,
-        lastAttemptAt: null,
-        lastError: null,
-        nextAttemptAt: 0,
-      },
-    })
-  }
+export async function enqueueOutboundTx(_tx: WriteTx, _input: EnqueueInput): Promise<void> {
+  // Serverless: nothing is uploaded, so the outbound queue is never filled.
+  // Kept as a no-op (signature intact) so the BLE-ingest + journal write
+  // paths that compose it into their transaction stay unchanged. Without
+  // this, the high-frequency raw-sensor enqueue would grow unbounded with no
+  // drainer to consume it.
 }
 
 // Standalone async wrapper. Convenience for callers that aren't already

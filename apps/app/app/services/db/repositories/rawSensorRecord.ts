@@ -214,6 +214,36 @@ export async function countRawSensorRecordsPerHour(
   return out
 }
 
+/**
+ * Local strap-data health for the Inspector — the serverless replacement for
+ * the server's `/debug/overview`. Returns the most-recent local raw sample
+ * timestamp (drives the strap "stream silent" check) and how many distinct
+ * minutes of the local day `[dayStartMs, dayStartMs + 24h)` carry at least
+ * one local raw sample (the coverage ring). Routed to the read-only
+ * connection so it doesn't park behind the WAL writer.
+ */
+export async function getRawCoverageForDay(
+  _db: NoopDatabase,
+  dayStartMs: number,
+): Promise<{ latestTimestampMs: number | null; coverageMinutes: number }> {
+  const userId = peekActiveUserId()
+  if (!userId) return { latestTimestampMs: null, coverageMinutes: 0 }
+  const readDb = getReadDb()
+  const dayEndMs = dayStartMs + 24 * 3_600_000
+  const rows = (await readDb
+    .select({
+      latest: sql<number | null>`MAX(${rawSensorRecords.timestamp})`,
+      minutes: sql<number>`COUNT(DISTINCT CASE WHEN ${rawSensorRecords.timestamp} >= ${dayStartMs} AND ${rawSensorRecords.timestamp} < ${dayEndMs} THEN ${rawSensorRecords.timestamp} / 60000 END)`,
+    })
+    .from(rawSensorRecords)
+    .where(and(eq(rawSensorRecords.userId, userId), eq(rawSensorRecords._origin, "local")))) as Array<{
+    latest: number | null
+    minutes: number
+  }>
+  const row = rows[0]
+  return { latestTimestampMs: row?.latest ?? null, coverageMinutes: Number(row?.minutes ?? 0) }
+}
+
 export async function markRawSensorRecordsSynced(
   db: NoopDatabase,
   ids: string[],

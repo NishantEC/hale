@@ -20,13 +20,12 @@ import {
   type FactorCategory,
   type FactorDefinition,
 } from "@/constants/journalFactors"
-import {
-  createJournalEntry,
-  fetchJournalEntries,
-  type JournalEntryResponse,
-} from "@/services/api/noopClient"
+import { type JournalEntryResponse } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
-import { insertJournalEntry } from "@/services/db/repositories/journalEntry"
+import {
+  insertJournalEntry,
+  listJournalEntriesByDate,
+} from "@/services/db/repositories/journalEntry"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { hexWithAlpha } from "@/utils/hexWithAlpha"
 
@@ -80,9 +79,19 @@ export function JournalEntryScreen() {
   useEffect(() => {
     let cancelled = false
     const todayIso = new Date().toISOString().slice(0, 10)
-    fetchJournalEntries(todayIso)
-      .then((res) => {
-        if (!cancelled) setTodayEntries(res.entries ?? [])
+    listJournalEntriesByDate(openDatabase(), todayIso)
+      .then((rows) => {
+        if (cancelled) return
+        setTodayEntries(
+          rows.map((r) => ({
+            id: r.id,
+            factorTag: r.factorTag,
+            intensity: r.intensity,
+            note: r.note,
+            timestamp: new Date(r.timestamp).toISOString(),
+            createdAt: new Date(r.createdAt).toISOString(),
+          })),
+        )
       })
       .catch(() => {
         if (!cancelled) setTodayEntries([])
@@ -117,15 +126,6 @@ export function JournalEntryScreen() {
         note: note.trim(),
         createdAt: now,
       })
-      try {
-        await createJournalEntry({
-          factorTag: selectedTag!,
-          intensity: value!,
-          note: note.trim() || undefined,
-        })
-      } catch (postErr) {
-        console.warn("[journal] direct POST failed — drainer will retry", postErr)
-      }
       Toast.show(`${selectedFactor?.label ?? "Factor"} logged`, {
         type: "success",
         position: "top",

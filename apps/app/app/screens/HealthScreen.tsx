@@ -26,7 +26,9 @@ import {
   useBleConnectionState,
   useBleIsCharging,
 } from "@/stores/bleStore"
-import { fetchHealthView, type HealthViewModel } from "@/services/api/noopClient"
+import { type HealthViewModel } from "@/services/api/noopClient"
+import { computeLocalHealthView } from "@/services/health/computeLocalHealthView"
+import { openDatabase } from "@/services/db"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { usePreference } from "@/utils/usePreferences"
 import { buildVitalContributors } from "@/utils/healthVitals"
@@ -46,7 +48,7 @@ export const HealthScreen: FC = () => {
 
   const reloadHealthView = useCallback(() => {
     let cancelled = false
-    fetchHealthView()
+    computeLocalHealthView(openDatabase())
       .then((v) => {
         if (!cancelled) setHealthView(v)
       })

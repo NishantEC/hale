@@ -6,39 +6,42 @@ rust-version = "1.85"
 
 [lib]
 path = "src/lib.rs"
+# cdylib + staticlib are the link targets the on-device UniFFI binding consumes
+# (iOS .a / Android .so), built with `cargo build --features uniffi`. `lib`
+# keeps the crate usable as a normal Rust dependency (tests, benches).
+crate-type = ["lib", "cdylib", "staticlib"]
 
 [[bin]]
-name = "noop-compute-engine"
-path = "src/main.rs"
-
-[[bin]]
-name = "parity"
-path = "src/bin/parity.rs"
-
-[[bin]]
-name = "noop-pipeline-worker"
-path = "src/bin/worker.rs"
+# Version-locked UniFFI binding generator (library mode): emits the Swift /
+# Kotlin glue for the #[uniffi::export] surface. Built only with the
+# `uniffi-cli` feature; never part of the device cdylib.
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["uniffi-cli"]
 
 [dependencies]
-axum = "0.8"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-tower = "0.5"
-tower-http = { version = "0.6", features = ["compression-gzip", "decompression-gzip", "trace"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 thiserror = "2"
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "tls-rustls", "postgres", "chrono", "uuid", "macros"] }
-uuid = { version = "1", features = ["v4", "serde"] }
-anyhow = "1"
+# default-features = false keeps the device cdylib lean (runtime + the
+# #[uniffi::export] scaffolding only). The `uniffi-cli` feature layers the
+# bindgen CLI on top for codegen — see the uniffi-bindgen bin above.
+uniffi = { version = "0.28", optional = true, default-features = false }
+
+[features]
+# Default to the on-device UniFFI binding surface, so `cargo build` produces
+# the device-ready lib. `cargo build --no-default-features` is the pure compute
+# core (calendar, derived_metrics, math, types, ffi) with no UniFFI scaffolding.
+default = ["uniffi"]
+uniffi = ["dep:uniffi"]
+# Adds the version-matched bindgen CLI (uniffi/cli) used by the uniffi-bindgen
+# bin to generate Swift/Kotlin. Codegen-only; not linked into any artifact.
+uniffi-cli = ["uniffi", "uniffi/cli"]
 
 [dev-dependencies]
 criterion = "0.5"
-pretty_assertions = "1"
-reqwest = { version = "0.12", features = ["json", "gzip"] }
 
 [profile.release]
 opt-level = 3

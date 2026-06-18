@@ -3,7 +3,9 @@ import { StyleSheet, View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
 import { CandidateDeck, type CandidatePayload } from "@/components/activity"
-import { confirmActivity, dismissActivity, PendingActivityCard } from "@/services/api/noopClient"
+import { type PendingActivityCard } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { deleteActivityDetection, setActivityConfirmed } from "@/services/db/repositories/derived"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 type Props = {
@@ -43,11 +45,11 @@ export const PendingActivityCards: FC<Props> = ({ cards, onResolved }) => {
       <CandidateDeck
         cards={payloads}
         onConfirm={async (id, finalType) => {
-          await confirmActivity(id, finalType)
+          await setActivityConfirmed(openDatabase(), id, finalType)
           onResolved?.()
         }}
         onDismiss={async (id) => {
-          await dismissActivity(id)
+          await deleteActivityDetection(openDatabase(), id)
           onResolved?.()
         }}
       />

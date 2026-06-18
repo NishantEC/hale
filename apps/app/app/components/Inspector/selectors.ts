@@ -45,38 +45,6 @@ export function phoneChipState(i: PhoneInput): { dot: Dot; sub: string } {
   return { dot: "green", sub }
 }
 
-export type BackendInput = {
-  queueDepth: number
-  queueDead: number
-  lastSyncAt: number | null
-  consecutiveApiFailures: number
-  nowMs: number
-}
-
-const SYNC_STALE_AMBER_MS = 10 * 60_000
-const SYNC_STALE_RED_MS = 60 * 60_000
-
-export function backendChipState(i: BackendInput): { dot: Dot; sub: string } {
-  const minsSinceSync =
-    i.lastSyncAt != null ? Math.round((i.nowMs - i.lastSyncAt) / 60_000) : null
-  const queueSub =
-    i.queueDepth > 0 || i.queueDead > 0
-      ? `${i.queueDepth} pending · ${i.queueDead} dead`
-      : minsSinceSync != null
-        ? `synced ${minsSinceSync}m ago`
-        : "—"
-
-  if (i.consecutiveApiFailures >= 2) return { dot: "red", sub: queueSub }
-  if (i.lastSyncAt != null && i.nowMs - i.lastSyncAt > SYNC_STALE_RED_MS) {
-    return { dot: "red", sub: queueSub }
-  }
-  if (i.queueDepth > 0 || i.queueDead > 0) return { dot: "amber", sub: queueSub }
-  if (i.lastSyncAt != null && i.nowMs - i.lastSyncAt > SYNC_STALE_AMBER_MS) {
-    return { dot: "amber", sub: queueSub }
-  }
-  return { dot: "green", sub: queueSub }
-}
-
 export function coverageChipState(i: { percent: number }): {
   color: "green" | "amber" | "red"
   percent: number

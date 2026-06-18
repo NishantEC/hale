@@ -5,21 +5,60 @@ import {
   recordOutboundFailure,
   recordOutboundFailureBatch,
   listDeadLetters,
+  queueDepth,
 } from "../../app/services/db/repositories/outboundQueue"
+import { outboundQueue } from "../../app/services/db/schema"
+import type { NoopDatabase } from "../../app/services/db"
 import { makeTestDb } from "./helpers"
 
+// makeTestDb returns a better-sqlite3-backed drizzle instance (same SQL
+// dialect as the op-sqlite production driver); the cast bridges the two
+// driver types, which are structurally identical for the query builders
+// these tests touch.
+function testDb(): NoopDatabase {
+  return makeTestDb() as unknown as NoopDatabase
+}
+
+// Serverless: enqueueOutbound/enqueueOutboundTx are no-ops, so production
+// never fills the queue. The claim/backoff/dead-letter mechanics below
+// still exist and are exercised by seeding rows directly — the same shape
+// the queue would have held — so those fns stay validated in isolation.
+let seq = 0
+async function seedOutbound(
+  db: NoopDatabase,
+  rowId: string,
+  payload: unknown = { id: rowId },
+): Promise<void> {
+  const createdAt = ++seq
+  await db.insert(outboundQueue).values({
+    id: `seed-${rowId}-${createdAt}`,
+    tableName: "raw_sensor_records",
+    rowId,
+    payload: JSON.stringify(payload),
+    createdAt,
+  })
+}
+
 describe("outboundQueue", () => {
-  it("enqueues and claims in FIFO order", async () => {
-    const db = makeTestDb() as any
+  it("enqueueOutbound is a no-op — the queue stays empty (serverless)", async () => {
+    const db = testDb()
     await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
     await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "b", payload: { id: "b" } })
+    expect(await queueDepth(db)).toBe(0)
+    expect(await claimOutboundBatch(db, 10)).toHaveLength(0)
+  })
+
+  it("claims seeded rows in FIFO order by createdAt", async () => {
+    const db = testDb()
+    await seedOutbound(db, "a")
+    await seedOutbound(db, "b")
     const batch = await claimOutboundBatch(db, 10)
     expect(batch.map((r) => r.rowId)).toEqual(["a", "b"])
   })
 
   it("markOutboundSynced removes rows", async () => {
-    const db = makeTestDb() as any
-    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
+    const db = testDb()
+    await seedOutbound(db, "a")
     const [row] = await claimOutboundBatch(db, 10)
     await markOutboundSynced(db, [row.id])
     const next = await claimOutboundBatch(db, 10)
@@ -27,8 +66,8 @@ describe("outboundQueue", () => {
   })
 
   it("recordOutboundFailure increments attempts, sets backoff, preserves payload", async () => {
-    const db = makeTestDb() as any
-    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "a", payload: { id: "a" } })
+    const db = testDb()
+    await seedOutbound(db, "a")
     const [row] = await claimOutboundBatch(db, 10)
     await recordOutboundFailure(db, row.id, "network timeout")
 
@@ -45,8 +84,8 @@ describe("outboundQueue", () => {
   })
 
   it("listDeadLetters returns rows with attempts >= threshold", async () => {
-    const db = makeTestDb() as any
-    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "dead", payload: {} })
+    const db = testDb()
+    await seedOutbound(db, "dead", {})
     const [row] = await claimOutboundBatch(db, 10)
     // Drive attempts to MAX in one shot. recordOutboundFailure normally
     // increments by 1; "permanent" classification jumps straight to the
@@ -58,8 +97,8 @@ describe("outboundQueue", () => {
   })
 
   it("a permanent failure routes the row straight to dead-letter", async () => {
-    const db = makeTestDb() as any
-    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "p", payload: {} })
+    const db = testDb()
+    await seedOutbound(db, "p", {})
     const [row] = await claimOutboundBatch(db, 10)
     await recordOutboundFailure(db, row.id, "400 Bad Request", { kind: "permanent" })
     expect(await claimOutboundBatch(db, 10, Date.now() + 999_999_999)).toHaveLength(0)
@@ -69,9 +108,9 @@ describe("outboundQueue", () => {
   })
 
   it("recordOutboundFailureBatch matches per-row backoff schedule", async () => {
-    const db = makeTestDb() as any
-    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "x", payload: {} })
-    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "y", payload: {} })
+    const db = testDb()
+    await seedOutbound(db, "x", {})
+    await seedOutbound(db, "y", {})
     const claimed = await claimOutboundBatch(db, 10)
     await recordOutboundFailureBatch(db, claimed.map((r) => r.id), "500 server error")
 
@@ -86,8 +125,8 @@ describe("outboundQueue", () => {
   })
 
   it("recordOutboundFailureBatch caps attempts at MAX_TRANSIENT_ATTEMPTS (9)", async () => {
-    const db = makeTestDb() as any
-    await enqueueOutbound(db, { tableName: "raw_sensor_records", rowId: "z", payload: {} })
+    const db = testDb()
+    await seedOutbound(db, "z", {})
     const [row] = await claimOutboundBatch(db, 10)
     // 20 consecutive transient failures
     for (let i = 0; i < 20; i++) {

@@ -26,9 +26,13 @@ import { initI18n } from "@/i18n"
 import { useNavigationTheme } from "@/navigators/useNavigationTheme"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { loadDateFnsLocale } from "@/utils/formatDate"
-import { runMigrations, wipeDatabase } from "@/services/db"
+import { openDatabase, runMigrations, wipeDatabase } from "@/services/db"
+import { peekActiveUserId, setActiveUserId } from "@/services/db/session"
+import { resolveLocalUserId } from "@/services/identity/localIdentity"
+import { runRecentDays } from "@/services/compute/runDeviceCompute"
 import { initBleStoreBridge } from "@/stores/bleStoreBridge"
 import { initSyncStoreBridge } from "@/stores/syncStoreBridge"
+import { delay } from "@/utils/delay"
 
 function RootStackLayout() {
   const navigationTheme = useNavigationTheme()
@@ -69,12 +73,21 @@ export default function RootLayout() {
     let syncBridgeTeardown: (() => void) | null = null
     const attempt = () => {
       runMigrations()
-        .then(() => {
-          if (!cancelled) {
-            bleBridgeTeardown = initBleStoreBridge()
-            syncBridgeTeardown = initSyncStoreBridge()
-            setIsDbReady(true)
+        .then(async () => {
+          if (cancelled) return
+          // Resolve + set the device-local identity BEFORE wiring write paths
+          // (BLE ingest, telemetry) or rendering, so boot-time writes don't hit
+          // "No active user". The common path (reusing the stored email) is
+          // effectively synchronous; AuthProvider idempotently re-sets it too.
+          try {
+            setActiveUserId(await resolveLocalUserId())
+          } catch (err) {
+            console.warn("[identity] boot resolve failed", err)
           }
+          if (cancelled) return
+          bleBridgeTeardown = initBleStoreBridge()
+          syncBridgeTeardown = initSyncStoreBridge()
+          setIsDbReady(true)
         })
         .catch((err) => {
           if (cancelled) return
@@ -108,6 +121,40 @@ export default function RootLayout() {
       syncBridgeTeardown?.()
     }
   }, [])
+
+  // Local source of truth: persist the on-device pipeline's recent output so
+  // the dashboard shows local data. Recent-first + bounded so today computes
+  // within seconds; the synced night_features already cover baseline priors,
+  // so a heavy 60-day boot backfill isn't needed (full local-history fill is a
+  // separate pre-teardown step). Waits for the DB + device-local identity;
+  // never crashes startup.
+  useEffect(() => {
+    if (!isDbReady) return
+    let cancelled = false
+    void (async () => {
+      try {
+        let userId = peekActiveUserId()
+        for (let i = 0; !userId && i < 20; i++) {
+          await delay(250)
+          userId = peekActiveUserId()
+        }
+        const db = openDatabase()
+        if (cancelled || !userId) return
+        let timeZone = "UTC"
+        try {
+          timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+        } catch {
+          // Hermes Intl gap — fall back to UTC.
+        }
+        await runRecentDays(db, userId, timeZone, 3)
+      } catch (err) {
+        console.warn("[compute] device history bootstrap failed", err)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isDbReady])
 
   if (!isI18nInitialized || !isDbReady) {
     return null

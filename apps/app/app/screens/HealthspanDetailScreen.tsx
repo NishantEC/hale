@@ -29,11 +29,12 @@ import { LinearGradient } from "expo-linear-gradient"
 import Svg, { Defs, RadialGradient, Stop, Circle } from "react-native-svg"
 
 import {
-  fetchHealthView,
   HealthAssessment,
   HealthContributor,
   HealthViewModel,
 } from "@/services/api/noopClient"
+import { computeLocalHealthView } from "@/services/health/computeLocalHealthView"
+import { openDatabase } from "@/services/db"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 // Enable LayoutAnimation on Android (default off). Cheap, no worklets.
@@ -59,7 +60,7 @@ export const HealthspanDetailScreen: FC = () => {
       const monday = mondayOfWeek(new Date())
       const target = new Date(monday.getTime() + offset * 7 * 86_400_000)
       const isoMonday = target.toISOString().slice(0, 10)
-      const v = await fetchHealthView(offset === 0 ? undefined : isoMonday)
+      const v = await computeLocalHealthView(openDatabase(), offset === 0 ? undefined : isoMonday)
       setData(v)
     } catch (e: any) {
       setError(e?.message ?? "Failed to load")

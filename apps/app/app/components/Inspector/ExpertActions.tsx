@@ -16,7 +16,6 @@ type Handler = () => void | Promise<void>
 type Props = {
   onProbeRange: Handler
   onRunPipeline: Handler
-  onOpenWebInspector: Handler
   onRewindTs: Handler
   onRewindAck: Handler
   onRewindBare: Handler
@@ -33,7 +32,6 @@ export const ExpertActions: FC<Props> = (h) => {
       <Group label="Diagnostics" labelColor="#fbbf24">
         <Btn icon={Bug} label="Probe range" onPress={h.onProbeRange} />
         <Btn icon={Database} label="Run pipeline" onPress={h.onRunPipeline} />
-        <Btn icon={Bug} label="Web inspector" onPress={h.onOpenWebInspector} />
       </Group>
 
       <Group label="Firmware probes" labelColor="#fbbf24">

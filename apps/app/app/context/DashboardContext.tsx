@@ -11,9 +11,6 @@ import {
 
 import { useAuth } from "@/context/AuthContext"
 import {
-  fetchHomeView,
-  fetchResults,
-  fetchSleepView,
   HealthMonitorSummary,
   HomeViewModel,
   MonitorState,
@@ -21,11 +18,11 @@ import {
   SleepPlanInput,
   SleepViewModel,
   StressMonitorSummary,
-  updateSleepPlan,
 } from "../services/api/noopClient"
 import { scoreToZone } from "@/utils/stressZone"
 import { openDatabase } from "../services/db"
-import { getViewCache, setViewCache } from "../services/db/repositories/viewCache"
+import { loadLocalPipelineResults } from "../services/compute/localResults"
+import { upsertLocalSleepPlan } from "../services/db/repositories/derived"
 
 type DashboardContextValue = {
   selectedDate: string
@@ -196,16 +193,6 @@ function computeSleepRing(durationHours?: number | null, targetSleepMinutes = 48
   }
 }
 
-function isViewsApiUnavailable(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error ?? "")
-  const normalized = message.toLowerCase()
-  return (
-    normalized.includes("server returned html instead of json") ||
-    normalized.includes("/views") ||
-    normalized.includes("404") ||
-    normalized.includes("not found")
-  )
-}
 
 function buildLegacyHomeView(results: PipelineResults, selectedKey: string): HomeViewModel {
   const selectedDateTitle = formatSelectedDateTitle(selectedKey)
@@ -550,7 +537,7 @@ function buildLegacySleepView(results: PipelineResults, selectedKey: string): Sl
 }
 
 export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
-  const { authToken, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
   const [selectedDate, setSelectedDate] = useState(todayKey)
   const [homeView, setHomeView] = useState<HomeViewModel | null>(null)
   const [sleepView, setSleepView] = useState<SleepViewModel | null>(null)
@@ -561,65 +548,25 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
 
   const loadDashboardForDate = useCallback(
     async (showRefreshSpinner: boolean) => {
-      if (!authToken) {
-        setHomeView(null)
-        setSleepView(null)
-        return
-      }
-
       if (showRefreshSpinner) {
         setIsRefreshing(true)
       }
       setError(null)
-
       try {
         const db = openDatabase()
-        const [cachedHome, cachedSleep] = await Promise.all([
-          getViewCache<HomeViewModel>(db, "home", selectedDate),
-          getViewCache<SleepViewModel>(db, "sleep", selectedDate),
-        ])
-        if (cachedHome) setHomeView(cachedHome)
-        if (cachedSleep) setSleepView(cachedSleep)
-      } catch (cacheErr) {
-        console.warn("[dashboard] cache read failed", cacheErr)
-      }
-
-      try {
-        const [nextHomeView, nextSleepView] = await Promise.all([
-          fetchHomeView(selectedDate),
-          fetchSleepView(selectedDate),
-        ])
-        setHomeView(nextHomeView)
-        setSleepView(nextSleepView)
-        try {
-          const db = openDatabase()
-          await setViewCache(db, "home", selectedDate, nextHomeView)
-          await setViewCache(db, "sleep", selectedDate, nextSleepView)
-        } catch (cacheWriteErr) {
-          console.warn("[dashboard] cache write failed", cacheWriteErr)
-        }
-      } catch (nextError: any) {
-        if (isViewsApiUnavailable(nextError)) {
-          try {
-            const legacyResults = await fetchResults()
-            setHomeView(buildLegacyHomeView(legacyResults, selectedDate))
-            setSleepView(buildLegacySleepView(legacyResults, selectedDate))
-            setError(null)
-            return
-          } catch (legacyError: any) {
-            setError(legacyError?.message ?? "Failed to refresh dashboard")
-            return
-          }
-        }
-
-        setError(nextError?.message ?? "Failed to refresh dashboard")
+        const results = await loadLocalPipelineResults(db)
+        setHomeView(buildLegacyHomeView(results, selectedDate))
+        setSleepView(buildLegacySleepView(results, selectedDate))
+        setError(null)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load dashboard")
       } finally {
         if (showRefreshSpinner) {
           setIsRefreshing(false)
         }
       }
     },
-    [authToken, selectedDate],
+    [selectedDate],
   )
 
   const refreshDashboard = useCallback(async () => {
@@ -630,32 +577,21 @@ export const DashboardProvider: FC<PropsWithChildren> = ({ children }) => {
     async (input: SleepPlanInput) => {
       setError(null)
       try {
-        const response = await updateSleepPlan(input)
-        setSleepView(response.sleepView)
-        const nextHomeView = await fetchHomeView(selectedDate)
-        setHomeView(nextHomeView)
-      } catch (nextError: any) {
-        if (isViewsApiUnavailable(nextError)) {
-          setSleepView((current) =>
-            current
-              ? {
-                  ...current,
-                  planner: {
-                    ...current.planner,
-                    ...input,
-                    alarmStatusText: input.alarmEnabled
-                      ? "Alarm enabled locally"
-                      : "Alarm disabled",
-                    smartWakeStatusText: input.smartWakeEnabled ? "Smart wake enabled" : "",
-                  },
-                }
-              : current,
-          )
-          setError(null)
-          return
-        }
-
-        setError(nextError?.message ?? "Failed to save sleep plan")
+        const db = openDatabase()
+        await upsertLocalSleepPlan(db, {
+          id: "local:sleepplan",
+          targetSleepMinutes: input.targetSleepMinutes,
+          wakeMinutes: input.wakeMinutes,
+          alarmEnabled: input.alarmEnabled ? 1 : 0,
+          alarmMinutes: input.alarmMinutes,
+          smartWakeEnabled: input.smartWakeEnabled ? 1 : 0,
+          updatedAt: Date.now(),
+        })
+        const results = await loadLocalPipelineResults(db)
+        setHomeView(buildLegacyHomeView(results, selectedDate))
+        setSleepView(buildLegacySleepView(results, selectedDate))
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save sleep plan")
       }
     },
     [selectedDate],

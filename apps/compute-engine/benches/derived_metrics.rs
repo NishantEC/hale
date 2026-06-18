@@ -5,7 +5,7 @@ use noop_compute_engine::{
 
 fn bench_compute_day(c: &mut Criterion) {
     let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../backend/.fixtures/compute-engine-golden/normal-ist.json");
+        .join("tests/fixtures/compute-engine-golden/normal-ist.json");
     let raw = std::fs::read_to_string(&fixture_path).expect("read fixture");
     let parsed: serde_json::Value = serde_json::from_str(&raw).expect("parse fixture");
     let input: ComputeDerivedMetricsDayRequestV1 =

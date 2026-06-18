@@ -5,11 +5,9 @@ import { router } from "expo-router"
 
 import { Text } from "@/components/Text"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
-import {
-  fetchInsights,
-  type InsightsViewModel,
-  type MetricInsights,
-} from "@/services/api/noopClient"
+import { type InsightsViewModel, type MetricInsights } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { computeLocalInsightsView } from "@/services/insights/computeLocalInsights"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 export const InsightsScreen: FC = () => {
@@ -21,7 +19,7 @@ export const InsightsScreen: FC = () => {
 
   const load = async () => {
     try {
-      const v = await fetchInsights(30)
+      const v = await computeLocalInsightsView(openDatabase(), 30)
       setView(v)
     } catch (e) {
       console.warn("[insights] fetch failed", e)

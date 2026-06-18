@@ -21,18 +21,10 @@ import {
   CommandNumber,
   CommandService,
   ConnectionState,
-  ConsoleLogLineForwarder,
-  createCommandResponseForwarder,
-  createEventForwarder,
-  createImuForwarder,
   DownloadProgress,
-  EventNumber,
   HistoryDownloader,
   PacketType,
-  parseIMUPacket,
-  RealtimeSessionForwarder,
   ScannedDevice,
-  uint8ArrayToBase64,
   WhoopPacket,
 } from "@/services/ble"
 import {
@@ -173,19 +165,6 @@ export type BleContextValue = {
 const BleContext = createContext<BleContextValue | null>(null)
 
 const commandService = new CommandService()
-const eventForwarder = createEventForwarder()
-// Both forwarders are write-only as of this session — IMU produces
-// ~45M rows/day per active strap with no downstream reader, and
-// command-responses captures every cmd response (low volume, but no
-// consumer yet either). Default off until a reader/retention exists.
-// Set EXPO_PUBLIC_ENABLE_IMU_INGEST=1 / EXPO_PUBLIC_ENABLE_CMD_RESP_INGEST=1
-// to turn back on locally.
-const IMU_INGEST_ENABLED = process.env.EXPO_PUBLIC_ENABLE_IMU_INGEST === "1"
-const CMD_RESP_INGEST_ENABLED = process.env.EXPO_PUBLIC_ENABLE_CMD_RESP_INGEST === "1"
-const commandResponseForwarder = createCommandResponseForwarder()
-const imuForwarder = createImuForwarder()
-const consoleLogForwarder = new ConsoleLogLineForwarder()
-const realtimeForwarder = new RealtimeSessionForwarder()
 
 // 0..3 stress proxy from rolling-mean HR over the live sample window.
 // Baseline is sourced from BaselineProfile.restingHeartRate (per-user)
@@ -204,12 +183,6 @@ function deriveLiveStressLevel(
   if (delta < 25) return 1
   if (delta < 50) return 2
   return 3
-}
-
-function parseRealtimeHeartRate(packet: WhoopPacket) {
-  if (packet.type !== PacketType.RealtimeData || packet.data.length <= 5) return null
-  const heartRate = packet.data[5]
-  return heartRate > 0 ? heartRate : null
 }
 
 function nextAlarmDate(alarmMinutes: number) {
@@ -652,11 +625,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
           realtimeSamples: enabled ? s.realtimeSamples : [],
         }))
         await persistPreference(REALTIME_HR_KEY, enabled)
-        if (enabled) {
-          realtimeForwarder.startSession(bleManager.getDeviceId() || "unknown")
-        } else {
-          realtimeForwarder.endSession()
-        }
       } catch (nextError: any) {
         setError(nextError?.message ?? "Failed to toggle realtime heart rate")
       }
@@ -697,11 +665,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
         )
         setIsRawDataStreamingEnabled(enabled)
         await persistPreference(RAW_STREAM_KEY, enabled)
-        if (enabled) {
-          realtimeForwarder.startSession(bleManager.getDeviceId() || "unknown")
-        } else {
-          realtimeForwarder.endSession()
-        }
       } catch (nextError: any) {
         setError(nextError?.message ?? "Failed to toggle raw data stream")
       }
@@ -1518,11 +1481,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
 
       if (connectionState === "ready") {
-        eventForwarder.start()
-        if (CMD_RESP_INGEST_ENABLED) commandResponseForwarder.start()
-        if (IMU_INGEST_ENABLED) imuForwarder.start()
-        realtimeForwarder.startSession(bleManager.getDeviceId() || "unknown")
-        consoleLogForwarder.start(bleManager.getDeviceId() || "unknown")
         refreshDeviceState().catch(() => undefined)
         maybeAutoSync().catch(() => undefined)
         // Continuous BLE pump — polls SendHistoricalData every 30s so the
@@ -1539,94 +1497,6 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       }
     })
 
-    // Forwarder fan-out — pushes every BLE packet into the queue / logs /
-    // realtime session uploaders. All scalar mirroring (battery, isCharging,
-    // alarm, firmware, clock, isWorn, realtime HR samples, event-driven mode
-    // toggles) is owned by bleStoreBridge — BleContext no longer subscribes
-    // to onPacket for state mirroring.
-    //
-    // TODO(phase3): hoist these forwarder pushes into bleStoreBridge so the
-    // bridge is the only `onPacket('*')` subscriber. The lifecycle (start /
-    // stop on connection-state change) and the device-id dependency make the
-    // move non-trivial; not blocking phase 2.
-    const unsubscribePackets = bleManager.onPacket("*", (packet) => {
-      if (packet.type === PacketType.CommandResponse && CMD_RESP_INGEST_ENABLED) {
-        const deviceId = bleManager.getDeviceId() || "unknown"
-        commandResponseForwarder.push({
-          deviceId,
-          command: packet.command,
-          commandName: CommandNumber[packet.command] ?? `unknown_${packet.command}`,
-          sequence: packet.sequence,
-          rawPayload: packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
-          capturedAt: new Date().toISOString(),
-        })
-      }
-
-      if (packet.type === PacketType.Event) {
-        const deviceId = bleManager.getDeviceId() || "unknown"
-        eventForwarder.push({
-          deviceId,
-          eventNumber: packet.command,
-          eventName: EventNumber[packet.command] ?? `unknown_${packet.command}`,
-          rawPayload: packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
-          capturedAt: new Date().toISOString(),
-        })
-      }
-
-      const realtimeHeartRate = parseRealtimeHeartRate(packet)
-      if (realtimeHeartRate != null) {
-        realtimeForwarder.pushHR(
-          realtimeHeartRate,
-          packet.data.length > 0 ? uint8ArrayToBase64(packet.data) : null,
-          new Date().toISOString(),
-        )
-      }
-
-      if (
-        IMU_INGEST_ENABLED &&
-        (packet.type === PacketType.RealtimeIMUStream ||
-          packet.type === PacketType.HistoricalIMUStream)
-      ) {
-        const samples = parseIMUPacket(packet)
-        if (samples) {
-          const source =
-            packet.type === PacketType.RealtimeIMUStream ? "realtime" : "historical"
-          for (const s of samples) {
-            imuForwarder.push({
-              timestamp: s.timestamp.toISOString(),
-              accelX: s.accelX,
-              accelY: s.accelY,
-              accelZ: s.accelZ,
-              gyroX: s.gyroX,
-              gyroY: s.gyroY,
-              gyroZ: s.gyroZ,
-              source,
-            })
-          }
-        }
-      }
-
-      if (packet.type === PacketType.ConsoleLogs && packet.data.length > 7) {
-        const raw = packet.data.slice(7)
-        const filtered: number[] = []
-        for (let i = 0; i < raw.length; i++) {
-          if (i + 2 < raw.length && raw[i] === 0x34 && raw[i + 1] === 0x00 && raw[i + 2] === 0x01) {
-            i += 2
-            continue
-          }
-          filtered.push(raw[i])
-        }
-        if (filtered.length > 0) {
-          const text = new TextDecoder().decode(new Uint8Array(filtered))
-          consoleLogForwarder.push(text)
-        }
-      }
-
-      if (packet.type === PacketType.RealtimeRawData && packet.data.length > 0) {
-        realtimeForwarder.pushRaw(null, uint8ArrayToBase64(packet.data), new Date().toISOString())
-      }
-    })
-
     // SOC changes slowly on a multi-day-life device. 30s polling was
     // pure BLE traffic for no benefit. 5 min is plenty for the UI.
     const batteryPollTimer = setInterval(() => {
@@ -1634,20 +1504,9 @@ export const BleProvider: FC<PropsWithChildren> = ({ children }) => {
       bleManager.writeCommand(commandService.buildGetBatteryLevel()).catch(() => undefined)
     }, 5 * 60 * 1000)
 
-    const unsubscribeMemfault = bleManager.onMemfault((base64Chunk) => {
-      consoleLogForwarder.pushLine(`[MEMFAULT base64=${base64Chunk}]`)
-    })
-
     return () => {
       unsubscribeState()
-      unsubscribePackets()
-      unsubscribeMemfault()
       clearInterval(batteryPollTimer)
-      eventForwarder.stop()
-      commandResponseForwarder.stop()
-      imuForwarder.stop()
-      realtimeForwarder.endSession()
-      consoleLogForwarder.stop()
       stopContinuousSyncDaemon()
     }
   }, [maybeAutoSync, refreshDeviceState])

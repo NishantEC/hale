@@ -35,12 +35,12 @@ import { MonitorCard } from "@/components/home/MonitorCard"
 import { PendingActivityCards } from "@/components/home/PendingActivityCards"
 import { DayArcRibbon } from "@/components/home/DayArcRibbon"
 import {
-  fetchCoverage,
-  fetchJournalEntries,
   type CoverageKind,
   type JournalEntryResponse,
 } from "@/services/api/noopClient"
+import { computeLocalCoverage } from "@/services/compute/localCoverage"
 import { openDatabase } from "@/services/db"
+import { listJournalEntriesByDate } from "@/services/db/repositories/journalEntry"
 import { getViewCache, setViewCache } from "@/services/db/repositories/viewCache"
 import { Shimmer } from "@/components/reactx/Shimmer"
 import { Toast } from "@/components/reactx/toast"
@@ -166,9 +166,19 @@ export const HomeScreen: FC = () => {
   // missing entries shouldn't block the dashboard from rendering.
   useEffect(() => {
     let cancelled = false
-    fetchJournalEntries(selectedDate)
-      .then((res) => {
-        if (!cancelled) setJournalEntries(res.entries ?? [])
+    listJournalEntriesByDate(openDatabase(), selectedDate)
+      .then((rows) => {
+        if (cancelled) return
+        setJournalEntries(
+          rows.map((r) => ({
+            id: r.id,
+            factorTag: r.factorTag,
+            intensity: r.intensity,
+            note: r.note,
+            timestamp: new Date(r.timestamp).toISOString(),
+            createdAt: new Date(r.createdAt).toISOString(),
+          })),
+        )
       })
       .catch(() => {
         if (!cancelled) setJournalEntries([])
@@ -202,7 +212,11 @@ export const HomeScreen: FC = () => {
         // cache miss is fine
       }
       try {
-        const data = await fetchCoverage(calendarMonthCursor, calendarMonthCursor)
+        const data = await computeLocalCoverage(
+          openDatabase(),
+          calendarMonthCursor,
+          calendarMonthCursor,
+        )
         if (!alive) return
         const map: Record<string, CoverageKind> = {}
         data.days.forEach((d) => {

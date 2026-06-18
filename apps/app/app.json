@@ -52,7 +52,7 @@
       "NSSupportsLiveActivities": true,
       "NSSupportsLiveActivitiesFrequentUpdates": true
     },
-    "appleTeamId": "LGMF2TG7P6"
+    "appleTeamId": "YOUR_APPLE_TEAM_ID"
   },
   "web": {
     "favicon": "./assets/images/app-icon-web-favicon.png",

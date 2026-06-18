@@ -1,0 +1,7 @@
+{
+  "name": "noop-compute",
+  "version": "1.0.0",
+  "description": "On-device derived-metrics compute (noop Rust core via UniFFI)",
+  "main": "index.ts",
+  "private": true
+}

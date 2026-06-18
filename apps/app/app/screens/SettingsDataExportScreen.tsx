@@ -2,12 +2,13 @@ import { FC, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, View, ViewStyle } from "react-native"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { router } from "expo-router"
-import * as FileSystem from "expo-file-system"
+import * as FileSystem from "expo-file-system/legacy"
 import * as Sharing from "expo-sharing"
 import { DownloadSimple, ShareNetwork } from "phosphor-react-native"
 
 import { Text } from "@/components/Text"
-import { apiGet } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { buildLocalExport } from "@/services/export/localExport"
 import { Toast } from "@/components/reactx/toast"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
@@ -19,7 +20,7 @@ export const SettingsDataExportScreen: FC = () => {
   const exportWindow = async (windowDays: 90 | 365) => {
     setBusy(String(windowDays) as typeof busy)
     try {
-      const dump = await apiGet(`/journal/export?windowDays=${windowDays}`)
+      const dump = await buildLocalExport(openDatabase(), windowDays)
       const json = JSON.stringify(dump, null, 2)
       const fileName = `noop-export-${windowDays}d-${new Date().toISOString().slice(0, 10)}.json`
       const fileUri = `${FileSystem.cacheDirectory}${fileName}`
@@ -36,8 +37,8 @@ export const SettingsDataExportScreen: FC = () => {
       } else {
         Toast.show(`Saved to ${fileUri}`, { type: "success", position: "top" })
       }
-    } catch (e: any) {
-      Toast.show(e?.message ?? "Export failed", { type: "error", position: "top" })
+    } catch (e) {
+      Toast.show(e instanceof Error ? e.message : "Export failed", { type: "error", position: "top" })
     } finally {
       setBusy(null)
     }

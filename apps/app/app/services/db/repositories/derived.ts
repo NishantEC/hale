@@ -1,4 +1,6 @@
 import { and, asc, eq, gte, lte } from "drizzle-orm"
+import type { InferInsertModel } from "drizzle-orm"
+import type { ActivityBoutDetail } from "../../api/noopClient"
 import type { NoopDatabase } from "../index"
 import { withWrite } from "../transaction"
 import {
@@ -24,6 +26,19 @@ function backendMirror() {
     _syncedAt: Date.now(),
     _localCreatedAt: Date.now(),
     _origin: "backend" as const,
+  }
+}
+
+// Upserts device-computed rows into their mirror tables, stamped
+// _origin='local'. The on-device pipeline writes here so its results
+// accumulate as the device's own history (the cutover source of truth),
+// kept distinct from backend-synced rows. _syncedAt stays null — these
+// are never uplinked.
+function localMirror() {
+  return {
+    _syncedAt: null as number | null,
+    _localCreatedAt: Date.now(),
+    _origin: "local" as const,
   }
 }
 
@@ -92,6 +107,222 @@ export const upsertBaselineProfile = (db: NoopDatabase, rows: any[]) =>
 export const upsertSleepPlans = (db: NoopDatabase, rows: any[]) =>
   upsertMany(db, sleepPlans, "sleep_plans", rows)
 
+export interface LocalNightFeatureRow {
+  id: string
+  nightDate: number
+  restingHeartRate: number
+  rmssd: number
+  sdnn: number
+  respiratoryRate: number
+  continuity: number
+  regularity: number
+  validCoverage: number
+  confidenceRaw: number
+  sleepEstimateHours: number
+  sourceBlend: string
+  updatedAt: number
+}
+
+export interface LocalSleepDetectionRow {
+  id: string
+  nightDate: number
+  bedtime: number
+  wakeTime: number
+  durationHours: number
+  interruptionCount: number
+  continuity: number
+  regularity: number
+  validCoverage: number
+  confidence: number
+  updatedAt: number
+}
+
+export async function upsertLocalNightFeatures(
+  db: NoopDatabase,
+  rows: LocalNightFeatureRow[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    for (const row of rows) {
+      await tx
+        .insert(nightFeatures)
+        .values({ ...row, userId, ...mirror })
+        .onConflictDoUpdate({
+          // Preserve _localCreatedAt from the original insert; refresh the
+          // payload and keep the row local-origin.
+          target: nightFeatures.id,
+          set: { ...row, _origin: "local" as const, _syncedAt: null },
+        })
+    }
+  })
+  notifyTable("night_features")
+}
+
+export async function upsertLocalSleepDetections(
+  db: NoopDatabase,
+  rows: LocalSleepDetectionRow[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    for (const row of rows) {
+      await tx
+        .insert(sleepDetections)
+        .values({ ...row, userId, ...mirror })
+        .onConflictDoUpdate({
+          target: sleepDetections.id,
+          set: { ...row, _origin: "local" as const, _syncedAt: null },
+        })
+    }
+  })
+  notifyTable("sleep_detections")
+}
+
+// Local-origin upserts for the remaining device-computed derived tables, so
+// the full FullDayOutput can become the source of truth. Row types are
+// derived from the schema (minus the mirror columns this layer stamps), so
+// they stay in lockstep with the table definition without any `any`.
+type MirrorKeys = "_origin" | "_syncedAt" | "_localCreatedAt" | "userId"
+
+export type LocalDailyMetricRow = Omit<InferInsertModel<typeof dailyMetrics>, MirrorKeys>
+export type LocalDailyScoreRow = Omit<InferInsertModel<typeof dailyScores>, MirrorKeys>
+export type LocalSleepStageRow = Omit<InferInsertModel<typeof sleepStages>, MirrorKeys>
+export type LocalActivityDetectionRow = Omit<InferInsertModel<typeof activityDetections>, MirrorKeys>
+export type LocalBaselineProfileRow = Omit<InferInsertModel<typeof baselineProfile>, MirrorKeys>
+
+export async function upsertLocalDailyMetrics(
+  db: NoopDatabase,
+  rows: LocalDailyMetricRow[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    for (const row of rows) {
+      await tx
+        .insert(dailyMetrics)
+        .values({ ...row, userId, ...mirror })
+        .onConflictDoUpdate({
+          target: dailyMetrics.id,
+          set: { ...row, _origin: "local" as const, _syncedAt: null },
+        })
+    }
+  })
+  notifyTable("daily_metrics")
+}
+
+export async function upsertLocalDailyScores(
+  db: NoopDatabase,
+  rows: LocalDailyScoreRow[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    for (const row of rows) {
+      await tx
+        .insert(dailyScores)
+        .values({ ...row, userId, ...mirror })
+        .onConflictDoUpdate({
+          target: dailyScores.id,
+          set: { ...row, _origin: "local" as const, _syncedAt: null },
+        })
+    }
+  })
+  notifyTable("daily_scores")
+}
+
+export async function upsertLocalSleepStages(
+  db: NoopDatabase,
+  rows: LocalSleepStageRow[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    for (const row of rows) {
+      await tx
+        .insert(sleepStages)
+        .values({ ...row, userId, ...mirror })
+        .onConflictDoUpdate({
+          target: sleepStages.id,
+          set: { ...row, _origin: "local" as const, _syncedAt: null },
+        })
+    }
+  })
+  notifyTable("sleep_stages")
+}
+
+export async function upsertLocalActivityDetections(
+  db: NoopDatabase,
+  rows: LocalActivityDetectionRow[],
+): Promise<void> {
+  if (rows.length === 0) return
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    for (const row of rows) {
+      await tx
+        .insert(activityDetections)
+        .values({ ...row, userId, ...mirror })
+        .onConflictDoUpdate({
+          target: activityDetections.id,
+          set: { ...row, _origin: "local" as const, _syncedAt: null },
+        })
+    }
+  })
+  notifyTable("activity_detections")
+}
+
+export async function upsertLocalBaselineProfile(
+  db: NoopDatabase,
+  row: LocalBaselineProfileRow,
+): Promise<void> {
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    await tx
+      .insert(baselineProfile)
+      .values({ ...row, userId, ...mirror })
+      .onConflictDoUpdate({
+        target: baselineProfile.id,
+        set: { ...row, _origin: "local" as const, _syncedAt: null },
+      })
+  })
+  notifyTable("baseline_profile")
+}
+
+export type LocalSleepPlanRow = Omit<InferInsertModel<typeof sleepPlans>, MirrorKeys>
+
+export async function upsertLocalSleepPlan(
+  db: NoopDatabase,
+  row: LocalSleepPlanRow,
+): Promise<void> {
+  const userId = peekActiveUserId()
+  if (!userId) return
+  const mirror = localMirror()
+  await withWrite(db, async (tx) => {
+    await tx
+      .insert(sleepPlans)
+      .values({ ...row, userId, ...mirror })
+      .onConflictDoUpdate({
+        target: sleepPlans.id,
+        set: { ...row, _origin: "local" as const, _syncedAt: null },
+      })
+  })
+  notifyTable("sleep_plans")
+}
+
 // Common read helpers used by screens
 
 export async function listDailyMetricsByRange(
@@ -141,4 +372,75 @@ export async function getSleepPlan(db: NoopDatabase) {
   const userId = getActiveUserId()
   const rows = await db.select().from(sleepPlans).where(eq(sleepPlans.userId, userId))
   return rows[0] ?? null
+}
+
+// Local read for the activity-bout detail screen. The on-device
+// `activityDetections` table holds the bout summary but none of the
+// server detail's heavy curves (hrCurve / zone splits / motion), so those
+// map to empty arrays — the screen already guards every one of them. Epoch-ms
+// columns become ISO strings to match the `ActivityBoutDetail` wire shape the
+// screen renders. `intensity` / `source` are free-text columns whose values
+// are produced by the same pipeline as the union members, narrowed here at the
+// read boundary.
+export async function getActivityBoutById(
+  db: NoopDatabase,
+  id: string,
+): Promise<ActivityBoutDetail | null> {
+  const userId = getActiveUserId()
+  const rows = await db
+    .select()
+    .from(activityDetections)
+    .where(and(eq(activityDetections.id, id), eq(activityDetections.userId, userId)))
+  const row = rows[0]
+  if (!row) return null
+  return {
+    id: row.id,
+    startTime: new Date(row.startTime).toISOString(),
+    endTime: new Date(row.endTime).toISOString(),
+    durationMinutes: row.durationMinutes,
+    activityType: row.activityType,
+    intensity: row.intensity as ActivityBoutDetail["intensity"],
+    source: row.source as ActivityBoutDetail["source"],
+    confidence: row.confidence,
+    heartRateAvg: row.heartRateAvg,
+    heartRateMax: row.heartRateMax,
+    strainScore: row.strainScore,
+    hrCurve: [],
+    zonePercents: [],
+    zoneMinutes: [],
+  }
+}
+
+// Local mutators for activity confirm/dismiss/delete. The detail screen and
+// the pending-activity cards drive these in place of the now-dead backend
+// endpoints. Both scope to the active user so a row can't be touched across
+// accounts, and notify the activity_detections table so observers refresh.
+export async function setActivityConfirmed(
+  db: NoopDatabase,
+  id: string,
+  confirmedType?: string,
+): Promise<void> {
+  const userId = getActiveUserId()
+  const set: { source: string; updatedAt: number; activityType?: string } = {
+    source: "confirmed",
+    updatedAt: Date.now(),
+  }
+  if (confirmedType !== undefined) set.activityType = confirmedType
+  await withWrite(db, async (tx) => {
+    await tx
+      .update(activityDetections)
+      .set(set)
+      .where(and(eq(activityDetections.id, id), eq(activityDetections.userId, userId)))
+  })
+  notifyTable("activity_detections")
+}
+
+export async function deleteActivityDetection(db: NoopDatabase, id: string): Promise<void> {
+  const userId = getActiveUserId()
+  await withWrite(db, async (tx) => {
+    await tx
+      .delete(activityDetections)
+      .where(and(eq(activityDetections.id, id), eq(activityDetections.userId, userId)))
+  })
+  notifyTable("activity_detections")
 }

@@ -1,11 +1,6 @@
 import { FC } from "react"
-import { Alert, TouchableOpacity, View, ViewStyle } from "react-native"
-import {
-  ArrowsLeftRight,
-  ArrowClockwise,
-  Broom,
-  Cloud,
-} from "phosphor-react-native"
+import { TouchableOpacity, View, ViewStyle } from "react-native"
+import { ArrowsLeftRight, ArrowClockwise } from "phosphor-react-native"
 import type { Icon as PhosphorIcon } from "phosphor-react-native"
 
 import { Text } from "@/components/Text"
@@ -13,32 +8,11 @@ import { LOCAL_THEME } from "@/utils/localTheme"
 
 type Props = {
   isSyncing: boolean
-  queueDepth: number
   onSync: () => void | Promise<void>
   onRefresh: () => void | Promise<void>
-  onClearQueue: () => void | Promise<void>
-  onForceUpload: () => void | Promise<void>
 }
 
-export const ActionsRow: FC<Props> = ({
-  isSyncing,
-  queueDepth,
-  onSync,
-  onRefresh,
-  onClearQueue,
-  onForceUpload,
-}) => {
-  const confirmAndClear = () => {
-    Alert.alert(
-      "Clear outbound queue?",
-      `This deletes ${queueDepth} pending uploads. Cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "Clear", style: "destructive", onPress: () => void onClearQueue() },
-      ],
-    )
-  }
-
+export const ActionsRow: FC<Props> = ({ isSyncing, onSync, onRefresh }) => {
   return (
     <View style={$row}>
       <ActBtn
@@ -48,8 +22,6 @@ export const ActionsRow: FC<Props> = ({
         onPress={onSync}
       />
       <ActBtn icon={ArrowClockwise} label="Refresh" onPress={onRefresh} />
-      <ActBtn icon={Broom} label="Clear" onPress={confirmAndClear} />
-      <ActBtn icon={Cloud} label="Upload" onPress={onForceUpload} />
     </View>
   )
 }

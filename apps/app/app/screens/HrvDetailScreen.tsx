@@ -14,12 +14,10 @@ import { ScreenHeader, SCREEN_HEADER_HEIGHT } from "@/components/ScreenHeader"
 import { Text } from "@/components/Text"
 import { Toast } from "@/components/reactx/toast"
 import { useDashboard } from "@/context/DashboardContext"
-import {
-  fetchInsights,
-  fetchTrendsView,
-  type InsightsViewModel,
-  type TrendsViewModel,
-} from "@/services/api/noopClient"
+import { type InsightsViewModel, type TrendsViewModel } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
+import { computeLocalInsightsView } from "@/services/insights/computeLocalInsights"
+import { computeLocalTrendsView } from "@/services/insights/computeLocalTrends"
 import { humanizeFactorTag } from "@/utils/factorLabels"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
@@ -55,14 +53,16 @@ export const HrvDetailScreen: FC = () => {
 
   const reload = useCallback(() => {
     let cancelled = false
-    // Pull the longest window once; the toggle slices it client-side so the
-    // reference frames (7d/30d/max) stay stable regardless of the chart range.
-    fetchTrendsView(365)
+    // Compute the longest window once from local derived tables; the toggle
+    // slices it client-side so the reference frames (7d/30d/max) stay stable
+    // regardless of the chart range.
+    const db = openDatabase()
+    computeLocalTrendsView(db, 365)
       .then((t) => {
         if (!cancelled) setTrends(t)
       })
       .catch(() => {})
-    fetchInsights(90)
+    computeLocalInsightsView(db, 90)
       .then((i) => {
         if (!cancelled) setInsights(i)
       })

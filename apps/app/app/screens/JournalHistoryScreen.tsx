@@ -27,11 +27,7 @@ import { Toast } from "@/components/reactx/toast"
 import { TrendSparkline } from "@/components/TrendSparkline"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
 import { useDashboard } from "@/context/DashboardContext"
-import {
-  deleteJournalEntry as deleteJournalEntryRemote,
-  fetchJournalEntries,
-  type JournalEntryResponse,
-} from "@/services/api/noopClient"
+import { type JournalEntryResponse } from "@/services/api/noopClient"
 import { openDatabase } from "@/services/db"
 import {
   deleteJournalEntry,
@@ -98,27 +94,19 @@ export const JournalHistoryScreen: FC = () => {
     try {
       const db = openDatabase()
       const locals = await listJournalEntriesByDate(db, date)
-      if (locals.length > 0) {
-        setEntries(
-          locals.map((r) => ({
-            id: r.id,
-            factorTag: r.factorTag,
-            intensity: r.intensity,
-            note: r.note,
-            timestamp: new Date(r.timestamp).toISOString(),
-            createdAt: new Date(r.createdAt).toISOString(),
-          })),
-        )
-      }
+      setEntries(
+        locals.map((r) => ({
+          id: r.id,
+          factorTag: r.factorTag,
+          intensity: r.intensity,
+          note: r.note,
+          timestamp: new Date(r.timestamp).toISOString(),
+          createdAt: new Date(r.createdAt).toISOString(),
+        })),
+      )
     } catch (err) {
       console.warn("[journal] local read failed", err)
-    }
-
-    try {
-      const res = await fetchJournalEntries(date)
-      setEntries(res.entries)
-    } catch {}
-    finally {
+    } finally {
       setRefreshing(false)
     }
   }
@@ -135,11 +123,12 @@ export const JournalHistoryScreen: FC = () => {
       )
     }
     try {
+      const db = openDatabase()
       const results = await Promise.all(
         dates.map(async (date) => {
           try {
-            const res = await fetchJournalEntries(date)
-            return { date, value: res.entries.length }
+            const rows = await listJournalEntriesByDate(db, date)
+            return { date, value: rows.length }
           } catch {
             return { date, value: 0 }
           }
@@ -167,11 +156,6 @@ export const JournalHistoryScreen: FC = () => {
             const db = openDatabase()
             await deleteJournalEntry(db, id)
             setEntries((prev) => prev.filter((e) => e.id !== id))
-            try {
-              await deleteJournalEntryRemote(id)
-            } catch (postErr) {
-              console.warn("[journal] remote delete failed — drainer will retry", postErr)
-            }
           } catch {}
         },
       },

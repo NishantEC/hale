@@ -8,13 +8,13 @@ import Svg, { Defs, LinearGradient, Line, Path, Stop } from "react-native-svg"
 import { ClassPickerSheet, visualForType } from "@/components/activity"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
+import { type ActivityBoutDetail } from "@/services/api/noopClient"
+import { openDatabase } from "@/services/db"
 import {
-  confirmActivity,
-  deleteActivity,
-  dismissActivity,
-  fetchActivityBout,
-  type ActivityBoutDetail,
-} from "@/services/api/noopClient"
+  deleteActivityDetection,
+  getActivityBoutById,
+  setActivityConfirmed,
+} from "@/services/db/repositories/derived"
 import { LOCAL_THEME } from "@/utils/localTheme"
 
 function fmtRange(start: Date, end: Date): string {
@@ -51,7 +51,7 @@ export const BoutDetailScreen: FC = () => {
 
   useEffect(() => {
     if (typeof id !== "string") return
-    fetchActivityBout(id)
+    getActivityBoutById(openDatabase(), id)
       .then(setBout)
       .catch(() => setBout(null))
   }, [id])
@@ -116,7 +116,7 @@ export const BoutDetailScreen: FC = () => {
           <CandidateBanner
             conf={bout.confidence}
             onConfirm={async () => {
-              await confirmActivity(bout.id, bout.activityType)
+              await setActivityConfirmed(openDatabase(), bout.id, bout.activityType)
               router.back()
             }}
           />
@@ -193,9 +193,9 @@ export const BoutDetailScreen: FC = () => {
         <Pressable
           onPress={async () => {
             if (isCandidate) {
-              await dismissActivity(bout.id)
+              await deleteActivityDetection(openDatabase(), bout.id)
             } else {
-              await deleteActivity(bout.id)
+              await deleteActivityDetection(openDatabase(), bout.id)
             }
             router.back()
           }}
@@ -221,7 +221,7 @@ export const BoutDetailScreen: FC = () => {
         onCancel={() => setSheetOpen(false)}
         onPick={async (t) => {
           setSheetOpen(false)
-          await confirmActivity(bout.id, t)
+          await setActivityConfirmed(openDatabase(), bout.id, t)
           router.back()
         }}
       />

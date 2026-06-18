@@ -1,9 +1,7 @@
 import { Redirect } from "expo-router"
 
-import { useAuth } from "@/context/AuthContext"
-
+// Serverless app: no login gate — boot straight into the main UI. The
+// device-local identity is resolved in AuthProvider at startup.
 export default function IndexRoute() {
-  const { isAuthenticated } = useAuth()
-
-  return <Redirect href={isAuthenticated ? "/(app)/(tabs)" : "/(auth)/login"} />
+  return <Redirect href="/(app)/(tabs)" />
 }

@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/*"
   ],
   "scripts": {
     "build": "turbo run build",
@@ -22,9 +21,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
-      "@nestjs/core",
       "@shopify/react-native-skia",
-      "bcrypt",
       "better-sqlite3",
       "esbuild",
       "unrs-resolver"

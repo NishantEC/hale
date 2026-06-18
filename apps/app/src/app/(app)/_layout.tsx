@@ -1,13 +1,8 @@
-import { Redirect, Stack } from "expo-router"
-
-import { useAuth } from "@/context/AuthContext"
+import { Stack } from "expo-router"
 
 export default function AppLayout() {
-  const { isAuthenticated } = useAuth()
-
-  if (!isAuthenticated) {
-    return <Redirect href="/(auth)/login" />
-  }
+  // No auth gate — the serverless app is always "signed in" to its local
+  // identity. Direct access to all screens.
 
   return (
     <Stack screenOptions={{ headerShown: false }}>

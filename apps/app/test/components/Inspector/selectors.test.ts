@@ -1,7 +1,6 @@
 import {
   strapChipState,
   phoneChipState,
-  backendChipState,
   coverageChipState,
 } from "@/components/Inspector/selectors"
 
@@ -114,42 +113,6 @@ describe("phoneChipState", () => {
       dot: "red",
       sub: "daemon · 38 ticks",
     })
-  })
-})
-
-describe("backendChipState", () => {
-  const base = {
-    queueDepth: 0,
-    queueDead: 0,
-    lastSyncAt: 10_000_000,
-    consecutiveApiFailures: 0,
-    nowMs: 10_000_000,
-  }
-  test("clean → green / 'synced 0m ago'", () => {
-    expect(backendChipState(base)).toEqual({ dot: "green", sub: "synced 0m ago" })
-  })
-  test("pending only → amber", () => {
-    expect(backendChipState({ ...base, queueDepth: 3 })).toEqual({
-      dot: "amber",
-      sub: "3 pending · 0 dead",
-    })
-  })
-  test("dead items → amber", () => {
-    expect(backendChipState({ ...base, queueDead: 2 })).toEqual({
-      dot: "amber",
-      sub: "0 pending · 2 dead",
-    })
-  })
-  test("2+ api failures → red", () => {
-    expect(backendChipState({ ...base, consecutiveApiFailures: 2 })).toEqual({
-      dot: "red",
-      sub: "synced 0m ago",
-    })
-  })
-  test("last sync > 1h → red", () => {
-    expect(
-      backendChipState({ ...base, lastSyncAt: 10_000_000 - 4_000_000 }),
-    ).toEqual({ dot: "red", sub: "synced 67m ago" })
   })
 })
 

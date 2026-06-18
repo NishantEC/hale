@@ -2,22 +2,13 @@ import TestRenderer, { act } from "react-test-renderer"
 
 import { SyncProvider, useSyncContext } from "../../app/context/SyncContext"
 
-const mockDrainLoop = jest.fn()
-const mockPullDownlink = jest.fn()
-const mockQueueDepth = jest.fn()
-const mockListDeadLetters = jest.fn()
-const mockApiGet = jest.fn()
-const mockApiPost = jest.fn()
+// Serverless: SyncContext no longer drains an outbound queue or pulls a
+// downlink — there is no server. The assertions below verify the provider
+// stays inert (no syncing, empty queue, refresh is a no-op).
 
-let resolveNetworkState: ((state: { isInternetReachable: boolean | null }) => void) | null = null
 
 jest.mock("expo-network", () => ({
-  getNetworkStateAsync: jest.fn(
-    () =>
-      new Promise((resolve) => {
-        resolveNetworkState = resolve
-      }),
-  ),
+  getNetworkStateAsync: jest.fn(() => Promise.resolve({ isInternetReachable: true })),
   addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
 }))
 
@@ -31,37 +22,8 @@ jest.mock("expo-updates", () => ({
   fetchUpdateAsync: jest.fn(() => Promise.resolve()),
 }))
 
-jest.mock("@/services/db/session", () => ({
-  peekActiveUserId: jest.fn(() => "user-1"),
-}))
-
 jest.mock("@/services/db", () => ({
   openDatabase: jest.fn(() => ({})),
-}))
-
-jest.mock("@/services/api/noopClient", () => ({
-  apiGet: (...args: unknown[]) => mockApiGet(...args),
-  apiPost: (...args: unknown[]) => mockApiPost(...args),
-}))
-
-jest.mock("@/services/sync/downlinkPuller", () => ({
-  pullDownlink: (...args: unknown[]) => mockPullDownlink(...args),
-}))
-
-jest.mock("@/services/sync/uplinkDrainer", () => ({
-  drainLoop: (...args: unknown[]) => mockDrainLoop(...args),
-}))
-
-jest.mock("@/services/sync/refreshAllViews", () => ({
-  refreshAllViews: jest.fn(() => Promise.resolve()),
-}))
-
-jest.mock("@/services/sync/backgroundSync", () => ({
-  runBackgroundDrain: jest.fn(() => Promise.resolve({ status: "no-session" })),
-}))
-
-jest.mock("@/services/sync/backgroundCatchupTask", () => ({
-  registerBackgroundCatchupTask: jest.fn(() => Promise.resolve()),
 }))
 
 jest.mock("@/services/db/repositories/settings", () => ({
@@ -70,37 +32,47 @@ jest.mock("@/services/db/repositories/settings", () => ({
   getSetting: jest.fn(() => Promise.resolve("14")),
 }))
 
-jest.mock("@/services/db/repositories/viewCache", () => ({
-  setViewCache: jest.fn(() => Promise.resolve()),
+jest.mock("@/services/sync/retentionSweeper", () => ({
+  sweepRetention: jest.fn(() => Promise.resolve()),
 }))
 
-jest.mock("@/services/db/repositories/outboundQueue", () => ({
-  queueDepth: (...args: unknown[]) => mockQueueDepth(...args),
-  listDeadLetters: (...args: unknown[]) => mockListDeadLetters(...args),
-}))
+interface SyncSnapshot {
+  isOnline: boolean
+  isSyncing: boolean
+  pendingCount: number
+  deadCount: number
+  lastDeadLetterError: string | null
+  syncError: string | null
+}
 
-describe("SyncContext", () => {
+let snapshot: SyncSnapshot | null = null
+let refreshFn: (() => Promise<void>) | null = null
+
+function Probe() {
+  const ctx = useSyncContext()
+  snapshot = {
+    isOnline: ctx.isOnline,
+    isSyncing: ctx.isSyncing,
+    pendingCount: ctx.pendingCount,
+    deadCount: ctx.deadCount,
+    lastDeadLetterError: ctx.lastDeadLetterError,
+    syncError: ctx.syncError,
+  }
+  refreshFn = ctx.refresh
+  return null
+}
+
+describe("SyncContext (serverless)", () => {
   jest.useFakeTimers()
 
   beforeEach(() => {
-    mockDrainLoop.mockResolvedValue({ drained: 1 })
-    mockPullDownlink.mockResolvedValue(undefined)
-    mockQueueDepth.mockResolvedValue(0)
-    mockListDeadLetters.mockResolvedValue([])
-    mockApiGet.mockResolvedValue({})
-    mockApiPost.mockResolvedValue({})
-    resolveNetworkState = null
+    snapshot = null
+    refreshFn = null
     jest.clearAllTimers()
   })
 
-  it("does not permanently lock draining when the startup interval fires before network state resolves", async () => {
-    function Probe() {
-      useSyncContext()
-      return null
-    }
-
+  async function mount(): Promise<TestRenderer.ReactTestRenderer> {
     let renderer: TestRenderer.ReactTestRenderer | null = null
-
     await act(async () => {
       renderer = TestRenderer.create(
         <SyncProvider isDbReady>
@@ -109,139 +81,57 @@ describe("SyncContext", () => {
       )
       await Promise.resolve()
     })
+    if (!renderer) throw new Error("renderer not created")
+    return renderer
+  }
+
+  it("renders and exposes the initial serverless state", async () => {
+    const renderer = await mount()
+
+    expect(snapshot).not.toBeNull()
+    expect(snapshot?.isSyncing).toBe(false)
+    expect(snapshot?.pendingCount).toBe(0)
+    expect(snapshot?.deadCount).toBe(0)
+    expect(snapshot?.lastDeadLetterError).toBeNull()
+    expect(snapshot?.syncError).toBeNull()
+    expect(typeof refreshFn).toBe("function")
 
     await act(async () => {
-      jest.advanceTimersByTime(15_000)
-      await Promise.resolve()
-    })
-
-    expect(mockDrainLoop).not.toHaveBeenCalled()
-
-    await act(async () => {
-      resolveNetworkState?.({ isInternetReachable: true })
-      await Promise.resolve()
-    })
-
-    await act(async () => {
-      jest.advanceTimersByTime(15_000)
-      await Promise.resolve()
-    })
-
-    expect(mockDrainLoop).toHaveBeenCalledTimes(1)
-
-    await act(async () => {
-      renderer?.unmount()
+      renderer.unmount()
     })
   })
 
-  it("releases the draining flag in `finally` so subsequent drains can run after a thrown one", async () => {
-    // First scheduled drain throws; second should still run, proving the
-    // flag was reset in `finally`.
-    mockDrainLoop.mockReset()
-    mockDrainLoop
-      .mockRejectedValueOnce(new Error("first drain failed"))
-      .mockResolvedValue({ drained: 0 })
+  it("refresh() is a no-op — it never drains, pulls, or changes sync state", async () => {
+    const renderer = await mount()
 
-    function Probe() {
-      useSyncContext()
-      return null
-    }
-
-    let renderer: TestRenderer.ReactTestRenderer | null = null
 
     await act(async () => {
-      renderer = TestRenderer.create(
-        <SyncProvider isDbReady>
-          <Probe />
-        </SyncProvider>,
-      )
-      await Promise.resolve()
+      await refreshFn?.()
     })
 
-    await act(async () => {
-      resolveNetworkState?.({ isInternetReachable: true })
-      await Promise.resolve()
-    })
-
-    // First interval fires and rejects.
-    await act(async () => {
-      jest.advanceTimersByTime(15_000)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(mockDrainLoop).toHaveBeenCalledTimes(1)
-
-    // Second interval fires — if the flag had latched, this would be a no-op.
-    await act(async () => {
-      jest.advanceTimersByTime(15_000)
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-
-    expect(mockDrainLoop).toHaveBeenCalledTimes(2)
+    expect(snapshot?.isSyncing).toBe(false)
+    expect(snapshot?.syncError).toBeNull()
 
     await act(async () => {
-      renderer?.unmount()
+      renderer.unmount()
     })
   })
 
-  it("coalesces concurrent pullFn calls into a single in-flight pull", async () => {
-    let resolvePull: (() => void) | null = null
-    mockPullDownlink.mockReset()
-    mockPullDownlink.mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          resolvePull = () => resolve()
-        }),
-    )
+  it("the foreground interval no longer triggers a drain loop", async () => {
+    const renderer = await mount()
 
-    let captured: ReturnType<typeof useSyncContext> | null = null
-    function Probe() {
-      captured = useSyncContext()
-      return null
-    }
 
-    let renderer: TestRenderer.ReactTestRenderer | null = null
+    // Advance well past any historical drain interval (15s) — nothing fires.
     await act(async () => {
-      renderer = TestRenderer.create(
-        <SyncProvider isDbReady>
-          <Probe />
-        </SyncProvider>,
-      )
-      await Promise.resolve()
-    })
-    await act(async () => {
-      resolveNetworkState?.({ isInternetReachable: true })
+      jest.advanceTimersByTime(60_000)
       await Promise.resolve()
     })
 
-    // Two concurrent refreshes — both await drain (single-flight) then pull.
-    let r1: Promise<void> | undefined
-    let r2: Promise<void> | undefined
-    await act(async () => {
-      r1 = captured!.refresh()
-      r2 = captured!.refresh()
-      await Promise.resolve()
-    })
-
-    expect(mockPullDownlink).toHaveBeenCalledTimes(1)
+    expect(snapshot?.isSyncing).toBe(false)
+    expect(snapshot?.syncError).toBeNull()
 
     await act(async () => {
-      resolvePull?.()
-      await r1
-      await r2
-    })
-
-    // After resolution a third refresh starts a brand-new pull.
-    await act(async () => {
-      mockPullDownlink.mockResolvedValueOnce(undefined)
-      await captured!.refresh()
-    })
-    expect(mockPullDownlink).toHaveBeenCalledTimes(2)
-
-    await act(async () => {
-      renderer?.unmount()
+      renderer.unmount()
     })
   })
 })

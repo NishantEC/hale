@@ -8,7 +8,6 @@ import {
 } from './packet-types';
 import { PacketAssembler } from './packet-assembler';
 import { base64ToUint8Array } from './packet-codec';
-import { runBackgroundDrain } from '../sync/backgroundSync';
 import { appendLog } from '../observability/persistentLog';
 
 const PREFERRED_DEVICE_KEY = 'noop.preferredDeviceId';
@@ -103,9 +102,6 @@ class WhoopBleManager {
           this.scheduleReconnect().catch(() => undefined);
         }
       });
-      runBackgroundDrain(20_000).catch((err) =>
-        console.warn('[ble-restore] background drain failed', err),
-      );
     } catch (err) {
       console.warn('[ble] restored peripheral re-attach failed', err);
       this.setState('disconnected');

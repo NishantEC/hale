@@ -44,7 +44,7 @@ import { useBle } from "@/context/BleContext"
 import { useBleConnectionState, useBleDeviceName, useBleFirmwareVersion } from "@/stores/bleStore"
 import { ColorMode, useColorMode } from "@/context/ThemeContext"
 import { DateOfBirthSheet } from "@/components/DateOfBirthSheet"
-import { fetchProfile, updateProfile, type UserProfileData } from "@/services/api/noopClient"
+import { getUserProfile, setUserProfile, type UserProfile } from "@/services/identity/userProfile"
 import { LOCAL_THEME } from "@/utils/localTheme"
 import { usePreference } from "@/utils/usePreferences"
 
@@ -62,7 +62,7 @@ export const SettingsScreen: FC = () => {
   const { value: showHealthspan, setValue: setShowHealthspan } = usePreference("showHealthspan")
   const [now, setNow] = useState(Date.now())
   const [refreshing, setRefreshing] = useState(false)
-  const [profile, setProfile] = useState<UserProfileData | null>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [dobSheetOpen, setDobSheetOpen] = useState(false)
   const [dobSaving, setDobSaving] = useState(false)
 
@@ -82,7 +82,7 @@ export const SettingsScreen: FC = () => {
     let cancelled = false
     void (async () => {
       try {
-        const p = await fetchProfile()
+        const p = getUserProfile()
         if (!cancelled) setProfile(p)
       } catch {
         // Non-fatal — profile section just shows --
@@ -106,7 +106,7 @@ export const SettingsScreen: FC = () => {
       }
       setDobSaving(true)
       try {
-        const updated = await updateProfile({ dateOfBirth: iso })
+        const updated = setUserProfile({ dateOfBirth: iso })
         setProfile(updated)
         setDobSheetOpen(false)
       } catch (err: any) {

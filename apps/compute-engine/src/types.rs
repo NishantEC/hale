@@ -105,6 +105,29 @@ pub struct ActivityBoutV1 {
     pub external_source: Option<String>,
 }
 
+/// Controls which SpO₂ window is fed to desaturation event detection.
+///
+/// `Window` (default) uses the entire input SpO₂ series — this is the
+/// current server/golden behaviour and must remain the default so that
+/// existing callers and golden fixtures stay byte-identical.
+///
+/// `ReferenceNight` slices to the reference night's bedtime…wake_time
+/// before detection, giving a per-night count suitable for on-device use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DesaturationScope {
+    /// Entire input SpO₂ series (server default).
+    Window,
+    /// Slice to the reference night's sleep window.
+    ReferenceNight,
+}
+
+impl Default for DesaturationScope {
+    fn default() -> Self {
+        Self::Window
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComputeDerivedMetricsDayRequestV1 {
@@ -116,6 +139,8 @@ pub struct ComputeDerivedMetricsDayRequestV1 {
     pub baseline: BaselineProfileV1,
     pub reference_date: String,
     pub time_zone: String,
+    #[serde(default)]
+    pub desaturation_scope: DesaturationScope,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

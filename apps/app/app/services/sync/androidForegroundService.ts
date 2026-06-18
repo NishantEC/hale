@@ -1,21 +1,12 @@
 // react-native-background-actions foreground service — used while a BLE link
 // is alive. Android requires a visible foreground service of type
 // `connectedDevice` to keep BLE notifications flowing when the app is
-// backgrounded; this loop runs every 30s and drains the outbound queue.
-//
-// MUTUALLY EXCLUSIVE with `backgroundCatchupTask.ts` (expo-background-task,
-// 15-min OS-scheduled). Start unregisters the catchup task, stop re-registers
-// it, so only one of the two paths is active at any moment. The drain lock
-// (db/schema.ts:drainLock) is the last-resort safety net for the brief window
-// between these two transitions.
+// backgrounded. This service exists purely to hold that foreground
+// notification open for the lifetime of the connection; it performs no
+// work of its own.
 import { Platform } from "react-native"
 import BackgroundService from "react-native-background-actions"
-import { openDatabase, runMigrations } from "../db"
-import { runBackgroundDrainWith } from "./backgroundSync"
-import {
-  registerBackgroundCatchupTask,
-  unregisterBackgroundCatchupTask,
-} from "./backgroundCatchupTask"
+import { delay } from "../../utils/delay"
 
 const TASK_INTERVAL_MS = 30_000
 
@@ -30,29 +21,19 @@ const options = {
 } as const
 
 const veryLongTask = async (taskParams?: { delay?: number }) => {
-  const delay = taskParams?.delay ?? TASK_INTERVAL_MS
-  // Hoist DB + migrations above the loop — drizzle's migrate() re-scans the
-  // journal on every call, which adds up over hours of FGS uptime.
-  await runMigrations()
-  const db = openDatabase()
+  const intervalMs = taskParams?.delay ?? TASK_INTERVAL_MS
+  // Keep the task promise unresolved while the foreground service is
+  // running. The visible connectedDevice foreground notification is what
+  // keeps BLE alive in the background — this loop only needs to stay
+  // resident until stop() tears the service down.
   while (BackgroundService.isRunning()) {
-    try {
-      await runBackgroundDrainWith(db, 20_000)
-    } catch (err) {
-      console.warn("[android-fgs] drain iteration failed", err)
-    }
-    await new Promise((r) => setTimeout(r, delay))
+    await delay(intervalMs)
   }
 }
 
 export async function startAndroidForegroundService(): Promise<void> {
   if (Platform.OS !== "android") return
   if (BackgroundService.isRunning()) return
-  // Suppress the expo-background-task catch-up path while the FGS is live:
-  // the two paths would otherwise race on the same outbound rows.
-  await unregisterBackgroundCatchupTask().catch((err) =>
-    console.warn("[android-fgs] unregister catchup failed", err),
-  )
   await BackgroundService.start(veryLongTask, options as never)
 }
 
@@ -60,9 +41,4 @@ export async function stopAndroidForegroundService(): Promise<void> {
   if (Platform.OS !== "android") return
   if (!BackgroundService.isRunning()) return
   await BackgroundService.stop()
-  // Re-enable the OS-scheduled catch-up path so a backgrounded, disconnected
-  // app can still drain its queue every ~15 minutes.
-  await registerBackgroundCatchupTask().catch((err) =>
-    console.warn("[android-fgs] re-register catchup failed", err),
-  )
 }

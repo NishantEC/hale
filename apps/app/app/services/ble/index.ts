@@ -11,20 +11,3 @@ export { bleManager } from './ble-manager';
 export { HistoryDownloader } from './history-downloader';
 export { awaitCommandResponse } from './awaitable-response';
 export type { AwaitableResponse } from './awaitable-response';
-export {
-  TelemetryForwarder,
-  RealtimeSessionForwarder,
-  ConsoleLogLineForwarder,
-  createEventForwarder,
-  createRealtimeForwarder,
-  createConsoleLogForwarder,
-  createCommandResponseForwarder,
-  createImuForwarder,
-} from './telemetry-forwarder';
-export type {
-  DeviceEventPayload,
-  RealtimeSamplePayload,
-  ConsoleLogPayload,
-  CommandResponsePayload,
-  ImuRecordPayload,
-} from './telemetry-forwarder';

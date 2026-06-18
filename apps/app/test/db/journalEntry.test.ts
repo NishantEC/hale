@@ -5,14 +5,19 @@ import {
   listJournalEntriesByDate,
   deleteJournalEntry,
 } from "../../app/services/db/repositories/journalEntry"
-import { queueDepth } from "../../app/services/db/repositories/outboundQueue"
+import type { NoopDatabase } from "../../app/services/db"
 import { makeTestDb } from "./helpers"
+
+// Bridge the better-sqlite3 test driver to the op-sqlite production type.
+function testDb(): NoopDatabase {
+  return makeTestDb() as unknown as NoopDatabase
+}
 
 describe("journalEntry repository", () => {
   beforeEach(() => setActiveUserId("u"))
 
-  it("insert writes local row + enqueues uplink", async () => {
-    const db = makeTestDb() as any
+  it("insert writes a local row (serverless: no outbound enqueue)", async () => {
+    const db = testDb()
     await insertJournalEntry(db, {
       id: "j1",
       timestamp: 1000,
@@ -21,11 +26,14 @@ describe("journalEntry repository", () => {
       note: "",
       createdAt: 1000,
     })
-    expect(await queueDepth(db)).toBe(1)
+    const rows = await db.select().from(schema.journalEntries)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBe("j1")
+    expect(await db.select().from(schema.outboundQueue)).toHaveLength(0)
   })
 
   it("list returns entries for a given date scoped to active user", async () => {
-    const db = makeTestDb() as any
+    const db = testDb()
     const d = new Date("2026-04-18T10:00:00Z").getTime()
     await insertJournalEntry(db, {
       id: "a",
@@ -40,8 +48,8 @@ describe("journalEntry repository", () => {
     expect(rows[0].id).toBe("a")
   })
 
-  it("deleteJournalEntry removes + enqueues delete intent", async () => {
-    const db = makeTestDb() as any
+  it("deleteJournalEntry removes the local row", async () => {
+    const db = testDb()
     await insertJournalEntry(db, {
       id: "a",
       timestamp: 1000,
@@ -53,6 +61,6 @@ describe("journalEntry repository", () => {
     await deleteJournalEntry(db, "a")
     const rows = await db.select().from(schema.journalEntries)
     expect(rows).toHaveLength(0)
-    expect(await queueDepth(db)).toBeGreaterThan(0)
+    expect(await db.select().from(schema.outboundQueue)).toHaveLength(0)
   })
 })

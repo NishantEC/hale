@@ -13,15 +13,12 @@ import { useMMKVBoolean } from "react-native-mmkv"
 
 import {
   fetchDailySummary,
-  fetchWorkoutsBetween,
   isAvailable,
   requestPermissions,
   type DailySummary,
-  type HealthKitWorkout,
 } from "@/services/healthkit"
 import { getCharacteristics } from "@/services/healthkit/healthkit"
-import { startAltimeter, stopAltimeter } from "@/services/altimeter/altimeter"
-import { fetchProfile, pushHealthkitSync, updateProfile } from "@/services/api/noopClient"
+import { getUserProfile, setUserProfile, type UserProfile } from "@/services/identity/userProfile"
 
 /**
  * Read DOB + biological sex from the iOS Health app and write them to
@@ -31,20 +28,16 @@ import { fetchProfile, pushHealthkitSync, updateProfile } from "@/services/api/n
 async function syncDemographicsFromHealthKit(): Promise<void> {
   const characteristics = await getCharacteristics()
   if (!characteristics.dateOfBirth && !characteristics.biologicalSex) return
-  try {
-    const existing = await fetchProfile()
-    const patch: Partial<{ dateOfBirth: string; biologicalSex: "male" | "female" | "other" }> = {}
-    if (characteristics.dateOfBirth && !existing.dateOfBirth) {
-      patch.dateOfBirth = characteristics.dateOfBirth
-    }
-    if (characteristics.biologicalSex && !existing.biologicalSex) {
-      patch.biologicalSex = characteristics.biologicalSex
-    }
-    if (Object.keys(patch).length > 0) {
-      await updateProfile(patch)
-    }
-  } catch (err) {
-    console.warn("[healthkit] profile sync failed", err)
+  const existing = getUserProfile()
+  const patch: Partial<UserProfile> = {}
+  if (characteristics.dateOfBirth && !existing.dateOfBirth) {
+    patch.dateOfBirth = characteristics.dateOfBirth
+  }
+  if (characteristics.biologicalSex && !existing.biologicalSex) {
+    patch.biologicalSex = characteristics.biologicalSex
+  }
+  if (Object.keys(patch).length > 0) {
+    setUserProfile(patch)
   }
 }
 
@@ -114,10 +107,6 @@ export function HealthKitProvider({ children }: PropsWithChildren) {
         }
         setStatus("ready")
         setErrorMessage(null)
-
-        // Push to backend so the server-side activity pipeline can use it for
-        // hiking / stair / Apple-workout cross-classification.
-        await pushSummariesAndWorkoutsToBackend(today, selected, target)
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : String(err))
         setStatus("error")
@@ -139,11 +128,6 @@ export function HealthKitProvider({ children }: PropsWithChildren) {
     try {
       await requestPermissions()
       setHasRequestedPermission(true)
-      // Kick off the iPhone barometer stream in the background — feeds the
-      // backend's hill / mountain / stair detectors via /healthkit/barometer.
-      void startAltimeter().catch((err) =>
-        console.warn("[healthkit] altimeter start failed", err),
-      )
       // Pull demographics from Health app and populate the noop profile
       // — saves the user from re-entering dateOfBirth in Settings.
       void syncDemographicsFromHealthKit().catch((err) =>
@@ -167,9 +151,6 @@ export function HealthKitProvider({ children }: PropsWithChildren) {
         return
       }
       if (hasRequestedPermission) {
-        void startAltimeter().catch((err) =>
-          console.warn("[healthkit] altimeter start failed", err),
-        )
         await refresh()
       } else {
         setStatus("needsPermission")
@@ -177,7 +158,6 @@ export function HealthKitProvider({ children }: PropsWithChildren) {
     })()
     return () => {
       cancelled = true
-      stopAltimeter()
     }
   }, [hasRequestedPermission, refresh])
 
@@ -236,58 +216,3 @@ export function useHealthKit(): HealthKitContextValue {
   return ctx
 }
 
-async function pushSummariesAndWorkoutsToBackend(
-  today: DailySummary | null,
-  selected: DailySummary | null,
-  selectedDate: Date,
-) {
-  const summaries: DailySummary[] = []
-  if (today) summaries.push(today)
-  if (selected && (!today || selected.date !== today.date)) summaries.push(selected)
-  if (summaries.length === 0) return
-
-  // Pull workouts for the active date window (00:00 – 24:00 local)
-  const dayStart = new Date(selectedDate)
-  dayStart.setHours(0, 0, 0, 0)
-  const dayEnd = new Date(selectedDate)
-  dayEnd.setHours(23, 59, 59, 999)
-
-  let workouts: HealthKitWorkout[] = []
-  try {
-    workouts = await fetchWorkoutsBetween(dayStart, dayEnd, 50)
-  } catch (err) {
-    console.warn("[healthkit] workouts fetch failed", err)
-  }
-
-  try {
-    await pushHealthkitSync({
-      summaries: summaries.map((s) => ({
-        dayDate: s.date,
-        steps: s.steps,
-        activeEnergyKcal: s.activeEnergyKcal,
-        exerciseMinutes: s.exerciseMinutes,
-        standMinutes: s.standMinutes,
-        walkingDistanceMeters: s.walkingDistanceMeters,
-        flightsClimbed: s.flightsClimbed,
-        restingHeartRate: s.restingHeartRate,
-        hrvSdnnMs: s.hrvSdnnMs,
-        oxygenSaturationAverage: s.oxygenSaturationAverage,
-        respiratoryRateAverage: s.respiratoryRateAverage,
-      })),
-      workouts: workouts.map((w) => ({
-        uuid: w.uuid,
-        activityName: w.activityName,
-        startDate: w.startDate,
-        endDate: w.endDate,
-        durationMinutes: w.durationMinutes,
-        totalEnergyKcal: w.totalEnergyKcal,
-        totalDistanceMeters: w.totalDistanceMeters,
-        averageHeartRate: w.averageHeartRate,
-        source: w.source,
-      })),
-    })
-  } catch (err) {
-    // Push failures are non-fatal — the backend will get the next day's data later.
-    console.warn("[healthkit] backend push failed", err)
-  }
-}
