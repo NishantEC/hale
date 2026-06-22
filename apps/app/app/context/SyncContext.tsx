@@ -15,11 +15,6 @@ import * as Network from "expo-network"
 import * as Updates from "expo-updates"
 
 import { openDatabase } from "@/services/db"
-import {
-  DEFAULT_RAW_RETENTION_DAYS,
-  SETTING_RAW_RETENTION_DAYS,
-  getSetting,
-} from "@/services/db/repositories/settings"
 import { sweepRetention } from "@/services/sync/retentionSweeper"
 
 // Cap a single foreground drain at 60s so it can't outlive the 90s drain-lock
@@ -84,9 +79,7 @@ export const SyncProvider: FC<PropsWithChildren<{ isDbReady: boolean }>> = ({
       if (next !== "active") return
       try {
         const db = openDatabase()
-        const raw =
-          Number(await getSetting(db, SETTING_RAW_RETENTION_DAYS)) || DEFAULT_RAW_RETENTION_DAYS
-        if (raw > 0) await sweepRetention(db, { rawDays: raw })
+        await sweepRetention(db)
       } catch (err) {
         console.warn("[sync] retention sweep failed", err)
       }
