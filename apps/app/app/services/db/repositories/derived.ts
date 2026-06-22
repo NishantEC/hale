@@ -1,6 +1,6 @@
 import { and, asc, eq, gte, lte } from "drizzle-orm"
 import type { InferInsertModel } from "drizzle-orm"
-import type { ActivityBoutDetail } from "../../api/noopClient"
+import type { ActivityBoutDetail } from "../../api/viewModels"
 import type { NoopDatabase } from "../index"
 import { withWrite } from "../transaction"
 import {

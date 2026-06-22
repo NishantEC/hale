@@ -10,7 +10,7 @@ import {
   parseExtendedBatteryEvent,
 } from '@/services/ble/battery-parsers'
 import type { ConnectionState, WhoopPacket } from '@/services/ble/packet-types'
-import type { SeriesPoint } from '@/services/api/noopClient'
+import type { SeriesPoint } from '@/services/api/viewModels'
 import { useBleStore } from './bleStore'
 
 const LIVE_STRESS_RESTING_BPM_DEFAULT = 60

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useShallow } from 'zustand/react/shallow'
 import type { ConnectionState } from '@/services/ble/packet-types'
-import type { SeriesPoint } from '@/services/api/noopClient'
+import type { SeriesPoint } from '@/services/api/viewModels'
 
 export interface BleStoreState {
   connectionState: ConnectionState

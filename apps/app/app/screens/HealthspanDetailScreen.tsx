@@ -32,7 +32,7 @@ import {
   HealthAssessment,
   HealthContributor,
   HealthViewModel,
-} from "@/services/api/noopClient"
+} from "@/services/api/viewModels"
 import { computeLocalHealthView } from "@/services/health/computeLocalHealthView"
 import { openDatabase } from "@/services/db"
 import { LOCAL_THEME } from "@/utils/localTheme"

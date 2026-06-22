@@ -4,7 +4,7 @@ import type {
   HealthAssessment,
   HealthContributor,
   HealthViewModel,
-} from "../api/noopClient"
+} from "../api/viewModels"
 import type { NoopDatabase } from "../db"
 import { baselineProfile, dailyMetrics, nightFeatures, sleepDetections } from "../db/schema"
 import { getActiveUserId } from "../db/session"

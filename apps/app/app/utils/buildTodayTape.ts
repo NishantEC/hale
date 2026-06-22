@@ -1,5 +1,5 @@
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
-import type { HomeViewModel, JournalEntryResponse } from "@/services/api/noopClient"
+import type { HomeViewModel, JournalEntryResponse } from "@/services/api/viewModels"
 
 export type TapeEventType = "sleep" | "recovery" | "journal" | "workout" | "vital"
 

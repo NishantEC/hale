@@ -3,7 +3,7 @@ import { StyleSheet, View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
 import { CandidateDeck, type CandidatePayload } from "@/components/activity"
-import { type PendingActivityCard } from "@/services/api/noopClient"
+import { type PendingActivityCard } from "@/services/api/viewModels"
 import { openDatabase } from "@/services/db"
 import { deleteActivityDetection, setActivityConfirmed } from "@/services/db/repositories/derived"
 import { LOCAL_THEME } from "@/utils/localTheme"

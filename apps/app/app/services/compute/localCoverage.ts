@@ -1,6 +1,6 @@
 import { and, eq, gte, lt, sql } from "drizzle-orm"
 
-import type { CoverageKind, CoverageResponse } from "../api/noopClient"
+import type { CoverageKind, CoverageResponse } from "../api/viewModels"
 import type { NoopDatabase } from "../db"
 import { dailyMetrics, rawSensorRecords } from "../db/schema"
 import { getActiveUserId } from "../db/session"

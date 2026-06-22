@@ -14,7 +14,7 @@ import { Toast } from "@/components/reactx/toast"
 import { useBle } from "@/context/BleContext"
 import { useBleConnectionState, useBleStrapAlarmArmed } from "@/stores/bleStore"
 import { useDashboard } from "@/context/DashboardContext"
-import { SleepViewModel } from "@/services/api/noopClient"
+import { SleepViewModel } from "@/services/api/viewModels"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 function wrapMinutes(minutes: number) {

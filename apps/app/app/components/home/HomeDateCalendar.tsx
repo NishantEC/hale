@@ -5,7 +5,7 @@ import { X } from "phosphor-react-native"
 
 import { Text } from "@/components/Text"
 import { LOCAL_THEME } from "@/utils/localTheme"
-import type { CoverageKind } from "@/services/api/noopClient"
+import type { CoverageKind } from "@/services/api/viewModels"
 
 type Props = {
   selectedDate: string

@@ -30,7 +30,7 @@ import {
   useSyncProgress,
   useSyncStage,
 } from "@/stores/syncStore"
-import { forceLogout } from "@/services/api/noopClient"
+import { forceLogout } from "@/services/api/viewModels"
 import { LOCAL_THEME, themed, type ThemedStyle } from "@/utils/localTheme"
 
 export const DeviceSettingsScreen: FC = () => {

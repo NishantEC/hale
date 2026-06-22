@@ -26,7 +26,7 @@ import {
   useBleConnectionState,
   useBleIsCharging,
 } from "@/stores/bleStore"
-import { type HealthViewModel } from "@/services/api/noopClient"
+import { type HealthViewModel } from "@/services/api/viewModels"
 import { computeLocalHealthView } from "@/services/health/computeLocalHealthView"
 import { openDatabase } from "@/services/db"
 import { LOCAL_THEME } from "@/utils/localTheme"

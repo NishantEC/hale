@@ -1,6 +1,6 @@
 import { type ContributorItem } from "@/components/health/ContributorList"
 import { type NumBlockDirection } from "@/components/health/NumBlock"
-import { type HealthVital } from "@/services/api/noopClient"
+import { type HealthVital } from "@/services/api/viewModels"
 
 // Whether a rising value is an improvement. Skin-temp delta is special-cased
 // (closer to zero is better) by the caller below.

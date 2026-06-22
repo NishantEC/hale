@@ -5,7 +5,7 @@ import Svg, { Line, Path, Rect } from "react-native-svg"
 
 import { BoutCard, GapRule, RestDayEmpty } from "@/components/activity"
 import { Text } from "@/components/Text"
-import type { DayRibbon } from "@/services/api/noopClient"
+import type { DayRibbon } from "@/services/api/viewModels"
 import type { TapeEvent } from "@/utils/buildTodayTape"
 import { hexWithAlpha } from "@/utils/hexWithAlpha"
 import { LOCAL_THEME } from "@/utils/localTheme"

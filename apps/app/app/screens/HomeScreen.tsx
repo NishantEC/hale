@@ -37,7 +37,7 @@ import { DayArcRibbon } from "@/components/home/DayArcRibbon"
 import {
   type CoverageKind,
   type JournalEntryResponse,
-} from "@/services/api/noopClient"
+} from "@/services/api/viewModels"
 import { computeLocalCoverage } from "@/services/compute/localCoverage"
 import { openDatabase } from "@/services/db"
 import { listJournalEntriesByDate } from "@/services/db/repositories/journalEntry"

@@ -27,7 +27,7 @@ import { Toast } from "@/components/reactx/toast"
 import { TrendSparkline } from "@/components/TrendSparkline"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
 import { useDashboard } from "@/context/DashboardContext"
-import { type JournalEntryResponse } from "@/services/api/noopClient"
+import { type JournalEntryResponse } from "@/services/api/viewModels"
 import { openDatabase } from "@/services/db"
 import {
   deleteJournalEntry,

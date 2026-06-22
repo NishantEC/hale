@@ -20,7 +20,7 @@ import {
   type FactorCategory,
   type FactorDefinition,
 } from "@/constants/journalFactors"
-import { type JournalEntryResponse } from "@/services/api/noopClient"
+import { type JournalEntryResponse } from "@/services/api/viewModels"
 import { openDatabase } from "@/services/db"
 import {
   insertJournalEntry,

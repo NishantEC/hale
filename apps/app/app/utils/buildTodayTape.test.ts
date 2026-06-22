@@ -1,4 +1,4 @@
-import type { HomeViewModel } from "@/services/api/noopClient"
+import type { HomeViewModel } from "@/services/api/viewModels"
 
 import { buildTodayTape } from "./buildTodayTape"
 

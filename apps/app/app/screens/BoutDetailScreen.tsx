@@ -8,7 +8,7 @@ import Svg, { Defs, LinearGradient, Line, Path, Stop } from "react-native-svg"
 import { ClassPickerSheet, visualForType } from "@/components/activity"
 import { Text } from "@/components/Text"
 import { useDashboard } from "@/context/DashboardContext"
-import { type ActivityBoutDetail } from "@/services/api/noopClient"
+import { type ActivityBoutDetail } from "@/services/api/viewModels"
 import { openDatabase } from "@/services/db"
 import {
   deleteActivityDetection,

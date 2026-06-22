@@ -1,6 +1,6 @@
 import { and, asc, eq, gte } from "drizzle-orm"
 
-import type { SeriesPoint, TrendsViewModel } from "../api/noopClient"
+import type { SeriesPoint, TrendsViewModel } from "../api/viewModels"
 import type { NoopDatabase } from "../db"
 import { dailyMetrics, dailyScores, nightFeatures, sleepDetections } from "../db/schema"
 import { getActiveUserId } from "../db/session"

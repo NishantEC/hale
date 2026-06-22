@@ -5,7 +5,7 @@ import { router } from "expo-router"
 
 import { Text } from "@/components/Text"
 import { JOURNAL_FACTORS } from "@/constants/journalFactors"
-import { type InsightsViewModel, type MetricInsights } from "@/services/api/noopClient"
+import { type InsightsViewModel, type MetricInsights } from "@/services/api/viewModels"
 import { openDatabase } from "@/services/db"
 import { computeLocalInsightsView } from "@/services/insights/computeLocalInsights"
 import { LOCAL_THEME } from "@/utils/localTheme"

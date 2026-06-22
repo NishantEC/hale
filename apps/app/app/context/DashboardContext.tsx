@@ -18,7 +18,7 @@ import {
   SleepPlanInput,
   SleepViewModel,
   StressMonitorSummary,
-} from "../services/api/noopClient"
+} from "../services/api/viewModels"
 import { scoreToZone } from "@/utils/stressZone"
 import { openDatabase } from "../services/db"
 import { loadLocalPipelineResults } from "../services/compute/localResults"

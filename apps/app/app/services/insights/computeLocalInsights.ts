@@ -6,7 +6,7 @@ import type {
   InsightMetric,
   InsightsViewModel,
   MetricInsights,
-} from "../api/noopClient"
+} from "../api/viewModels"
 import type { NoopDatabase } from "../db"
 import { dailyMetrics, dailyScores, journalEntries, nightFeatures } from "../db/schema"
 import { getActiveUserId } from "../db/session"

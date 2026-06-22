@@ -1,6 +1,6 @@
 import { and, asc, eq } from "drizzle-orm"
 
-import type { PipelineResults } from "../api/noopClient"
+import type { PipelineResults } from "../api/viewModels"
 import type { NoopDatabase } from "../db"
 import {
   baselineProfile,

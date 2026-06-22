@@ -48,7 +48,7 @@ import {
   DEFAULT_CAUGHT_UP_WINDOW_MS,
   DEFAULT_MAX_ITERATIONS,
 } from "@/services/sync/syncLoop"
-import { SeriesPoint } from "@/services/api/noopClient"
+import { SeriesPoint } from "@/services/api/viewModels"
 import { openDatabase } from "@/services/db"
 import { useDashboard } from "@/context/DashboardContext"
 import { useAuth } from "@/context/AuthContext"
