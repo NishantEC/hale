@@ -27,7 +27,7 @@ describe("drizzle schema", () => {
     }
   })
 
-  it("mirrored tables include _syncedAt, _localCreatedAt, _origin, userId", () => {
+  it("mirrored tables include _localCreatedAt, _origin, userId", () => {
     const mirrored = [
       "rawSensorRecords",
       "realtimeSamples",
@@ -46,7 +46,7 @@ describe("drizzle schema", () => {
     ]
     for (const name of mirrored) {
       const table: any = (schema as any)[name]
-      expect(table._syncedAt).toBeDefined()
+      expect(table._syncedAt).toBeUndefined()
       expect(table._localCreatedAt).toBeDefined()
       expect(table._origin).toBeDefined()
       expect(table.userId).toBeDefined()

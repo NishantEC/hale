@@ -91,7 +91,6 @@ describe("persistDeviceHistory", () => {
       _origin: "local",
       userId: "u1",
     })
-    expect(nf[0]._syncedAt).toBeNull()
 
     const sd = await db.select().from(schema.sleepDetections)
     expect(sd).toHaveLength(1)

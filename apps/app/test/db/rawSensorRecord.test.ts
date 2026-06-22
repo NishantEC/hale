@@ -36,7 +36,6 @@ describe("rawSensorRecord repository", () => {
     expect(rows).toHaveLength(1)
     expect(rows[0].userId).toBe("user-abc")
     expect(rows[0]._origin).toBe("local")
-    expect(rows[0]._syncedAt).toBeNull()
     expect(rows[0]._localCreatedAt).toBeGreaterThan(0)
   })
 
