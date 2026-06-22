@@ -22,7 +22,6 @@ export async function insertJournalEntry(
   await withWrite(db, async (tx) => {
     await tx.insert(journalEntries).values({
       ...input,
-      _syncedAt: null,
       _localCreatedAt: Date.now(),
       _origin: "local",
       userId,

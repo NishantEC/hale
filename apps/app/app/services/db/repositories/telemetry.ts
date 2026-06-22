@@ -5,7 +5,7 @@ import { getActiveUserId } from "../session"
 import { notifyTable } from "../observable"
 
 function localMirror() {
-  return { _syncedAt: null, _localCreatedAt: Date.now(), _origin: "local" as const }
+  return { _localCreatedAt: Date.now(), _origin: "local" as const }
 }
 
 export async function insertDeviceEvent(db: NoopDatabase, row: any): Promise<void> {

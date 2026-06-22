@@ -19,7 +19,7 @@ import { InspectorCard } from "./InspectorCard"
 import { StatusPill } from "./StatusPill"
 
 type TableRow = { name: string; count: number }
-type RecentRow = { timestamp: number; syncedAt: number | null }
+type RecentRow = { timestamp: number }
 
 const TABLES = [
   "raw_sensor_records",
@@ -66,9 +66,9 @@ export const DbSnapshotCard: FC = () => {
       setTables(counts)
       const recentRows = (await db.all(
         sql.raw(
-          `SELECT timestamp, _syncedAt as syncedAt FROM raw_sensor_records ORDER BY timestamp DESC LIMIT 5`,
+          `SELECT timestamp FROM raw_sensor_records ORDER BY timestamp DESC LIMIT 5`,
         ),
-      )) as Array<{ timestamp: number; syncedAt: number | null }>
+      )) as Array<{ timestamp: number }>
       setRecent(recentRows)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -204,14 +204,6 @@ export const DbSnapshotCard: FC = () => {
                   fontFamily: "Menlo",
                   fontVariant: ["tabular-nums"],
                   flex: 1,
-                }}
-              />
-              <Text
-                text={r.syncedAt ? "synced" : "pending"}
-                size="xxs"
-                style={{
-                  color: r.syncedAt ? "#86efac" : "#fcd34d",
-                  textAlign: "right",
                 }}
               />
             </View>

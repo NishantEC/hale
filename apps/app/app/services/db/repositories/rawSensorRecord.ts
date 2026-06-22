@@ -39,7 +39,6 @@ export async function insertRawSensorRecordTx(
     .insert(rawSensorRecords)
     .values({
       ...input,
-      _syncedAt: null,
       _localCreatedAt: Date.now(),
       _origin: "local",
       userId,

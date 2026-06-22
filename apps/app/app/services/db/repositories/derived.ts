@@ -23,7 +23,6 @@ import { notifyTable } from "../observable"
 
 function backendMirror() {
   return {
-    _syncedAt: Date.now(),
     _localCreatedAt: Date.now(),
     _origin: "backend" as const,
   }
@@ -32,11 +31,9 @@ function backendMirror() {
 // Upserts device-computed rows into their mirror tables, stamped
 // _origin='local'. The on-device pipeline writes here so its results
 // accumulate as the device's own history (the cutover source of truth),
-// kept distinct from backend-synced rows. _syncedAt stays null — these
-// are never uplinked.
+// kept distinct from backend-synced rows.
 function localMirror() {
   return {
-    _syncedAt: null as number | null,
     _localCreatedAt: Date.now(),
     _origin: "local" as const,
   }
@@ -154,7 +151,7 @@ export async function upsertLocalNightFeatures(
           // Preserve _localCreatedAt from the original insert; refresh the
           // payload and keep the row local-origin.
           target: nightFeatures.id,
-          set: { ...row, _origin: "local" as const, _syncedAt: null },
+          set: { ...row, _origin: "local" as const },
         })
     }
   })
@@ -176,7 +173,7 @@ export async function upsertLocalSleepDetections(
         .values({ ...row, userId, ...mirror })
         .onConflictDoUpdate({
           target: sleepDetections.id,
-          set: { ...row, _origin: "local" as const, _syncedAt: null },
+          set: { ...row, _origin: "local" as const },
         })
     }
   })
@@ -187,7 +184,7 @@ export async function upsertLocalSleepDetections(
 // the full FullDayOutput can become the source of truth. Row types are
 // derived from the schema (minus the mirror columns this layer stamps), so
 // they stay in lockstep with the table definition without any `any`.
-type MirrorKeys = "_origin" | "_syncedAt" | "_localCreatedAt" | "userId"
+type MirrorKeys = "_origin" | "_localCreatedAt" | "userId"
 
 export type LocalDailyMetricRow = Omit<InferInsertModel<typeof dailyMetrics>, MirrorKeys>
 export type LocalDailyScoreRow = Omit<InferInsertModel<typeof dailyScores>, MirrorKeys>
@@ -210,7 +207,7 @@ export async function upsertLocalDailyMetrics(
         .values({ ...row, userId, ...mirror })
         .onConflictDoUpdate({
           target: dailyMetrics.id,
-          set: { ...row, _origin: "local" as const, _syncedAt: null },
+          set: { ...row, _origin: "local" as const },
         })
     }
   })
@@ -232,7 +229,7 @@ export async function upsertLocalDailyScores(
         .values({ ...row, userId, ...mirror })
         .onConflictDoUpdate({
           target: dailyScores.id,
-          set: { ...row, _origin: "local" as const, _syncedAt: null },
+          set: { ...row, _origin: "local" as const },
         })
     }
   })
@@ -254,7 +251,7 @@ export async function upsertLocalSleepStages(
         .values({ ...row, userId, ...mirror })
         .onConflictDoUpdate({
           target: sleepStages.id,
-          set: { ...row, _origin: "local" as const, _syncedAt: null },
+          set: { ...row, _origin: "local" as const },
         })
     }
   })
@@ -276,7 +273,7 @@ export async function upsertLocalActivityDetections(
         .values({ ...row, userId, ...mirror })
         .onConflictDoUpdate({
           target: activityDetections.id,
-          set: { ...row, _origin: "local" as const, _syncedAt: null },
+          set: { ...row, _origin: "local" as const },
         })
     }
   })
@@ -296,7 +293,7 @@ export async function upsertLocalBaselineProfile(
       .values({ ...row, userId, ...mirror })
       .onConflictDoUpdate({
         target: baselineProfile.id,
-        set: { ...row, _origin: "local" as const, _syncedAt: null },
+        set: { ...row, _origin: "local" as const },
       })
   })
   notifyTable("baseline_profile")
@@ -317,7 +314,7 @@ export async function upsertLocalSleepPlan(
       .values({ ...row, userId, ...mirror })
       .onConflictDoUpdate({
         target: sleepPlans.id,
-        set: { ...row, _origin: "local" as const, _syncedAt: null },
+        set: { ...row, _origin: "local" as const },
       })
   })
   notifyTable("sleep_plans")
