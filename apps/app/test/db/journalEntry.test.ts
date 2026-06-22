@@ -29,7 +29,6 @@ describe("journalEntry repository", () => {
     const rows = await db.select().from(schema.journalEntries)
     expect(rows).toHaveLength(1)
     expect(rows[0].id).toBe("j1")
-    expect(await db.select().from(schema.outboundQueue)).toHaveLength(0)
   })
 
   it("list returns entries for a given date scoped to active user", async () => {
@@ -61,6 +60,5 @@ describe("journalEntry repository", () => {
     await deleteJournalEntry(db, "a")
     const rows = await db.select().from(schema.journalEntries)
     expect(rows).toHaveLength(0)
-    expect(await db.select().from(schema.outboundQueue)).toHaveLength(0)
   })
 })

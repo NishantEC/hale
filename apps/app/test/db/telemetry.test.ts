@@ -48,7 +48,5 @@ describe("telemetry repositories", () => {
     expect(await db.select().from(schema.deviceEvents)).toHaveLength(1)
     expect(await db.select().from(schema.realtimeSamples)).toHaveLength(1)
     expect(await db.select().from(schema.consoleLogs)).toHaveLength(1)
-    // Nothing is forwarded to a server, so the outbound queue stays empty.
-    expect(await db.select().from(schema.outboundQueue)).toHaveLength(0)
   })
 })

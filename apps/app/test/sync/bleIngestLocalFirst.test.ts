@@ -39,7 +39,5 @@ describe("bleIngest (write-local-first)", () => {
     expect(raws).toHaveLength(1)
     expect(raws[0].id).toBe("r1")
     expect(raws[0].heartRate).toBe(60)
-    // No server upload path — the outbound queue stays empty.
-    expect(await db.select().from(schema.outboundQueue)).toHaveLength(0)
   })
 })

@@ -17,7 +17,6 @@ describe("drizzle schema", () => {
     "baselineProfile",
     "sleepPlans",
     "viewCache",
-    "outboundQueue",
     "syncState",
     "settings",
   ]
@@ -51,22 +50,6 @@ describe("drizzle schema", () => {
       expect(table._localCreatedAt).toBeDefined()
       expect(table._origin).toBeDefined()
       expect(table.userId).toBeDefined()
-    }
-  })
-
-  it("outboundQueue has all drainer columns", () => {
-    const t: any = (schema as any).outboundQueue
-    for (const col of [
-      "id",
-      "tableName",
-      "rowId",
-      "payload",
-      "attempts",
-      "lastAttemptAt",
-      "lastError",
-      "createdAt",
-    ]) {
-      expect(t[col]).toBeDefined()
     }
   })
 
