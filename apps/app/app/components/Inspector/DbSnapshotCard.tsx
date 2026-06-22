@@ -23,7 +23,6 @@ type RecentRow = { timestamp: number }
 
 const TABLES = [
   "raw_sensor_records",
-  "outbound_queue",
   "realtime_samples",
   "device_events",
   "sleep_detections",
@@ -119,8 +118,7 @@ export const DbSnapshotCard: FC = () => {
   }, [])
 
   const total = tables.reduce((s, t) => s + (t.count > 0 ? t.count : 0), 0)
-  const queueDepth = tables.find((t) => t.name === "outbound_queue")?.count ?? 0
-  const pillTone = error ? "bad" : queueDepth > 100 ? "warn" : "ok"
+  const pillTone = error ? "bad" : "ok"
   const pillText = error ? "error" : `${total.toLocaleString()} rows`
 
   return (

@@ -1,13 +1,11 @@
 import { sqliteTable, text, integer, real, primaryKey } from "drizzle-orm/sqlite-core"
 
 // Shared mirror columns:
-// _syncedAt       unix ms when backend ack'd this row (null = pending uplink)
 // _localCreatedAt unix ms when the app first wrote the row
 // _origin         "local" (app wrote it) or "backend" (downlink pulled it)
 // userId          active user id stamped on every write; wipe-on-logout uses this column
 
 const mirrorColumns = {
-  _syncedAt: integer("_synced_at"),
   _localCreatedAt: integer("_local_created_at").notNull(),
   _origin: text("_origin", { enum: ["local", "backend"] }).notNull(),
   userId: text("user_id").notNull(),
@@ -236,30 +234,6 @@ export const viewCache = sqliteTable(
 
 // Sync-tracking (local-only)
 
-export const outboundQueue = sqliteTable("outbound_queue", {
-  id: text("id").primaryKey(),
-  tableName: text("table_name").notNull(),
-  rowId: text("row_id").notNull(),
-  payload: text("payload").notNull(),
-  attempts: integer("attempts").notNull().default(0),
-  lastAttemptAt: integer("last_attempt_at"),
-  lastError: text("last_error"),
-  createdAt: integer("created_at").notNull(),
-  // Earliest wall-clock instant (ms) at which this row is eligible for
-  // another claim. Set by the retry path to implement exponential
-  // backoff. Defaults to 0 so freshly-enqueued rows ship immediately.
-  nextAttemptAt: integer("next_attempt_at").notNull().default(0),
-  // Soft lease: identifies the drainer that currently holds this row
-  // and the wall-clock instant at which the lease expires. The drainer
-  // claims by setting both columns inside a single transaction with
-  // the SELECT, filtered to rows where claim_expires_at <= now(). This
-  // prevents two concurrent drainers (foreground + background, or a
-  // drainer + Force Upload) from pulling the same row and double-POSTing.
-  // claimedBy is null when no drainer holds the row.
-  claimedBy: text("claimed_by"),
-  claimExpiresAt: integer("claim_expires_at").notNull().default(0),
-})
-
 export const syncState = sqliteTable("sync_state", {
   tableName: text("table_name").primaryKey(),
   lastSyncAt: integer("last_sync_at").notNull().default(0),
@@ -274,16 +248,4 @@ export const syncState = sqliteTable("sync_state", {
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
-})
-
-// Single-row table that serializes uplink drains across JS contexts.
-// Foreground (SyncService interval, refresh on foreground) and background
-// (Expo TaskManager catchup) can both fire a drain. Without a shared lock
-// they would double-claim and double-POST the same outbound queue rows.
-export const drainLock = sqliteTable("drain_lock", {
-  // Always 'uplink'. Single-row table.
-  name: text("name").primaryKey(),
-  acquiredAt: integer("acquired_at").notNull(),
-  expiresAt: integer("expires_at").notNull(),
-  holder: text("holder").notNull(),
 })
