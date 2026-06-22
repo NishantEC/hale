@@ -1,10 +1,9 @@
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm"
+import { and, asc, eq, gte, lte, sql } from "drizzle-orm"
 import { getReadDb, type NoopDatabase } from "../index"
 import { withWrite, type WriteTx } from "../transaction"
 import { rawSensorRecords } from "../schema"
 import { getActiveUserId, peekActiveUserId } from "../session"
 import { notifyTable } from "../observable"
-import { enqueueOutboundTx } from "./outboundQueue"
 
 export interface RawSensorRecordInput {
   id: string
@@ -36,31 +35,6 @@ export async function insertRawSensorRecordTx(
   input: RawSensorRecordInput,
   userId: string,
 ): Promise<void> {
-  // Strap re-deliveries from flash bring records we already uploaded. Looking
-  // up the existing row first lets us skip re-enqueueing rows that are already
-  // synced — otherwise outbound_queue bloats with no-op POSTs every cycle.
-  // We still run the upsert so any merged-in field (e.g. HR going from 0 to a
-  // real value via the CASE in onConflictDoUpdate) keeps that improvement
-  // locally; we just don't ship it again unless it materially changed.
-  const existing = await tx
-    .select({
-      _syncedAt: rawSensorRecords._syncedAt,
-      heartRate: rawSensorRecords.heartRate,
-      skinContact: rawSensorRecords.skinContact,
-    })
-    .from(rawSensorRecords)
-    .where(eq(rawSensorRecords.id, input.id))
-    .limit(1)
-
-  const prior = existing[0]
-  const wasSynced = prior?._syncedAt != null
-  // If we already synced this row and the new payload doesn't recover HR
-  // (going from 0 to a real value) or fill in a skinContact reading, this is
-  // a pure re-delivery — no reason to re-enqueue.
-  const recoversHR = prior != null && prior.heartRate === 0 && input.heartRate > 0
-  const fillsSkinContact = prior != null && prior.skinContact == null && input.skinContact != null
-  const skipEnqueue = wasSynced && !recoversHR && !fillsSkinContact
-
   await tx
     .insert(rawSensorRecords)
     .values({
@@ -92,21 +66,6 @@ export async function insertRawSensorRecordTx(
         signalQuality: sql`COALESCE(excluded.signal_quality, ${rawSensorRecords.signalQuality})`,
       },
     })
-  if (skipEnqueue) return
-  await enqueueOutboundTx(tx, {
-    tableName: "raw_sensor_records",
-    rowId: input.id,
-    payload: input,
-  })
-  // If we're re-enqueueing a previously-synced row because the payload
-  // genuinely improved (HR recovered, skinContact filled), clear _syncedAt so
-  // the drainer treats it as fresh and re-marks it after a successful upload.
-  if (wasSynced) {
-    await tx
-      .update(rawSensorRecords)
-      .set({ _syncedAt: null })
-      .where(eq(rawSensorRecords.id, input.id))
-  }
 }
 
 export async function insertRawSensorRecord(
@@ -118,43 +77,6 @@ export async function insertRawSensorRecord(
     await insertRawSensorRecordTx(tx, input, userId)
   })
   notifyTable("raw_sensor_records")
-}
-
-/**
- * Backfill helper: enqueue any locally-unsynced raw_sensor_records
- * into the outbound queue. Used once on app launch after upgrading
- * past the fix, so records inserted by older builds (which didn't
- * enqueue) finally get shipped.
- */
-export async function backfillUnsyncedRawSensorRecords(
-  db: NoopDatabase,
-  limit = 100,
-): Promise<number> {
-  const userId = peekActiveUserId()
-  if (!userId) return 0
-  const unsynced = await db
-    .select()
-    .from(rawSensorRecords)
-    .where(
-      and(
-        eq(rawSensorRecords.userId, userId),
-        isNull(rawSensorRecords._syncedAt),
-      ),
-    )
-    .orderBy(asc(rawSensorRecords.timestamp))
-    .limit(limit)
-
-  await withWrite(db, async (tx) => {
-    for (const row of unsynced) {
-      await enqueueOutboundTx(tx, {
-        tableName: "raw_sensor_records",
-        rowId: row.id,
-        payload: row,
-        preserveRetryState: true,
-      })
-    }
-  })
-  return unsynced.length
 }
 
 export async function listRawSensorRecordsByDateRange(
@@ -242,49 +164,4 @@ export async function getRawCoverageForDay(
   }>
   const row = rows[0]
   return { latestTimestampMs: row?.latest ?? null, coverageMinutes: Number(row?.minutes ?? 0) }
-}
-
-export async function markRawSensorRecordsSynced(
-  db: NoopDatabase,
-  ids: string[],
-  syncedAt: number,
-): Promise<void> {
-  if (ids.length === 0) return
-  // SQLite's default parameter cap is 999. Chunk at 500 for safety.
-  const CHUNK = 500
-  await withWrite(db, async (tx) => {
-    for (let i = 0; i < ids.length; i += CHUNK) {
-      const slice = ids.slice(i, i + CHUNK)
-      await tx
-        .update(rawSensorRecords)
-        .set({ _syncedAt: syncedAt })
-        .where(inArray(rawSensorRecords.id, slice))
-    }
-  })
-}
-
-export async function getRawSyncBreakdown(db: NoopDatabase): Promise<{
-  total: number
-  synced: number
-  pending: number
-  oldestPendingMs: number | null
-}> {
-  const userId = peekActiveUserId()
-  const rows = await db
-    .select({
-      total: sql<number>`count(*)`,
-      synced: sql<number>`sum(case when ${rawSensorRecords._syncedAt} is not null then 1 else 0 end)`,
-      oldestPending: sql<number | null>`min(case when ${rawSensorRecords._syncedAt} is null then ${rawSensorRecords.timestamp} end)`,
-    })
-    .from(rawSensorRecords)
-    .where(userId ? eq(rawSensorRecords.userId, userId) : sql`1=1`)
-  const row = rows[0]
-  const total = row?.total ?? 0
-  const synced = row?.synced ?? 0
-  return {
-    total,
-    synced,
-    pending: total - synced,
-    oldestPendingMs: row?.oldestPending ?? null,
-  }
 }

@@ -6,17 +6,6 @@
 import { reportError } from "../observability/sentry"
 import { appendLog } from "../observability/persistentLog"
 
-export type DrainOutcomeRecord = {
-  at: number
-  durationMs: number
-  drained: number
-  failed: number
-  error: string | null
-  oldestPendingAt: number | null
-  skipped: "locked" | null
-  holder: string
-}
-
 export type PersistFailureRecord = {
   at: number
   source: "persistAndAck" | "persistAndFinish"
@@ -92,7 +81,6 @@ export type AckResponse = {
   status: number | null
 }
 
-const MAX_DRAIN_HISTORY = 20
 const MAX_PERSIST_FAILURES = 10
 const MAX_API_FAILURES = 10
 const MAX_SYNC_SESSIONS = 20
@@ -101,8 +89,6 @@ const MAX_ACK_WRITES = 20
 const PERSIST_FAILURE_REPORT_INTERVAL_MS = 60_000
 const API_FAILURE_REPORT_INTERVAL_MS = 60_000
 
-let lastDrain: DrainOutcomeRecord | null = null
-let drainHistory: DrainOutcomeRecord[] = []
 let lastPipelineRunAt: number | null = null
 let lastPipelineDurationMs: number | null = null
 let persistFailures: PersistFailureRecord[] = []
@@ -124,19 +110,6 @@ function emit() {
       console.warn("[syncTelemetry] listener threw", err)
     }
   }
-}
-
-export function recordDrainOutcome(rec: DrainOutcomeRecord): void {
-  lastDrain = rec
-  // Dedup adjacent skipped:"locked" entries. A long-held lock + 15s drain tick
-  // would otherwise fill the 20-entry ring in ~5 minutes and evict useful history.
-  const head = drainHistory[0]
-  if (rec.skipped === "locked" && head?.skipped === "locked") {
-    drainHistory = [rec, ...drainHistory.slice(1)]
-  } else {
-    drainHistory = [rec, ...drainHistory].slice(0, MAX_DRAIN_HISTORY)
-  }
-  emit()
 }
 
 export function recordPipelineRun(at: number, durationMs: number): void {
@@ -249,8 +222,6 @@ export function recordAckWrite(rec: AckWrite): void {
 
 export function getSyncTelemetry() {
   return {
-    lastDrain,
-    drainHistory,
     lastPipelineRunAt,
     lastPipelineDurationMs,
     persistFailures,
