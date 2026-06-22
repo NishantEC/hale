@@ -2,11 +2,6 @@ import { FC, useEffect, useMemo, useState } from "react"
 import { View, ViewStyle } from "react-native"
 
 import { Text } from "@/components/Text"
-import { useOutboundQueueStats } from "@/hooks/useOutboundQueueStats"
-import {
-  useLastDrainAt,
-  useLastDrainOutcome,
-} from "@/stores/drainTelemetryStore"
 import {
   useLastBatchWindow,
   useLastPipelineAt,
@@ -50,9 +45,6 @@ export const SyncProgressCard: FC = () => {
   const pipelineState = usePipelineState()
   const lastPipelineAt = useLastPipelineAt()
   const lastBatchWindow = useLastBatchWindow()
-  const queueStats = useOutboundQueueStats()
-  const lastDrainOutcome = useLastDrainOutcome()
-  const lastDrainAt = useLastDrainAt()
 
   // Damp the iteration counter ~500ms so users don't see flicker as the
   // strap finishes one pass and starts the next.
@@ -125,16 +117,6 @@ export const SyncProgressCard: FC = () => {
         }
       />
       <Row
-        label="Queue"
-        value={`${queueStats.depth ?? 0} pending · ${queueStats.deadCount ?? 0} dead`}
-        tone={(queueStats.deadCount ?? 0) > 0 ? "bad" : undefined}
-      />
-      <Row
-        label="Last drain"
-        value={formatLastDrain(lastDrainOutcome, lastDrainAt)}
-        tone={lastDrainTone(lastDrainOutcome)}
-      />
-      <Row
         label="Pipeline"
         value={formatPipeline(pipelineState, lastPipelineAt)}
         tone={
@@ -149,48 +131,6 @@ export const SyncProgressCard: FC = () => {
       ) : null}
     </InspectorCard>
   )
-}
-
-function formatRelativeAge(at: number | null): string {
-  if (at == null) return "never"
-  const ageMs = Date.now() - at
-  if (ageMs < 60_000) return `${Math.max(1, Math.round(ageMs / 1000))}s ago`
-  if (ageMs < 60 * 60_000) return `${Math.round(ageMs / 60_000)}m ago`
-  return `${Math.round(ageMs / (60 * 60_000))}h ago`
-}
-
-function formatLastDrain(
-  outcome: import("@/services/sync/uplinkDrainer").DrainLoopOutcome | null,
-  lastDrainAt: number | null,
-): string {
-  if (!outcome) return "never"
-  if (outcome.skipped === "locked") {
-    return `skipped (locked) · ${formatRelativeAge(lastDrainAt)}`
-  }
-  const seconds = (outcome.durationMs / 1000).toFixed(1)
-  const age = formatRelativeAge(lastDrainAt)
-  // Build the count strip — surface 0/0 explicitly when nothing was drained
-  // so the user sees "the drain ran but had nothing to do."
-  const counts =
-    outcome.drained === 0 && outcome.failed === 0
-      ? "nothing to drain"
-      : `${outcome.drained} ✓${outcome.failed > 0 ? ` · ${outcome.failed} ✗` : ""}`
-  return outcome.error
-    ? `${counts} (${truncate(outcome.error, 32)}) · ${seconds}s · ${age}`
-    : `${counts} · ${seconds}s · ${age}`
-}
-
-function lastDrainTone(
-  outcome: import("@/services/sync/uplinkDrainer").DrainLoopOutcome | null,
-): "warn" | "bad" | undefined {
-  if (!outcome) return undefined
-  if (outcome.failed > 0 || outcome.error) return "bad"
-  if (outcome.skipped === "locked") return "warn"
-  return undefined
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n - 1)}…` : s
 }
 
 function formatPipeline(
